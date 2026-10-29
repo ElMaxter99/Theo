@@ -22,6 +22,8 @@ type SettingsStore interface {
 	Save(instances.State) error
 	Append(instances.Event) error
 	Events() ([]instances.Event, error)
+	LoadShared() (instances.SharedState, error)
+	SaveShared(instances.SharedState) error
 }
 
 // memSettings keeps settings and history in memory, for engines that are not
@@ -29,7 +31,17 @@ type SettingsStore interface {
 type memSettings struct {
 	state  instances.State
 	events []instances.Event
+	shared instances.SharedState
 }
+
+func (m *memSettings) LoadShared() (instances.SharedState, error) {
+	out := instances.SharedState{}
+	for k, v := range m.shared {
+		out[k] = v
+	}
+	return out, nil
+}
+func (m *memSettings) SaveShared(s instances.SharedState) error { m.shared = s; return nil }
 
 func (m *memSettings) Load() (instances.State, error) {
 	out := instances.State{}
@@ -183,6 +195,10 @@ func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []s
 		}
 	}
 
+	if err := e.addSharedConsumer(inst, settings, &overlay); err != nil {
+		return nil, err
+	}
+
 	inst.files, inst.instanceEnv, inst.generated = nil, "", nil
 	overlayPath, envPath := e.instanceFile(inst, ".yaml"), e.instanceFile(inst, ".env")
 	if overlay.Empty() && len(env) == 0 {
@@ -198,6 +214,26 @@ func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []s
 		return plan, nil
 	}
 
+	cfg, err := e.writeOverlay(ctx, inst, overlay, env, settings)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkEffective(plan, cfg); err != nil {
+		return nil, fmt.Errorf("%w (generated file %s)", err, inst.generated[0])
+	}
+	if auto {
+		if err := e.portStore.Save(state); err != nil {
+			return nil, err
+		}
+	}
+	return plan, nil
+}
+
+// writeOverlay writes the generated Compose file and env file of an
+// instance, checks with `docker compose config` that the result is valid,
+// and makes the instance run with them. It returns the resolved
+// configuration. secrets are masked in errors.
+func (e *Engine) writeOverlay(ctx context.Context, inst *Instance, overlay compose.Overlay, env map[string]string, secrets instances.Config) (*compose.Project, error) {
 	base, err := e.baseComposeFiles(inst)
 	if err != nil {
 		return nil, err
@@ -205,6 +241,7 @@ func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []s
 	if e.dataDir == "" {
 		return nil, errors.New("no data directory to keep the generated Compose file")
 	}
+	overlayPath, envPath := e.instanceFile(inst, ".yaml"), e.instanceFile(inst, ".env")
 	if err := os.MkdirAll(filepath.Dir(overlayPath), 0o755); err != nil {
 		return nil, err
 	}
@@ -228,21 +265,13 @@ func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []s
 	}
 	cfg, err := e.compose.ConfigFor(ctx, t)
 	if err != nil {
-		return nil, fmt.Errorf("the configuration with this instance's settings is not valid (generated file %s): %s", overlayPath, MaskSecrets(err.Error(), settings))
-	}
-	if err := checkEffective(plan, cfg); err != nil {
-		return nil, fmt.Errorf("%w (generated file %s)", err, overlayPath)
-	}
-	if auto {
-		if err := e.portStore.Save(state); err != nil {
-			return nil, err
-		}
+		return nil, fmt.Errorf("the configuration with this instance's settings is not valid (generated file %s): %s", overlayPath, MaskSecrets(err.Error(), secrets))
 	}
 	inst.files, inst.instanceEnv, inst.generated = t.Files, instanceEnv, []string{overlayPath}
 	if instanceEnv != "" {
 		inst.generated = append(inst.generated, instanceEnv)
 	}
-	return plan, nil
+	return cfg, nil
 }
 
 // instanceFile is the path of a file Theo generates for an instance.

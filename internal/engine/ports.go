@@ -105,6 +105,14 @@ func (e *Engine) planPorts(ctx context.Context, inst *Instance, profiles []strin
 		return nil, nil, err
 	}
 	saved := state[inst.Workspace]
+	// Services this instance gets from the shared ones do not start here, so
+	// their ports are not its business.
+	skip := map[string]bool{}
+	if cfg, err := e.Settings(inst); err == nil {
+		for _, s := range cfg.Shared {
+			skip[s] = true
+		}
+	}
 
 	// Host ports published by this instance's own containers are not
 	// conflicts. Without a Docker daemon there are none to find.
@@ -151,7 +159,7 @@ func (e *Engine) planPorts(ctx context.Context, inst *Instance, profiles []strin
 
 	for _, name := range compose.SortedKeys(inst.config.Services) {
 		svc := inst.config.Services[name]
-		if !startsWith(svc, profiles) {
+		if skip[name] || !startsWith(svc, profiles) {
 			continue
 		}
 		effective := make([]compose.Port, len(svc.Ports))

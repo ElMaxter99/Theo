@@ -31,10 +31,32 @@ type Config struct {
 	// NeutralizeContainerNames removes fixed container_name settings, which
 	// would make two instances collide.
 	NeutralizeContainerNames bool `json:"neutralize_container_names,omitempty"`
+	// Shared lists the services this instance does not run because it uses
+	// the project's shared ones. Join lists the services of this instance
+	// that join the shared network, besides the ones that depended on a
+	// shared service.
+	Shared []string `json:"shared,omitempty"`
+	Join   []string `json:"join,omitempty"`
 }
 
 // Empty reports whether nothing is configured.
-func (c Config) Empty() bool { return len(c.Env) == 0 && !c.NeutralizeContainerNames }
+func (c Config) Empty() bool {
+	return len(c.Env) == 0 && !c.NeutralizeContainerNames && len(c.Shared) == 0 && len(c.Join) == 0
+}
+
+// SharedSet is the group of services a project shares between instances.
+// One dedicated Compose project runs them, from the Compose files of the
+// From worktree, and the instances that use them are linked in their
+// Config.
+type SharedSet struct {
+	From     string   `json:"from"`              // worktree path whose Compose files define the services
+	Services []string `json:"services"`          // names of the shared services
+	Network  string   `json:"network"`           // Docker network that connects the shared services and their consumers
+	Publish  bool     `json:"publish,omitempty"` // keep the host ports the project publishes
+}
+
+// SharedState maps a project (lower case name) to its shared set.
+type SharedState map[string]SharedSet
 
 // State maps an instance (the path of its worktree) to its configuration.
 type State map[string]Config
@@ -60,7 +82,49 @@ type Store struct {
 const (
 	configFile  = "instances.json"
 	historyFile = "history.jsonl"
+	sharedFile  = "shared.json"
 )
+
+type sharedDocument struct {
+	Version int         `json:"version"`
+	Shared  SharedState `json:"shared"`
+}
+
+// LoadShared returns the shared sets; there are none before the first save.
+func (s *Store) LoadShared() (SharedState, error) {
+	data, err := os.ReadFile(filepath.Join(s.dir, sharedFile))
+	if errors.Is(err, os.ErrNotExist) {
+		return SharedState{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var doc sharedDocument
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("%s is not valid: %w", filepath.Join(s.dir, sharedFile), err)
+	}
+	if doc.Shared == nil {
+		doc.Shared = SharedState{}
+	}
+	return doc.Shared, nil
+}
+
+// SaveShared replaces the shared sets.
+func (s *Store) SaveShared(st SharedState) error {
+	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(sharedDocument{Version: 1, Shared: st}, "", "  ")
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(s.dir, sharedFile)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
 
 // Open returns a store backed by files in dir, created on first write.
 func Open(dir string) *Store { return &Store{dir: dir} }

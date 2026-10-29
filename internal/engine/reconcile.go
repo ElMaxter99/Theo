@@ -16,15 +16,16 @@ import (
 
 // Finding kinds.
 const (
-	FindProjectMissing  = "project missing"      // the registered path is gone or is not a Git repository
-	FindWorktreeMissing = "worktree missing"     // Git lists a worktree whose directory is gone
-	FindForeignStack    = "started outside Theo" // a Compose project in a worktree, named differently from the instance Theo would use
-	FindStopped         = "containers removed"   // Theo's last operation was `up` but the instance has no containers now
-	FindOrphanStack     = "orphan containers"    // containers of an instance whose worktree no longer exists
-	FindOrphanVolumes   = "orphan volumes"       // volumes of an instance whose worktree no longer exists
-	FindStaleSettings   = "stale settings"       // Theo's settings for a worktree that no longer exists
-	FindStalePorts      = "stale ports"          // ports reserved for a worktree that no longer exists
-	FindStaleFiles      = "stale files"          // files Theo generated for a worktree that no longer exists
+	FindProjectMissing  = "project missing"        // the registered path is gone or is not a Git repository
+	FindWorktreeMissing = "worktree missing"       // Git lists a worktree whose directory is gone
+	FindForeignStack    = "started outside Theo"   // a Compose project in a worktree, named differently from the instance Theo would use
+	FindStopped         = "containers removed"     // Theo's last operation was `up` but the instance has no containers now
+	FindOrphanStack     = "orphan containers"      // containers of an instance whose worktree no longer exists
+	FindOrphanVolumes   = "orphan volumes"         // volumes of an instance whose worktree no longer exists
+	FindStaleSettings   = "stale settings"         // Theo's settings for a worktree that no longer exists
+	FindStalePorts      = "stale ports"            // ports reserved for a worktree that no longer exists
+	FindStaleFiles      = "stale files"            // files Theo generated for a worktree that no longer exists
+	FindSharedBroken    = "shared services broken" // the worktree that defines them is gone, or an instance uses one that is no longer shared
 )
 
 // Finding is a difference between what Theo recorded and what exists.
@@ -197,6 +198,7 @@ func (e *Engine) Reconcile(ctx context.Context, project string) (*Report, error)
 				Fix:    "check them, then `docker volume rm " + strings.Join(names, " ") + "` if the data is not needed. Theo never deletes them on its own"})
 		}
 	}
+	e.sharedFindings(projects, settings, add)
 	return report, nil
 }
 

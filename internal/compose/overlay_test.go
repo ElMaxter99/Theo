@@ -1,6 +1,7 @@
 package compose
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -83,6 +84,44 @@ func TestOverlayContainerNamesAndEnvironment(t *testing.T) {
 		t.Errorf("overlay:\n%s", got)
 	}
 	if (Overlay{}).Empty() == false || o.Empty() {
+		t.Errorf("Empty is wrong")
+	}
+}
+
+func TestOverlaySharedServices(t *testing.T) {
+	o := Overlay{
+		ExternalNetworks: map[string]string{"theo_shared": "theo-app-shared"},
+		Profiles:         map[string][]string{"db": {"theo-shared"}},
+		DependsOn: map[string]map[string]json.RawMessage{
+			"api":    {"cache": json.RawMessage(`{"condition":"service_started","required":true}`)},
+			"worker": {},
+		},
+		Networks: map[string][]string{"api": {"default", "theo_shared"}},
+		Ports:    map[string][]Port{"db": {}},
+	}
+	got := string(o.Render())
+	want := `networks:
+  "theo_shared":
+    external: true
+    name: "theo-app-shared"
+services:
+  "api":
+    depends_on: !override
+      "cache": {"condition":"service_started","required":true}
+    networks:
+      "default": {}
+      "theo_shared": {}
+  "db":
+    ports: !override []
+    profiles: !override
+      - "theo-shared"
+  "worker":
+    depends_on: !reset null
+`
+	if !strings.HasSuffix(got, want) {
+		t.Errorf("overlay:\n%s", got)
+	}
+	if o.Empty() || !(Overlay{}).Empty() {
 		t.Errorf("Empty is wrong")
 	}
 }

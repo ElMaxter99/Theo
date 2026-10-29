@@ -216,9 +216,52 @@ services:
 	})
 }
 
-// UC-05: instances share a dependency. Not built yet: it depends on Q-023.
+// UC-05: three instances share one database that the user chose to share.
 func TestUC05_SharedDependencies(t *testing.T) {
-	t.Skip("pending: shared services (FR-090 to FR-093) wait for the decision on Q-023")
+	testutil.RequireDaemon(t)
+	main, linked := project(t, `name: uc05
+services:
+  db:
+    build: .
+    volumes: [data:/data]
+  api:
+    build: .
+    depends_on: [db]
+volumes:
+  data: {}
+`, true)
+	_ = main
+	_ = linked
+	must(t, "worktree", "add", name, "bug-1", "--new")
+	testutil.WriteServerImage(t, worktreeDir(t, "bug-1"))
+	cleanup(t, "uc05", "acc-app-feature", "acc-bug-1", name+"-shared")
+	t.Cleanup(func() { exec.Command("docker", "network", "rm", "theo-"+name+"-shared").Run() })
+
+	// Nothing is shared by default: an instance runs everything.
+	must(t, "up", name, "-w", "bug-1")
+	contains(t, "default isolation", testutil.Docker(t, "ps", "--filter", "label=com.docker.compose.project=acc-bug-1", "--format", "{{.Label \"com.docker.compose.service\"}}"), "db", "api")
+	must(t, "down", name, "-w", "bug-1")
+
+	// The user shares the database explicitly; three instances consume it.
+	must(t, "shared", "add", name, "db")
+	for _, w := range []string{"main", "feature/x", "bug-1"} {
+		must(t, "shared", "use", name, "-w", w, "db")
+	}
+	must(t, "up", name, "--start-shared")
+	must(t, "up", name, "-w", "feature/x")
+	must(t, "up", name, "-w", "bug-1")
+	status := must(t, "shared", "status", name)
+	contains(t, "status", status, "running", "Used by 3 instance(s)")
+	if got := testutil.Docker(t, "ps", "--filter", "label=com.docker.compose.project="+name+"-shared", "--format", "{{.Names}}"); len(strings.Fields(got)) != 1 {
+		t.Errorf("the database should run once, got %q", got)
+	}
+
+	// Stopping it while instances use it needs an explicit confirmation that lists them.
+	_, stderr, code := theo("shared", "down", name)
+	if code == cli.ExitOK {
+		t.Fatalf("shared down with running instances succeeded")
+	}
+	contains(t, "refusal", stderr, "bug-1", "feature/x", "--confirm")
 }
 
 // UC-06: fully isolated instances; down keeps volumes, deleting is explicit.
