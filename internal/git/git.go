@@ -99,7 +99,7 @@ func (Git) AddWorktree(ctx context.Context, dir, path, branch string, newBranch 
 	} else {
 		args = append(args, path, branch)
 	}
-	_, err := execx.Run(ctx, dir, "git", args...)
+	_, err := execx.RunChange(ctx, dir, "git", args...)
 	return err
 }
 
@@ -112,7 +112,7 @@ func (Git) RemoveWorktree(ctx context.Context, dir, path string, force bool) err
 	if force {
 		args = append(args, "--force")
 	}
-	_, err := execx.Run(ctx, dir, "git", append(args, "--", path)...)
+	_, err := execx.RunChange(ctx, dir, "git", append(args, "--", path)...)
 	return err
 }
 

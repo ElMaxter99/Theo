@@ -15,14 +15,21 @@ import (
 
 // instanceFlags are the flags that select a worktree's instance.
 type instanceFlags struct {
-	worktree string
-	envFiles stringList
+	worktree     string
+	envFiles     stringList
+	composeFiles stringList
+}
+
+// options are the instance options the flags select.
+func (f *instanceFlags) options() engine.InstanceOptions {
+	return engine.InstanceOptions{EnvFiles: f.envFiles, ComposeFiles: f.composeFiles}
 }
 
 func (f *instanceFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&f.worktree, "worktree", "", "branch, directory name or path of the worktree")
 	fs.StringVar(&f.worktree, "w", "", "shorthand for --worktree")
 	fs.Var(&f.envFiles, "env-file", "env file to use instead of the usual one (repeatable)")
+	fs.Var(&f.composeFiles, "compose-file", "Compose file to use instead of the project's, relative to the worktree (repeatable; the order matters)")
 }
 
 func runInstance(e *engine.Engine, cmd string, args []string, stdout, stderr io.Writer) error {
@@ -32,12 +39,15 @@ func runInstance(e *engine.Engine, cmd string, args []string, stdout, stderr io.
 	var up compose.UpOptions
 	var profiles stringList
 	var logs compose.LogOptions
-	var autoPorts bool
+	var autoPorts, startShared bool
 	switch cmd {
 	case "up":
+		fs.Var((*stringList)(&up.Services), "service", "start only this service and what it depends on (repeatable)")
+		fs.BoolVar(&up.ForceRecreate, "force-recreate", false, "recreate the containers even if nothing changed; volumes are kept")
 		fs.BoolVar(&up.Build, "build", false, "build images before starting")
 		fs.Var(&profiles, "profile", "enable a Compose profile (repeatable)")
-		fs.BoolVar(&autoPorts, "auto-ports", false, "use other host ports for the ones that are taken, and keep them")
+		fs.BoolVar(&autoPorts, "auto-ports", false, "use other host ports for the ones that are taken; remembered for next starts (turn off with `instance set --no-auto-ports`)")
+		fs.BoolVar(&startShared, "start-shared", false, "start the shared services this instance uses if they are stopped")
 	case "logs":
 		fs.BoolVar(&logs.Follow, "follow", false, "follow log output")
 		fs.BoolVar(&logs.Follow, "f", false, "shorthand for --follow")
@@ -47,12 +57,12 @@ func runInstance(e *engine.Engine, cmd string, args []string, stdout, stderr io.
 	if err != nil {
 		return err
 	}
-	if len(pos) == 0 || (cmd != "logs" && len(pos) != 1) {
+	if len(pos) == 0 || (cmd != "logs" && cmd != "restart" && len(pos) != 1) {
 		return usageErrorf("%s needs exactly one project name", cmd)
 	}
 
 	ctx := context.Background()
-	inst, err := e.Instance(ctx, pos[0], sel.worktree, sel.envFiles)
+	inst, err := e.InstanceFor(ctx, pos[0], sel.worktree, sel.options())
 	if err != nil {
 		return err
 	}
@@ -61,8 +71,23 @@ func runInstance(e *engine.Engine, cmd string, args []string, stdout, stderr io.
 	switch cmd {
 	case "up":
 		up.Profiles = profiles
+		if autoPorts {
+			if err := e.SetAutoPorts(inst, true); err != nil {
+				return err
+			}
+		}
+		warnings, err := e.EnsureShared(ctx, inst, startShared, stdout, stderr)
+		if err != nil {
+			return err
+		}
+		for _, w := range warnings {
+			fmt.Fprintf(stderr, "theo: warning: %s\n", w)
+		}
 		if err := preparePorts(ctx, e, inst, profiles, autoPorts, stderr); err != nil {
 			return err
+		}
+		if up.Build {
+			warnSharedImages(ctx, e, stderr, inst)
 		}
 		if err := e.Up(ctx, inst, up, stdout, stderr); err != nil {
 			return err
@@ -74,7 +99,7 @@ func runInstance(e *engine.Engine, cmd string, args []string, stdout, stderr io.
 		}
 		fmt.Fprintf(stdout, "Stopped %s. Its volumes were kept.\n", inst.Compose)
 	case "restart":
-		return e.Restart(ctx, inst, stdout, stderr)
+		return e.RestartServices(ctx, inst, pos[1:], stdout, stderr)
 	case "logs":
 		logs.Services = pos[1:]
 		return e.Logs(ctx, inst, logs, stdout, stderr)
@@ -108,6 +133,20 @@ func preparePorts(ctx context.Context, e *engine.Engine, inst *engine.Instance, 
 	return nil
 }
 
+// warnSharedImages warns about services that build into an image tag shared
+// by every instance of the project (B-009).
+func warnSharedImages(ctx context.Context, e *engine.Engine, w io.Writer, inst *engine.Instance) {
+	shared, err := e.SharedImageBuilds(ctx, inst)
+	if err != nil || len(shared) == 0 { // the warning is advice: Compose reports real problems itself
+		return
+	}
+	var parts []string
+	for _, svc := range compose.SortedKeys(shared) {
+		parts = append(parts, fmt.Sprintf("%s (%s)", svc, shared[svc]))
+	}
+	fmt.Fprintf(w, "theo: warning: services built into a fixed image name, which every worktree of this project shares: %s. This build replaces the image the other instances use (they keep running the old one until recreated). Make the name depend on the instance, for example image: myapp-${COMPOSE_PROJECT_NAME}, or drop image: so Compose names it <project>-<service>.\n", strings.Join(parts, ", "))
+}
+
 // describe says which instance a command acts on, on stderr so that it does
 // not mix with the command's own output.
 func describe(w io.Writer, inst *engine.Instance) {
@@ -115,7 +154,19 @@ func describe(w io.Writer, inst *engine.Instance) {
 	if inst.Branch != "" {
 		where = inst.Branch + " · " + inst.Workspace
 	}
+	if inst.Kind == engine.KindClone {
+		where += " [clone]"
+	}
+	if inst.Owner != "" {
+		where += " [owner: " + inst.Owner + "]"
+	}
 	fmt.Fprintf(w, "theo: %s (compose project %q)\n", where, inst.Compose)
+	if len(inst.ComposeFiles) > 0 {
+		fmt.Fprintf(w, "theo: compose files (%s): %s\n", inst.ComposeFilesSource, strings.Join(mapEach(inst.ComposeFiles, func(f string) string { return relative(inst.Workspace, f) }), ", "))
+	}
+	if len(inst.Profiles) > 0 {
+		fmt.Fprintf(w, "theo: profiles of this instance: %s\n", strings.Join(inst.Profiles, ", "))
+	}
 }
 
 func worktreeArg(inst *engine.Instance) string {
@@ -139,7 +190,7 @@ func runPS(e *engine.Engine, args []string, stdout io.Writer) error {
 	}
 	ctx := context.Background()
 
-	if sel.worktree == "" && len(sel.envFiles) == 0 {
+	if sel.worktree == "" && len(sel.envFiles) == 0 && len(sel.composeFiles) == 0 {
 		overview, err := e.Overview(ctx, pos[0])
 		if err != nil {
 			return err
@@ -148,7 +199,15 @@ func runPS(e *engine.Engine, args []string, stdout io.Writer) error {
 			return writeJSON(stdout, overview)
 		}
 		tw := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "BRANCH\tCOMPOSE PROJECT\tSTATUS\tPATH")
+		owners := false // the OWNER column only appears when someone set an owner
+		for _, o := range overview {
+			owners = owners || o.Owner != ""
+		}
+		if owners {
+			fmt.Fprintln(tw, "BRANCH\tOWNER\tCOMPOSE PROJECT\tSTATUS\tPATH")
+		} else {
+			fmt.Fprintln(tw, "BRANCH\tCOMPOSE PROJECT\tSTATUS\tPATH")
+		}
 		idle := 0
 		for _, o := range overview {
 			if len(o.Stacks) == 0 {
@@ -156,7 +215,16 @@ func runPS(e *engine.Engine, args []string, stdout io.Writer) error {
 				continue
 			}
 			for _, s := range o.Stacks {
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", worktreeRef(engine.Worktree{Worktree: o.Worktree}), s.Name, s.Status, o.Worktree.Path)
+				ref := worktreeRef(engine.Worktree{Worktree: o.Worktree})
+				if owners {
+					who := o.Owner
+					if who == "" {
+						who = "-"
+					}
+					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", ref, who, s.Name, s.Status, o.Worktree.Path)
+				} else {
+					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", ref, s.Name, s.Status, o.Worktree.Path)
+				}
 			}
 		}
 		if err := tw.Flush(); err != nil {
@@ -166,13 +234,16 @@ func runPS(e *engine.Engine, args []string, stdout io.Writer) error {
 		return nil
 	}
 
-	inst, err := e.Instance(ctx, pos[0], sel.worktree, sel.envFiles)
+	inst, err := e.InstanceFor(ctx, pos[0], sel.worktree, sel.options())
 	if err != nil {
 		return err
 	}
 	containers, err := e.Containers(ctx, inst)
 	if err != nil {
 		return err
+	}
+	if containers == nil {
+		containers = []compose.Container{}
 	}
 	if *asJSON {
 		return writeJSON(stdout, struct {
@@ -235,7 +306,7 @@ func runPorts(e *engine.Engine, args []string, stdout io.Writer) error {
 		return usageErrorf("ports needs exactly one project name")
 	}
 	ctx := context.Background()
-	inst, err := e.Instance(ctx, pos[0], sel.worktree, sel.envFiles)
+	inst, err := e.InstanceFor(ctx, pos[0], sel.worktree, sel.options())
 	if err != nil {
 		return err
 	}

@@ -143,6 +143,18 @@ services:
 		t.Fatalf("second up: %s", stderr)
 	}
 	checkOutput(t, "second up", stderr, fmt.Sprintf("host port %d instead of %d", port+1, port))
+
+	// The instance remembers it: a plain up keeps the address.
+	run("down", "app", "-w", "feature/x")
+	if _, stderr, code := run("up", "app", "-w", "feature/x"); code != ExitOK {
+		t.Fatalf("plain up after --auto-ports: %s", stderr)
+	}
+	stdout, _, _ = run("ps", "app", "-w", "feature/x")
+	checkOutput(t, "plain up", stdout, fmt.Sprintf("%d -> 8080/tcp", port+1))
+	run("down", "app", "-w", "feature/x")
+	if _, _, code := run("instance", "set", "app", "-w", "feature/x", "--no-auto-ports"); code != ExitOK {
+		t.Fatalf("instance set --no-auto-ports failed")
+	}
 }
 
 // TestInstanceSettings runs two worktrees with the same fixed container_name,

@@ -1,6 +1,7 @@
 package compose
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -44,8 +45,9 @@ func TestDefaultFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// compose.yaml wins and has no override: the docker-compose ones are ignored.
-	if got, want := DefaultFiles(dir), []string{filepath.Join(dir, "compose.yaml")}; !reflect.DeepEqual(got, want) {
+	// compose.yaml wins; an override is loaded whatever its extension and
+	// prefix, as Compose does (compose.yaml + docker-compose.override.yml).
+	if got, want := DefaultFiles(dir), []string{filepath.Join(dir, "compose.yaml"), filepath.Join(dir, "docker-compose.override.yml")}; !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
 	}
 	os.Remove(filepath.Join(dir, "compose.yaml"))
@@ -84,5 +86,50 @@ func TestOverlayContainerNamesAndEnvironment(t *testing.T) {
 	}
 	if (Overlay{}).Empty() == false || o.Empty() {
 		t.Errorf("Empty is wrong")
+	}
+}
+
+func TestOverlaySharedServices(t *testing.T) {
+	o := Overlay{
+		ExternalNetworks: map[string]string{"theo_shared": "theo-app-shared"},
+		Profiles:         map[string][]string{"db": {"theo-shared"}},
+		DependsOn: map[string]map[string]json.RawMessage{
+			"api":    {"cache": json.RawMessage(`{"condition":"service_started","required":true}`)},
+			"worker": {},
+		},
+		Networks: map[string][]string{"api": {"default", "theo_shared"}},
+		Ports:    map[string][]Port{"db": {}},
+	}
+	got := string(o.Render())
+	want := `networks:
+  "theo_shared":
+    external: true
+    name: "theo-app-shared"
+services:
+  "api":
+    depends_on: !override
+      "cache": {"condition":"service_started","required":true}
+    networks:
+      "default": {}
+      "theo_shared": {}
+  "db":
+    ports: !override []
+    profiles: !override
+      - "theo-shared"
+  "worker":
+    depends_on: !reset null
+`
+	if !strings.HasSuffix(got, want) {
+		t.Errorf("overlay:\n%s", got)
+	}
+	if o.Empty() || !(Overlay{}).Empty() {
+		t.Errorf("Empty is wrong")
+	}
+}
+
+func TestOverlayEscapesDollarInEnvironment(t *testing.T) {
+	got := string(Overlay{Environment: map[string]map[string]string{"api": {"A": "pre$HOME ${X:-y} $$"}}}.Render())
+	if !strings.Contains(got, `"A": "pre$$HOME $${X:-y} $$$$"`) {
+		t.Errorf("overlay:\n%s", got)
 	}
 }

@@ -46,7 +46,7 @@ func runBranches(e *engine.Engine, args []string, stdout io.Writer) error {
 
 func runWorktree(e *engine.Engine, args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return usageErrorf("worktree needs a subcommand: add or remove")
+		return usageErrorf("worktree needs a subcommand: add, remove or owner")
 	}
 	ctx := context.Background()
 	switch args[0] {
@@ -55,6 +55,11 @@ func runWorktree(e *engine.Engine, args []string, stdout io.Writer) error {
 		newBranch := fs.Bool("new", false, "create the branch")
 		base := fs.String("from", "", "with --new: branch or commit to start from (default: the current HEAD)")
 		path := fs.String("path", "", "directory for the worktree (default: the project's worktree directory)")
+		clone := fs.Bool("clone", false, "create an independent clone instead of a linked worktree (for projects with submodules)")
+		owner := fs.String("owner", "", "label the workspace with an owner, such as an agent name")
+		copyFiles := fs.Bool("copy", false, "copy the files listed with `project set --copy-on-add` from the main worktree")
+		var oneOff stringList
+		fs.Var(&oneOff, "copy-file", "copy this root-relative file from the main worktree (repeatable)")
 		asJSON := fs.Bool("json", false, "print JSON")
 		pos, err := parse(fs, args[1:])
 		if err != nil {
@@ -66,14 +71,30 @@ func runWorktree(e *engine.Engine, args []string, stdout io.Writer) error {
 		if *base != "" && !*newBranch {
 			return usageErrorf("--from only makes sense with --new")
 		}
-		added, err := e.AddWorktree(ctx, pos[0], pos[1], engine.AddWorktreeOptions{NewBranch: *newBranch, Base: *base, Path: *path})
+		added, err := e.AddWorktree(ctx, pos[0], pos[1], engine.AddWorktreeOptions{
+			NewBranch: *newBranch, Base: *base, Path: *path,
+			Clone: *clone, Owner: *owner, Copy: *copyFiles, CopyFiles: oneOff,
+		})
 		if err != nil {
 			return err
 		}
 		if *asJSON {
 			return writeJSON(stdout, added)
 		}
-		fmt.Fprintf(stdout, "Created worktree for %s at %s\n", added.Branch, added.Path)
+		what := "worktree"
+		if added.Kind == engine.KindClone {
+			what = "independent clone"
+		}
+		fmt.Fprintf(stdout, "Created %s for %s at %s\n", what, added.Branch, added.Path)
+		if added.Owner != "" {
+			fmt.Fprintf(stdout, "Owner: %s\n", added.Owner)
+		}
+		if len(added.Copied) > 0 {
+			fmt.Fprintf(stdout, "Copied from the main worktree: %s\n", strings.Join(added.Copied, ", "))
+		}
+		for _, n := range added.NotCopied {
+			fmt.Fprintf(stdout, "Not copied: %s (%s)\n", n.Path, n.Reason)
+		}
 		for _, n := range added.Notes {
 			fmt.Fprintf(stdout, "Note: %s\n", n)
 		}
@@ -84,6 +105,7 @@ func runWorktree(e *engine.Engine, args []string, stdout io.Writer) error {
 		fs := flag.NewFlagSet("worktree remove", flag.ContinueOnError)
 		discard := fs.Bool("discard-changes", false, "remove it even if it has uncommitted or untracked files, which are lost")
 		confirm := fs.String("confirm", "", "with --discard-changes: the directory name of the worktree, to confirm")
+		asJSON := fs.Bool("json", false, "print JSON")
 		pos, err := parse(fs, args[1:])
 		if err != nil {
 			return err
@@ -91,7 +113,7 @@ func runWorktree(e *engine.Engine, args []string, stdout io.Writer) error {
 		if len(pos) != 2 {
 			return usageErrorf("worktree remove needs a project name and a worktree")
 		}
-		wt, err := e.RemoveWorktree(ctx, pos[0], pos[1], engine.RemoveWorktreeOptions{DiscardChanges: *discard, Confirm: *confirm})
+		res, err := e.RemoveWorkspace(ctx, pos[0], pos[1], engine.RemoveWorktreeOptions{DiscardChanges: *discard, Confirm: *confirm})
 		var changes *engine.ChangesError
 		if errors.As(err, &changes) {
 			return fmt.Errorf("%w\n\n%s\n\nCommit or move them, or discard them with:\n  theo worktree remove %s %s --discard-changes --confirm %s",
@@ -100,7 +122,51 @@ func runWorktree(e *engine.Engine, args []string, stdout io.Writer) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(stdout, "Removed worktree %s. The branch %s and any volumes were kept.\n", wt.Path, worktreeRef(engine.Worktree{Worktree: wt}))
+		wt := res.Worktree
+		if *asJSON {
+			return writeJSON(stdout, struct {
+				Path   string `json:"path"`
+				Branch string `json:"branch,omitempty"`
+				Kind   string `json:"kind"`
+			}{wt.Path, wt.Branch, res.Kind})
+		}
+		switch {
+		case res.Forgot:
+			fmt.Fprintf(stdout, "The clone %s was already gone; Theo forgot its record.\n", wt.Path)
+		case res.Kind == engine.KindClone:
+			fmt.Fprintf(stdout, "Removed clone %s with its Git history. Branches that were pushed are on the remote; any volumes were kept.\n", wt.Path)
+		default:
+			fmt.Fprintf(stdout, "Removed worktree %s. The branch %s and any volumes were kept.\n", wt.Path, worktreeRef(engine.Worktree{Worktree: wt}))
+		}
+		return nil
+
+	case "owner":
+		fs := flag.NewFlagSet("worktree owner", flag.ContinueOnError)
+		clear := fs.Bool("clear", false, "remove the owner")
+		asJSON := fs.Bool("json", false, "print JSON")
+		pos, err := parse(fs, args[1:])
+		if err != nil {
+			return err
+		}
+		if *clear && len(pos) != 2 || !*clear && len(pos) != 3 {
+			return usageErrorf("worktree owner needs <project> <worktree> <name>, or <project> <worktree> --clear")
+		}
+		name := ""
+		if !*clear {
+			name = pos[2]
+		}
+		wt, err := e.SetOwner(ctx, pos[0], pos[1], name)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return writeJSON(stdout, wt)
+		}
+		if wt.Owner == "" {
+			fmt.Fprintf(stdout, "%s has no owner now.\n", wt.Path)
+		} else {
+			fmt.Fprintf(stdout, "%s is owned by %s.\n", wt.Path, wt.Owner)
+		}
 		return nil
 	}
 	return usageErrorf("unknown worktree subcommand %q", args[0])

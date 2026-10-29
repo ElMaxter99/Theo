@@ -70,6 +70,14 @@ type Stack struct {
 type UpOptions struct {
 	Build    bool
 	Profiles []string
+	// Services limits Up to these services and the ones they depend on; empty
+	// means all of them.
+	Services []string
+	// ForceRecreate recreates the containers even when nothing changed. Named
+	// volumes are kept.
+	ForceRecreate bool
+	// NoDeps leaves the dependencies of Services alone.
+	NoDeps bool
 }
 
 // LogOptions are the options of Logs.
@@ -85,18 +93,25 @@ func (Compose) Up(ctx context.Context, t Target, opts UpOptions, stdout, stderr 
 	if opts.Build {
 		sub = append(sub, "--build")
 	}
-	return execx.Stream(ctx, t.Dir, stdout, stderr, "docker", t.args(opts.Profiles, sub...)...)
+	if opts.ForceRecreate {
+		sub = append(sub, "--force-recreate")
+	}
+	if opts.NoDeps {
+		sub = append(sub, "--no-deps")
+	}
+	sub = append(sub, opts.Services...)
+	return execx.StreamChange(ctx, t.Dir, stdout, stderr, "docker", t.args(opts.Profiles, sub...)...)
 }
 
 // Down stops and removes the project's containers and networks. Volumes
 // are always kept: Down never passes --volumes.
 func (Compose) Down(ctx context.Context, t Target, stdout, stderr io.Writer) error {
-	return execx.Stream(ctx, t.Dir, stdout, stderr, "docker", t.args([]string{"*"}, "down")...)
+	return execx.StreamChange(ctx, t.Dir, stdout, stderr, "docker", t.args([]string{"*"}, "down")...)
 }
 
 // Restart restarts the project's containers.
 func (Compose) Restart(ctx context.Context, t Target, stdout, stderr io.Writer) error {
-	return execx.Stream(ctx, t.Dir, stdout, stderr, "docker", t.args([]string{"*"}, "restart")...)
+	return execx.StreamChange(ctx, t.Dir, stdout, stderr, "docker", t.args([]string{"*"}, "restart")...)
 }
 
 // Logs writes the logs of the project's containers.

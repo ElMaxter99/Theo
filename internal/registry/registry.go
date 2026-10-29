@@ -23,8 +23,38 @@ type Project struct {
 	EnvFile string `json:"env_file,omitempty"` // shared by worktrees without their own .env
 	// WorktreeDir is where `theo worktree add` creates worktrees for the
 	// project. Empty means Theo's own directory (see engine.WorktreeDir).
-	WorktreeDir string    `json:"worktree_dir,omitempty"`
-	AddedAt     time.Time `json:"added_at"`
+	WorktreeDir string `json:"worktree_dir,omitempty"`
+	// CopyOnAdd lists root-relative file patterns that `theo worktree add
+	// --copy` copies from the main worktree into a new workspace. Empty
+	// means nothing is copied.
+	CopyOnAdd []string `json:"copy_on_add,omitempty"`
+	// Workspaces are the workspaces Theo records beyond what Git lists: the
+	// independent clones it created, and the owner labels of any workspace.
+	Workspaces []Workspace `json:"workspaces,omitempty"`
+	// ComposeFiles are the Compose files of the project, relative to the
+	// root of each worktree and in the order Compose merges them (like
+	// repeated -f flags). Empty means: let Compose find them.
+	ComposeFiles []string  `json:"compose_files,omitempty"`
+	AddedAt      time.Time `json:"added_at"`
+}
+
+// Workspace kinds kept in the registry.
+const (
+	KindClone = "clone"
+	// KindWorktree and KindMain only appear in records that carry an owner
+	// label for a workspace that Git lists itself.
+	KindWorktree = "worktree"
+	KindMain     = "main"
+)
+
+// Workspace is what Theo records about one workspace of a project. A clone
+// exists only through this record (Git does not know it); for the others the
+// record only holds the owner label.
+type Workspace struct {
+	Path      string    `json:"path"`
+	Kind      string    `json:"kind"`
+	Owner     string    `json:"owner,omitempty"`
+	CreatedAt time.Time `json:"created_at,omitzero"`
 }
 
 type document struct {

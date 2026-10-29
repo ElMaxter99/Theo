@@ -1,0 +1,53 @@
+name: theo-demo
+
+services:
+  web:
+    build:
+      context: ./app
+      args:
+        BRANCH: ${BRANCH:-unknown}
+    ports:
+      - "8080:8080"
+    environment:
+      GREETING: ${GREETING:?set GREETING in .env}
+      INSTANCE_NAME: ${INSTANCE_NAME:-main}
+      REDIS_ADDR: cache:6379
+    volumes:
+      - ./config:/etc/demo:ro
+      - data:/data
+    depends_on:
+      cache:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+
+  cache:
+    image: redis:7-alpine
+    container_name: cache
+    volumes:
+      - cachedata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+
+  worker:
+    build:
+      context: ./app
+      args:
+        BRANCH: ${BRANCH:-unknown}
+    command: ["worker"]
+    profiles: ["worker"]
+    environment:
+      REDIS_ADDR: cache:6379
+    depends_on:
+      web:
+        condition: service_healthy
+
+volumes:
+  data:
+  cachedata:

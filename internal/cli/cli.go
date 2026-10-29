@@ -11,11 +11,13 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/ElMaxter99/Theo/internal/compose"
 	"github.com/ElMaxter99/Theo/internal/engine"
+	"github.com/ElMaxter99/Theo/internal/execx"
 )
 
 // Exit codes returned by Run.
@@ -25,7 +27,7 @@ const (
 	ExitUsage = 2
 )
 
-const usage = `Theo manages development projects and isolated environments based on Git and Docker Compose.
+const usageBase = `Theo manages development projects and isolated environments based on Git and Docker Compose.
 
 Usage:
   theo <command> [arguments]
@@ -76,15 +78,19 @@ Running a worktree (each worktree runs as its own Compose project):
   volumes <project> [-w <w>] [--json]               Volumes of the instance: in use, or kept with
                                                     their data after down; external ones are listed
                                                     and never touched
-  volumes purge <project> -w <w> --confirm <compose-project>
+  volumes purge <project> -w <w> --confirm <compose-project> [--backup] [--out <dir>]
                                                     Delete the instance's data. Separate from down,
                                                     refused while it has containers
   env set <project> [-w <w>] NAME=VALUE [--secret] [--service <s>]
   env unset <project> [-w <w>] NAME
   env list <project> [-w <w>] [--show-secrets] [--json]
                                                     Variables for this instance only, applied at
-                                                    up through a generated file; your files and
-                                                    .env are not changed. Secrets are masked
+                                                    up through a generated Compose file (the
+                                                    containers' environment: wins over env_file)
+                                                    and env file (${VAR} in your files; a variable
+                                                    exported in your shell still wins there). Your
+                                                    files and .env are not changed. Secrets are
+                                                    masked. See docs/cli/env-precedence.md
   instance set <project> [-w <w>] --neutralize-container-names | --keep-container-names
   instance show <project> [-w <w>] [--json]         Settings Theo keeps for the instance
   instance config <project> [-w <w>] [--auto-ports] [--profile <p>]
@@ -96,7 +102,7 @@ Running a worktree (each worktree runs as its own Compose project):
                                                     they are free, and their URLs
   These commands also accept --env-file. Without -w they use the main worktree,
   except ps, which then shows every worktree.
-
+%MORE%
   version                                      Print the Theo version
   help                                         Show this help
 
@@ -110,18 +116,29 @@ var errUsage = errors.New("usage")
 // writing normal output to stdout and errors to stderr, and returns the
 // process exit code.
 func Run(args []string, stdout, stderr io.Writer) int {
+	// Global flags come before the command: `theo --explain up app`.
+	if len(args) > 0 && args[0] == "--explain" {
+		args = args[1:]
+		done := execx.Explain(stdout)
+		defer done()
+		stdout = io.Discard // the commands are listed; what they would have printed is not
+	}
 	if len(args) == 0 {
-		fmt.Fprint(stderr, usage)
+		fmt.Fprint(stderr, helpText())
 		return ExitUsage
 	}
 
 	var err error
 	switch args[0] {
 	case "version", "--version":
-		fmt.Fprintf(stdout, "theo %s\n", engine.Version)
+		if len(args) == 2 && args[1] == "--json" {
+			writeJSON(stdout, map[string]string{"version": engine.Version})
+			return ExitOK
+		}
+		fmt.Fprintln(stdout, engine.VersionLine())
 		return ExitOK
 	case "help", "--help", "-h":
-		fmt.Fprint(stdout, usage)
+		fmt.Fprint(stdout, helpText())
 		return ExitOK
 	case "project":
 		err = withEngine(func(e *engine.Engine) error { return runProject(e, args[1:], stdout) })
@@ -140,7 +157,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "reconcile":
 		err = withEngine(func(e *engine.Engine) error { return runReconcile(e, args[1:], stdout) })
 	case "volumes":
-		err = withEngine(func(e *engine.Engine) error { return runVolumes(e, args[1:], stdout) })
+		err = withEngine(func(e *engine.Engine) error { return runVolumes(e, args[1:], stdout, stderr) })
 	case "env":
 		err = withEngine(func(e *engine.Engine) error { return runEnv(e, args[1:], stdout) })
 	case "instance":
@@ -150,17 +167,24 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "ports":
 		err = withEngine(func(e *engine.Engine) error { return runPorts(e, args[1:], stdout) })
 	default:
-		err = usageErrorf("unknown command %q", args[0])
+		if c, ok := commands[args[0]]; ok {
+			err = withEngine(func(e *engine.Engine) error { return c(e, args[1:], stdout, stderr) })
+		} else {
+			err = usageErrorf("unknown command %q", args[0])
+		}
 	}
 
+	var exit *exitCodeError
 	switch {
 	case err == nil:
 		return ExitOK
+	case errors.As(err, &exit): // `theo exec`: the command's own exit code
+		return exit.code
 	case errors.Is(err, flag.ErrHelp):
-		fmt.Fprint(stdout, usage)
+		fmt.Fprint(stdout, helpText())
 		return ExitOK
 	case errors.Is(err, errUsage):
-		fmt.Fprintf(stderr, "theo: %s\n\n%s", strings.TrimPrefix(err.Error(), "usage: "), usage)
+		fmt.Fprintf(stderr, "theo: %s\n\n%s", strings.TrimPrefix(err.Error(), "usage: "), helpText())
 		return ExitUsage
 	default:
 		fmt.Fprintf(stderr, "theo: %s\n", err)
@@ -172,6 +196,9 @@ func withEngine(fn func(*engine.Engine) error) error {
 	e, err := engine.Open()
 	if err != nil {
 		return err
+	}
+	if execx.Explaining() {
+		e.DiscardWrites()
 	}
 	return fn(e)
 }
@@ -203,13 +230,17 @@ func parse(fs *flag.FlagSet, args []string) ([]string, error) {
 
 func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return usageErrorf("project needs a subcommand: add, set, list or remove")
+		return usageErrorf("project needs a subcommand: add, set, show, rename, list or remove")
+	}
+	if fn, ok := projectSubcommands[args[0]]; ok {
+		return fn(e, args[1:], stdout)
 	}
 	switch args[0] {
 	case "add":
 		fs := flag.NewFlagSet("project add", flag.ContinueOnError)
 		name := fs.String("name", "", "project name")
 		envFile := fs.String("env-file", "", "env file shared by worktrees without their own .env")
+		asJSON := fs.Bool("json", false, "print JSON")
 		pos, err := parse(fs, args[1:])
 		if err != nil {
 			return err
@@ -220,6 +251,9 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 		p, err := e.AddProject(context.Background(), pos[0], *name, *envFile)
 		if err != nil {
 			return err
+		}
+		if *asJSON {
+			return writeJSON(stdout, p)
 		}
 		fmt.Fprintf(stdout, "Registered project %q at %s\n", p.Name, p.Path)
 		if p.EnvFile != "" {
@@ -233,6 +267,13 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 		noEnvFile := fs.Bool("no-env-file", false, "clear the env file; use the main worktree's .env")
 		worktreeDir := fs.String("worktree-dir", "", "directory where `theo worktree add` creates worktrees")
 		defaultDir := fs.Bool("default-worktree-dir", false, "go back to Theo's own worktree directory")
+		var copyOnAdd stringList
+		fs.Var(&copyOnAdd, "copy-on-add", "root-relative file that `worktree add --copy` copies (repeatable; replaces the list)")
+		noCopyOnAdd := fs.Bool("no-copy-on-add", false, "clear the list of files `worktree add --copy` copies")
+		var composeFiles stringList
+		fs.Var(&composeFiles, "compose-file", "Compose file, relative to each worktree (repeatable; the order matters)")
+		defaultCompose := fs.Bool("default-compose-files", false, "go back to the Compose files Compose finds by itself")
+		asJSON := fs.Bool("json", false, "print the project as JSON")
 		pos, err := parse(fs, args[1:])
 		if err != nil {
 			return err
@@ -240,10 +281,59 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 		if len(pos) != 1 {
 			return usageErrorf("project set needs exactly one project name")
 		}
+		if len(copyOnAdd) > 0 || *noCopyOnAdd {
+			if len(copyOnAdd) > 0 && *noCopyOnAdd {
+				return usageErrorf("--copy-on-add and --no-copy-on-add exclude each other")
+			}
+			p, err := e.SetCopyOnAdd(pos[0], copyOnAdd)
+			if err != nil {
+				return err
+			}
+			if len(p.CopyOnAdd) == 0 {
+				fmt.Fprintf(stdout, "Project %q: `worktree add --copy` copies nothing\n", p.Name)
+			} else {
+				fmt.Fprintf(stdout, "Project %q: `worktree add --copy` copies %s from the main worktree (only files Git does not track; existing files are never overwritten)\n", p.Name, strings.Join(p.CopyOnAdd, ", "))
+			}
+			if *envFile == "" && !*noEnvFile && *worktreeDir == "" && !*defaultDir && len(composeFiles) == 0 && !*defaultCompose {
+				return nil
+			}
+		}
 		setsEnv := *envFile != "" || *noEnvFile
 		setsDir := *worktreeDir != "" || *defaultDir
-		if *envFile != "" && *noEnvFile || *worktreeDir != "" && *defaultDir || !setsEnv && !setsDir {
-			return usageErrorf("project set needs --env-file <path> or --no-env-file, and/or --worktree-dir <path> or --default-worktree-dir")
+		setsCompose := len(composeFiles) > 0 || *defaultCompose
+		if *envFile != "" && *noEnvFile || *worktreeDir != "" && *defaultDir || len(composeFiles) > 0 && *defaultCompose || !setsEnv && !setsDir && !setsCompose && len(copyOnAdd) == 0 && !*noCopyOnAdd {
+			return usageErrorf("project set needs --env-file <path> or --no-env-file, --worktree-dir <path> or --default-worktree-dir, --compose-file <path> or --default-compose-files, and/or --copy-on-add <file> or --no-copy-on-add")
+		}
+		if setsCompose {
+			p, err := e.SetComposeFiles(context.Background(), pos[0], composeFiles)
+			if err != nil {
+				return err
+			}
+			if len(p.ComposeFiles) == 0 {
+				fmt.Fprintf(stdout, "Project %q: Compose files are the ones Compose finds by itself\n", p.Name)
+			} else {
+				fmt.Fprintf(stdout, "Project %q: Compose files are %s (in this order, relative to each worktree)\n", p.Name, strings.Join(p.ComposeFiles, ", "))
+			}
+			if !setsEnv && !setsDir {
+				return nil
+			}
+		}
+		if *asJSON {
+			if setsDir {
+				if err := e.SetWorktreeDir(pos[0], *worktreeDir); err != nil {
+					return err
+				}
+			}
+			if setsEnv {
+				if _, err := e.SetEnvFile(pos[0], *envFile); err != nil {
+					return err
+				}
+			}
+			p, err := e.Project(pos[0])
+			if err != nil {
+				return err
+			}
+			return writeJSON(stdout, p)
 		}
 		if setsDir {
 			if err := e.SetWorktreeDir(pos[0], *worktreeDir); err != nil {
@@ -301,22 +391,6 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 		}
 		return tw.Flush()
 
-	case "remove":
-		fs := flag.NewFlagSet("project remove", flag.ContinueOnError)
-		pos, err := parse(fs, args[1:])
-		if err != nil {
-			return err
-		}
-		if len(pos) != 1 {
-			return usageErrorf("project remove needs exactly one project name")
-		}
-		p, err := e.RemoveProject(pos[0])
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(stdout, "Removed project %q from the registry. Its files, containers and volumes were not touched (%s).\n", p.Name, p.Path)
-		return nil
-
 	default:
 		return usageErrorf("unknown project subcommand %q", args[0])
 	}
@@ -325,6 +399,7 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 func runWorktrees(e *engine.Engine, args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("worktrees", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "print JSON")
+	owner := fs.String("owner", "", "only the workspaces owned by this name")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -336,13 +411,29 @@ func runWorktrees(e *engine.Engine, args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if *owner != "" {
+		var kept []engine.Worktree
+		for _, wt := range list {
+			if wt.Owner == *owner {
+				kept = append(kept, wt)
+			}
+		}
+		list = kept
+	}
 	if *asJSON {
+		if list == nil {
+			list = []engine.Worktree{}
+		}
 		return writeJSON(stdout, list)
 	}
 	tw := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "BRANCH\tCHANGES\tPATH")
+	fmt.Fprintln(tw, "BRANCH\tKIND\tOWNER\tCHANGES\tPATH")
 	for _, wt := range list {
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", worktreeRef(wt), worktreeState(wt), wt.Path)
+		who := wt.Owner
+		if who == "" {
+			who = "-"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", worktreeRef(wt), wt.Kind, who, worktreeState(wt), wt.Path)
 	}
 	return tw.Flush()
 }
@@ -383,8 +474,9 @@ func runServices(e *engine.Engine, args []string, stdout io.Writer) error {
 	asJSON := fs.Bool("json", false, "print JSON")
 	worktree := fs.String("worktree", "", "branch, directory name or path of the worktree")
 	fs.StringVar(worktree, "w", "", "shorthand for --worktree")
-	var envFiles stringList
+	var envFiles, composeFiles stringList
 	fs.Var(&envFiles, "env-file", "env file to use instead of the worktree's .env (repeatable)")
+	fs.Var(&composeFiles, "compose-file", "Compose file to use instead of the project's, relative to the worktree (repeatable)")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -392,7 +484,7 @@ func runServices(e *engine.Engine, args []string, stdout io.Writer) error {
 	if len(pos) != 1 {
 		return usageErrorf("services needs exactly one project name")
 	}
-	res, err := e.Services(context.Background(), pos[0], *worktree, envFiles)
+	res, err := e.ServicesFor(context.Background(), pos[0], *worktree, engine.InstanceOptions{EnvFiles: envFiles, ComposeFiles: composeFiles})
 	if err != nil {
 		return err
 	}
@@ -409,6 +501,9 @@ func runServices(e *engine.Engine, args []string, stdout io.Writer) error {
 		env = res.EnvFile.Path + " (" + envSourceLabel[res.EnvFile.Source] + ")"
 	}
 	fmt.Fprintf(stdout, "Project  %s (compose project %q)\nWorktree %s\nEnv file %s\n", res.Project, res.Compose, where, env)
+	if len(res.ComposeFiles) > 0 {
+		fmt.Fprintf(stdout, "Compose  %s (%s)\n", strings.Join(mapEach(res.ComposeFiles, func(f string) string { return relative(res.Workspace, f) }), ", "), res.ComposeFilesSource)
+	}
 	if len(res.Services) == 0 {
 		fmt.Fprintln(stdout, "\nNo services.")
 		return nil
@@ -512,6 +607,9 @@ func relative(base, path string) string {
 }
 
 func writeJSON(w io.Writer, v any) error {
+	if rv := reflect.ValueOf(v); rv.Kind() == reflect.Slice && rv.IsNil() {
+		v = reflect.MakeSlice(rv.Type(), 0, 0).Interface() // an empty list, not null
+	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)

@@ -2,9 +2,7 @@ package engine
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -70,6 +68,7 @@ type PortPlan struct {
 	Overlay  string        `json:"overlay,omitempty"` // generated Compose file for the reassigned ports
 
 	changed map[string][]compose.Port // services whose ports are rewritten, with their complete list
+	auto    bool                      // ports were reassigned automatically (asked for, or remembered)
 }
 
 // Conflicts returns the mappings that ask for a port that is taken.
@@ -100,11 +99,25 @@ func (e *Engine) PlanPorts(ctx context.Context, inst *Instance, profiles []strin
 }
 
 func (e *Engine) planPorts(ctx context.Context, inst *Instance, profiles []string, auto bool) (*PortPlan, ports.State, error) {
+	// An instance that was started with --auto-ports keeps doing it.
+	if cfg, err := e.Settings(inst); err == nil && cfg.AutoPorts {
+		auto = true
+	}
+	profiles = mergeProfiles(inst.Profiles, profiles)
+	profiles = append(append([]string(nil), profiles...), composeProfiles(inst)...) // COMPOSE_PROFILES
 	state, err := e.portStore.Load()
 	if err != nil {
 		return nil, nil, err
 	}
 	saved := state[inst.Workspace]
+	// Services this instance gets from the shared ones do not start here, so
+	// their ports are not its business.
+	skip := map[string]bool{}
+	if cfg, err := e.Settings(inst); err == nil {
+		for _, s := range cfg.Shared {
+			skip[s] = true
+		}
+	}
 
 	// Host ports published by this instance's own containers are not
 	// conflicts. Without a Docker daemon there are none to find.
@@ -133,7 +146,7 @@ func (e *Engine) planPorts(ctx context.Context, inst *Instance, profiles []strin
 		}
 	}
 
-	plan := &PortPlan{}
+	plan := &PortPlan{Mappings: []PortMapping{}, auto: auto}
 	used := map[string]bool{}
 	next := ports.State{}
 	changed := map[string][]compose.Port{} // services whose ports are rewritten
@@ -151,7 +164,7 @@ func (e *Engine) planPorts(ctx context.Context, inst *Instance, profiles []strin
 
 	for _, name := range compose.SortedKeys(inst.config.Services) {
 		svc := inst.config.Services[name]
-		if !startsWith(svc, profiles) {
+		if skip[name] || !startsWith(svc, profiles) || sharesNetwork(svc) {
 			continue
 		}
 		effective := make([]compose.Port, len(svc.Ports))
@@ -223,6 +236,9 @@ func (e *Engine) planPorts(ctx context.Context, inst *Instance, profiles []strin
 		out[inst.Workspace] = saved
 	}
 	if len(changed) > 0 {
+		if err := e.requireOverlayCompose(ctx); err != nil {
+			return nil, nil, err
+		}
 		plan.changed = changed
 		plan.Overlay = string(compose.Overlay{Ports: changed}.Render())
 	}
@@ -249,26 +265,6 @@ func checkEffective(plan *PortPlan, cfg *compose.Project) error {
 	return nil
 }
 
-var envComposeFile = regexp.MustCompile(`(?m)^\s*(?:export\s+)?COMPOSE_FILE\s*=`)
-
-// baseComposeFiles returns the Compose files Compose would load for the
-// instance, which --auto-ports must name explicitly to add its own.
-func (e *Engine) baseComposeFiles(inst *Instance) ([]string, error) {
-	if os.Getenv("COMPOSE_FILE") != "" {
-		return nil, errors.New("--auto-ports does not support COMPOSE_FILE yet; unset it or free the ports by hand")
-	}
-	for _, f := range inst.envFiles {
-		if data, err := os.ReadFile(f); err == nil && envComposeFile.Match(data) {
-			return nil, fmt.Errorf("--auto-ports does not support COMPOSE_FILE (set in %s) yet", f)
-		}
-	}
-	files := e.baseFiles(inst.Workspace)
-	if len(files) == 0 {
-		return nil, fmt.Errorf("--auto-ports needs a compose.yaml (or docker-compose.yml) in %s", inst.Workspace)
-	}
-	return files, nil
-}
-
 // nextFree returns the first available port after from, or 0.
 func (e *Engine) nextFree(hostIP string, from int, proto string, available func(string, int, string) bool) int {
 	for p := from + 1; p <= from+maxPortSearch && p <= 65535; p++ {
@@ -293,6 +289,15 @@ func startsWith(s compose.Service, enabled []string) bool {
 		}
 	}
 	return false
+}
+
+// sharesNetwork reports whether a service uses the network of the host or of
+// another container (network_mode host, service:x, container:x, none): its
+// ports are not published through Docker, so Theo neither plans nor rewrites
+// them, and never gives such a service ports or networks of its own.
+func sharesNetwork(s compose.Service) bool {
+	m := s.NetworkMode
+	return m == "host" || m == "none" || strings.HasPrefix(m, "service:") || strings.HasPrefix(m, "container:")
 }
 
 func orTCP(proto string) string {

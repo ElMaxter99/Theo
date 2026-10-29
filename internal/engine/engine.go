@@ -60,6 +60,8 @@ type Compose interface {
 	Volumes(ctx context.Context, project string) ([]compose.DockerVolume, error)
 	VolumeUsers(ctx context.Context, volume string) ([]string, error)
 	RemoveVolume(ctx context.Context, volume string) error
+	EnsureNetwork(ctx context.Context, name string) (bool, error)
+	RemoveNetwork(ctx context.Context, name string) error
 }
 
 // Engine is the entry point to Theo's operations.
@@ -74,6 +76,7 @@ type Engine struct {
 	portFree  func(hostIP string, port int, proto string) bool
 	dataDir   string // where generated files are kept; empty if none
 	baseFiles func(dir string) []string
+	renamers  []ProjectRenamer // extra stores to migrate on `project rename`
 }
 
 // New returns an engine that uses the given store and adapters.
@@ -244,6 +247,10 @@ func (e *Engine) RemoveProject(name string) (registry.Project, error) {
 type Worktree struct {
 	git.Worktree
 	Dirty bool `json:"dirty"`
+	// Kind is "main", "worktree" (linked) or "clone" (independent clone).
+	Kind string `json:"kind"`
+	// Owner is the label set with --owner or `theo worktree owner`, if any.
+	Owner string `json:"owner,omitempty"`
 }
 
 // Worktrees lists the worktrees of a project, the main one first.
@@ -252,13 +259,14 @@ func (e *Engine) Worktrees(ctx context.Context, project string) ([]Worktree, err
 	if err != nil {
 		return nil, err
 	}
-	list, err := e.git.Worktrees(ctx, p.Path)
+	list, err := e.worktreeList(ctx, p)
 	if err != nil {
 		return nil, err
 	}
 	result := make([]Worktree, len(list))
 	for i, wt := range list {
 		result[i].Worktree = wt
+		result[i].Kind, result[i].Owner = workspaceKind(p, list, wt.Path), workspaceOwner(p, wt.Path)
 		if wt.Bare || wt.Prunable {
 			continue
 		}
@@ -271,12 +279,16 @@ func (e *Engine) Worktrees(ctx context.Context, project string) ([]Worktree, err
 
 // Services is the resolved Compose configuration of one workspace.
 type Services struct {
-	Project   string    `json:"project"`
-	Workspace string    `json:"workspace"`
-	Branch    string    `json:"branch,omitempty"`
-	Compose   string    `json:"compose_project"`
-	EnvFile   EnvFile   `json:"env_file"`
-	Services  []Service `json:"services"`
+	Project   string  `json:"project"`
+	Workspace string  `json:"workspace"`
+	Branch    string  `json:"branch,omitempty"`
+	Compose   string  `json:"compose_project"`
+	EnvFile   EnvFile `json:"env_file"`
+	// ComposeFiles are set when the files were chosen (flag, project
+	// setting or COMPOSE_FILE) instead of found by Compose.
+	ComposeFiles       []string  `json:"compose_files,omitempty"`
+	ComposeFilesSource string    `json:"compose_files_source,omitempty"`
+	Services           []Service `json:"services"`
 }
 
 // EnvFile is the env file docker compose used and where it came from.
@@ -322,12 +334,17 @@ type Mount struct {
 // worktrees, which Git creates without untracked files, share the main
 // worktree's .env unless they have their own.
 func (e *Engine) Services(ctx context.Context, project, worktree string, envFiles []string) (*Services, error) {
-	inst, cfg, err := e.instance(ctx, project, worktree, envFiles)
+	return e.services(ctx, project, worktree, InstanceOptions{EnvFiles: envFiles})
+}
+
+func (e *Engine) services(ctx context.Context, project, worktree string, opts InstanceOptions) (*Services, error) {
+	inst, cfg, err := e.resolveInstance(ctx, project, worktree, opts)
 	if err != nil {
 		return nil, err
 	}
 	wt := inst.worktree
-	result := &Services{Project: inst.Project, Workspace: inst.Workspace, Branch: inst.Branch, Compose: inst.Compose, EnvFile: inst.EnvFile}
+	result := &Services{Project: inst.Project, Workspace: inst.Workspace, Branch: inst.Branch, Compose: inst.Compose, EnvFile: inst.EnvFile,
+		ComposeFiles: inst.ComposeFiles, ComposeFilesSource: inst.ComposeFilesSource, Services: []Service{}}
 	for _, name := range compose.SortedKeys(cfg.Services) {
 		s := cfg.Services[name]
 		svc := Service{
@@ -439,10 +456,21 @@ func validateName(name string) error {
 // samePath compares two cleaned absolute paths, ignoring case on Windows.
 func samePath(a, b string) bool {
 	a, b = filepath.Clean(a), filepath.Clean(b)
-	if runtime.GOOS == "windows" {
-		return strings.EqualFold(a, b)
+	equal := func(x, y string) bool {
+		if runtime.GOOS == "windows" {
+			return strings.EqualFold(x, y)
+		}
+		return x == y
 	}
-	return a == b
+	if equal(a, b) {
+		return true
+	}
+	// The same directory through a symbolic link (macOS keeps /var/folders
+	// as /private/var/folders): Git reports the real path, the user may have
+	// typed the other one.
+	ra, errA := filepath.EvalSymlinks(a)
+	rb, errB := filepath.EvalSymlinks(b)
+	return errA == nil && errB == nil && equal(ra, rb)
 }
 
 // isInside reports whether path is base or a path below it.

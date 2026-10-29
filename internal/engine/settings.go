@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/ElMaxter99/Theo/internal/compose"
+	"github.com/ElMaxter99/Theo/internal/execx"
 	"github.com/ElMaxter99/Theo/internal/instances"
 )
 
@@ -22,6 +23,8 @@ type SettingsStore interface {
 	Save(instances.State) error
 	Append(instances.Event) error
 	Events() ([]instances.Event, error)
+	LoadShared() (instances.SharedState, error)
+	SaveShared(instances.SharedState) error
 }
 
 // memSettings keeps settings and history in memory, for engines that are not
@@ -29,7 +32,17 @@ type SettingsStore interface {
 type memSettings struct {
 	state  instances.State
 	events []instances.Event
+	shared instances.SharedState
 }
+
+func (m *memSettings) LoadShared() (instances.SharedState, error) {
+	out := instances.SharedState{}
+	for k, v := range m.shared {
+		out[k] = v
+	}
+	return out, nil
+}
+func (m *memSettings) SaveShared(s instances.SharedState) error { m.shared = s; return nil }
 
 func (m *memSettings) Load() (instances.State, error) {
 	out := instances.State{}
@@ -106,6 +119,16 @@ func (e *Engine) UnsetEnv(inst *Instance, name string) (bool, error) {
 	return found, err
 }
 
+// SetAutoPorts sets whether the instance keeps reassigning host ports that
+// are taken. `theo up --auto-ports` turns it on; it stays on until turned off,
+// so the instance keeps its addresses between restarts (FR-063).
+func (e *Engine) SetAutoPorts(inst *Instance, on bool) error {
+	return e.updateSettings(inst, func(c *instances.Config) error {
+		c.AutoPorts = on
+		return nil
+	})
+}
+
 // SetNeutralizeContainerNames sets whether the instance removes fixed
 // container_name settings from the services that have one.
 func (e *Engine) SetNeutralizeContainerNames(inst *Instance, on bool) error {
@@ -152,6 +175,7 @@ func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []s
 	if err != nil {
 		return nil, err
 	}
+	auto = plan.auto
 	settings, err := e.Settings(inst)
 	if err != nil {
 		return nil, err
@@ -183,7 +207,11 @@ func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []s
 		}
 	}
 
-	inst.files, inst.instanceEnv, inst.generated = nil, "", nil
+	if err := e.addSharedConsumer(inst, settings, &overlay); err != nil {
+		return nil, err
+	}
+
+	inst.files, inst.instanceEnv, inst.generated = inst.selected, "", nil
 	overlayPath, envPath := e.instanceFile(inst, ".yaml"), e.instanceFile(inst, ".env")
 	if overlay.Empty() && len(env) == 0 {
 		if auto {
@@ -191,58 +219,89 @@ func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []s
 				return nil, err
 			}
 		}
-		if e.dataDir != "" { // stale files of settings that were removed
+		if e.dataDir != "" && !execx.Explaining() { // stale files of settings that were removed
 			os.Remove(overlayPath)
 			os.Remove(envPath)
 		}
 		return plan, nil
 	}
 
-	base, err := e.baseComposeFiles(inst)
+	cfg, err := e.writeOverlay(ctx, inst, overlay, env, settings)
 	if err != nil {
 		return nil, err
 	}
-	if e.dataDir == "" {
-		return nil, errors.New("no data directory to keep the generated Compose file")
-	}
-	if err := os.MkdirAll(filepath.Dir(overlayPath), 0o755); err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(overlayPath, overlay.Render(), 0o600); err != nil {
-		return nil, err
-	}
-	instanceEnv := ""
-	if len(env) > 0 {
-		if err := os.WriteFile(envPath, renderEnvFile(env), 0o600); err != nil {
-			return nil, err
+	if cfg != nil { // nil when explaining: nothing was resolved
+		if err := checkEffective(plan, cfg); err != nil {
+			return nil, fmt.Errorf("%w (generated file %s)", err, inst.generated[0])
 		}
-		instanceEnv = envPath
-	} else {
-		os.Remove(envPath)
-	}
-
-	t := inst.target()
-	t.Files = append(base, overlayPath)
-	if instanceEnv != "" {
-		t.EnvFiles = append(append([]string(nil), t.EnvFiles...), instanceEnv)
-	}
-	cfg, err := e.compose.ConfigFor(ctx, t)
-	if err != nil {
-		return nil, fmt.Errorf("the configuration with this instance's settings is not valid (generated file %s): %s", overlayPath, MaskSecrets(err.Error(), settings))
-	}
-	if err := checkEffective(plan, cfg); err != nil {
-		return nil, fmt.Errorf("%w (generated file %s)", err, overlayPath)
 	}
 	if auto {
 		if err := e.portStore.Save(state); err != nil {
 			return nil, err
 		}
 	}
+	return plan, nil
+}
+
+// writeOverlay writes the generated Compose file and env file of an
+// instance, checks with `docker compose config` that the result is valid,
+// and makes the instance run with them. It returns the resolved
+// configuration. secrets are masked in errors.
+func (e *Engine) writeOverlay(ctx context.Context, inst *Instance, overlay compose.Overlay, env map[string]string, secrets instances.Config) (*compose.Project, error) {
+	if err := e.requireOverlayCompose(ctx); err != nil {
+		return nil, err
+	}
+	base, err := e.baseComposeFiles(ctx, inst)
+	if err != nil {
+		return nil, err
+	}
+	if e.dataDir == "" {
+		return nil, errors.New("no data directory to keep the generated Compose file")
+	}
+	overlayPath, envPath := e.instanceFile(inst, ".yaml"), e.instanceFile(inst, ".env")
+	instanceEnv := ""
+	if len(env) > 0 {
+		instanceEnv = envPath
+	}
+	// --explain writes nothing, not even Theo's generated files: it lists the
+	// commands with the files they would use, and skips the validation that
+	// needs those files to exist.
+	explaining := execx.Explaining()
+	if !explaining {
+		if err := os.MkdirAll(filepath.Dir(overlayPath), 0o755); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(overlayPath, overlay.Render(), 0o600); err != nil {
+			return nil, err
+		}
+		if instanceEnv != "" {
+			if err := os.WriteFile(envPath, renderEnvFile(env), 0o600); err != nil {
+				return nil, err
+			}
+		} else {
+			os.Remove(envPath)
+		}
+	}
+
+	t := inst.target()
+	t.Files = append(base, overlayPath)
+	t.EnvFiles = withInstanceEnv(inst.Workspace, inst.envFiles, instanceEnv)
+	var cfg *compose.Project
+	if !explaining {
+		var err error
+		cfg, err = e.compose.ConfigFor(ctx, t)
+		if err != nil {
+			return nil, fmt.Errorf("the configuration with this instance's settings is not valid (generated file %s): %s", overlayPath, MaskSecrets(err.Error(), secrets))
+		}
+		if err := checkOverlay(overlay, cfg); err != nil {
+			return nil, fmt.Errorf("%w (generated file %s)", err, overlayPath)
+		}
+	}
 	inst.files, inst.instanceEnv, inst.generated = t.Files, instanceEnv, []string{overlayPath}
 	if instanceEnv != "" {
 		inst.generated = append(inst.generated, instanceEnv)
 	}
-	return plan, nil
+	return cfg, nil
 }
 
 // instanceFile is the path of a file Theo generates for an instance.
@@ -319,7 +378,7 @@ func (e *Engine) History(ctx context.Context, project, worktree string, limit in
 	}
 	var path string
 	if worktree != "" {
-		list, err := e.git.Worktrees(ctx, p.Path)
+		list, err := e.worktreeList(ctx, p)
 		if err != nil {
 			return nil, err
 		}

@@ -1,0 +1,1 @@
+This note is read from the bind mount ./config.

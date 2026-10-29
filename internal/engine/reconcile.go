@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/ElMaxter99/Theo/internal/compose"
+	"github.com/ElMaxter99/Theo/internal/execx"
 	"github.com/ElMaxter99/Theo/internal/git"
 	"github.com/ElMaxter99/Theo/internal/instances"
 	"github.com/ElMaxter99/Theo/internal/registry"
@@ -16,15 +17,16 @@ import (
 
 // Finding kinds.
 const (
-	FindProjectMissing  = "project missing"      // the registered path is gone or is not a Git repository
-	FindWorktreeMissing = "worktree missing"     // Git lists a worktree whose directory is gone
-	FindForeignStack    = "started outside Theo" // a Compose project in a worktree, named differently from the instance Theo would use
-	FindStopped         = "containers removed"   // Theo's last operation was `up` but the instance has no containers now
-	FindOrphanStack     = "orphan containers"    // containers of an instance whose worktree no longer exists
-	FindOrphanVolumes   = "orphan volumes"       // volumes of an instance whose worktree no longer exists
-	FindStaleSettings   = "stale settings"       // Theo's settings for a worktree that no longer exists
-	FindStalePorts      = "stale ports"          // ports reserved for a worktree that no longer exists
-	FindStaleFiles      = "stale files"          // files Theo generated for a worktree that no longer exists
+	FindProjectMissing  = "project missing"        // the registered path is gone or is not a Git repository
+	FindWorktreeMissing = "worktree missing"       // Git lists a worktree whose directory is gone
+	FindForeignStack    = "started outside Theo"   // a Compose project in a worktree, named differently from the instance Theo would use
+	FindStopped         = "containers removed"     // Theo's last operation was `up` but the instance has no containers now
+	FindOrphanStack     = "orphan containers"      // containers of an instance whose worktree no longer exists
+	FindOrphanVolumes   = "orphan volumes"         // volumes of an instance whose worktree no longer exists
+	FindStaleSettings   = "stale settings"         // Theo's settings for a worktree that no longer exists
+	FindStalePorts      = "stale ports"            // ports reserved for a worktree that no longer exists
+	FindStaleFiles      = "stale files"            // files Theo generated for a worktree that no longer exists
+	FindSharedBroken    = "shared services broken" // the worktree that defines them is gone, or an instance uses one that is no longer shared
 )
 
 // Finding is a difference between what Theo recorded and what exists.
@@ -32,8 +34,11 @@ type Finding struct {
 	Kind    string `json:"kind"`
 	Project string `json:"project,omitempty"`
 	Subject string `json:"subject"`
-	Detail  string `json:"detail"`
-	Fix     string `json:"fix,omitempty"` // what to do about it
+	// Worktree is the path of the worktree the finding is about, when it is
+	// about one.
+	Worktree string `json:"worktree,omitempty"`
+	Detail   string `json:"detail"`
+	Fix      string `json:"fix,omitempty"` // what to do about it
 	// Forgettable marks Theo's own records, which `reconcile --apply` can
 	// forget. Containers, volumes and worktrees are never touched.
 	Forgettable bool `json:"forgettable,omitempty"`
@@ -94,7 +99,7 @@ func (e *Engine) Reconcile(ctx context.Context, project string) (*Report, error)
 		}
 	}
 
-	report := &Report{}
+	report := &Report{Findings: []Finding{}}
 	add := func(f Finding) { report.Findings = append(report.Findings, f) }
 
 	stacks, stacksErr := e.compose.Stacks(ctx)
@@ -108,7 +113,7 @@ func (e *Engine) Reconcile(ctx context.Context, project string) (*Report, error)
 
 	live := map[string]bool{} // worktree paths that exist, of every project in scope
 	for _, p := range projects {
-		list, err := e.git.Worktrees(ctx, p.Path)
+		list, err := e.worktreeList(ctx, p)
 		if err != nil || !dirExists(p.Path) {
 			add(Finding{Kind: FindProjectMissing, Project: p.Name, Subject: p.Path,
 				Detail: "the path no longer exists or is not a Git repository",
@@ -120,8 +125,14 @@ func (e *Engine) Reconcile(ctx context.Context, project string) (*Report, error)
 				continue
 			}
 			if wt.Prunable || !dirExists(wt.Path) {
-				add(Finding{Kind: FindWorktreeMissing, Project: p.Name, Subject: wt.Path,
-					Detail: "Git still lists this worktree but its directory is gone",
+				if workspaceKind(p, list, wt.Path) == KindClone {
+					add(Finding{Kind: FindWorktreeMissing, Project: p.Name, Subject: wt.Path,
+						Detail: "Theo has a clone recorded here but its directory is gone" + ownerSuffix(p, wt.Path),
+						Fix:    fmt.Sprintf("`theo worktree remove %s %s` forgets the record", p.Name, wt.Path)})
+					continue
+				}
+				add(Finding{Kind: FindWorktreeMissing, Project: p.Name, Subject: wt.Path, Worktree: wt.Path,
+					Detail: "Git still lists this worktree but its directory is gone" + ownerSuffix(p, wt.Path),
 					Fix:    "run `git worktree prune` in " + p.Path})
 				continue
 			}
@@ -197,6 +208,10 @@ func (e *Engine) Reconcile(ctx context.Context, project string) (*Report, error)
 				Fix:    "check them, then `docker volume rm " + strings.Join(names, " ") + "` if the data is not needed. Theo never deletes them on its own"})
 		}
 	}
+	e.sharedFindings(projects, settings, add)
+	for _, check := range reconcileChecks {
+		check(ctx, e, project, add)
+	}
 	return report, nil
 }
 
@@ -214,7 +229,7 @@ func (e *Engine) checkWorktreeStacks(p registry.Project, wt git.Worktree, list [
 			if first == "" || !samePath(filepath.Dir(first), wt.Path) || s.Name == want {
 				continue
 			}
-			add(Finding{Kind: FindForeignStack, Project: p.Name, Subject: s.Name,
+			add(Finding{Kind: FindForeignStack, Project: p.Name, Subject: s.Name, Worktree: wt.Path,
 				Detail: fmt.Sprintf("Compose project %s (%s) runs from %s, but Theo uses the name %s for this worktree, so `theo ps` and `theo down` do not manage it", s.Name, s.Status, wt.Path, want),
 				Fix:    fmt.Sprintf("docker compose -p %s down, then `theo up %s -w %s`", s.Name, p.Name, wt.Branch)})
 		}
@@ -222,7 +237,7 @@ func (e *Engine) checkWorktreeStacks(p registry.Project, wt git.Worktree, list [
 	if lastCompose != "" {
 		if _, running := names[lastCompose]; !running {
 			if last := e.lastOperation(wt.Path); last == "up" {
-				add(Finding{Kind: FindStopped, Project: p.Name, Subject: lastCompose,
+				add(Finding{Kind: FindStopped, Project: p.Name, Subject: lastCompose, Worktree: wt.Path,
 					Detail: fmt.Sprintf("the last Theo operation on %s was `up`, but %s has no containers now: they were removed outside Theo", wt.Path, lastCompose),
 					Fix:    fmt.Sprintf("`theo up %s -w %s` starts it again; its volumes were kept", p.Name, wt.Branch)})
 			}
@@ -295,6 +310,9 @@ func (e *Engine) ApplyReconcile(report *Report) (int, error) {
 		case FindStalePorts:
 			delete(assigned, f.workspace)
 		case FindStaleFiles:
+			if execx.Explaining() { // --explain deletes nothing
+				break
+			}
 			if err := os.Remove(f.path); err != nil && !os.IsNotExist(err) {
 				return n, err
 			}
@@ -311,4 +329,12 @@ func (e *Engine) ApplyReconcile(report *Report) (int, error) {
 		return 0, err
 	}
 	return n, nil
+}
+
+// ownerSuffix is " (owner: x)" for a workspace that has an owner label.
+func ownerSuffix(p registry.Project, wsPath string) string {
+	if o := workspaceOwner(p, wsPath); o != "" {
+		return " (owner: " + o + ")"
+	}
+	return ""
 }
