@@ -183,7 +183,7 @@ func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []s
 		}
 	}
 
-	inst.files, inst.instanceEnv, inst.generated = nil, "", nil
+	inst.files, inst.instanceEnv, inst.generated = inst.selected, "", nil
 	overlayPath, envPath := e.instanceFile(inst, ".yaml"), e.instanceFile(inst, ".env")
 	if overlay.Empty() && len(env) == 0 {
 		if auto {

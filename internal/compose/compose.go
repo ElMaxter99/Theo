@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-
-	"github.com/ElMaxter99/Theo/internal/execx"
 )
 
 // Project is the part of the resolved Compose model that Theo uses.
@@ -75,17 +73,8 @@ type Compose struct{}
 // as `docker compose config` sees it with the user's own files and
 // environment. All profiles are enabled so that every service is listed.
 // envFiles, when given, replace the project's default .env file.
-func (Compose) Config(ctx context.Context, dir string, envFiles []string) (*Project, error) {
-	args := []string{"compose", "--profile", "*"}
-	for _, f := range envFiles {
-		args = append(args, "--env-file", f)
-	}
-	args = append(args, "config", "--format", "json")
-	out, err := execx.Run(ctx, dir, "docker", args...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseConfig(out)
+func (c Compose) Config(ctx context.Context, dir string, envFiles []string) (*Project, error) {
+	return c.ConfigFiles(ctx, dir, envFiles, nil)
 }
 
 // ParseConfig parses the output of `docker compose config --format json`.

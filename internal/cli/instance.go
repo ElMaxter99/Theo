@@ -15,14 +15,21 @@ import (
 
 // instanceFlags are the flags that select a worktree's instance.
 type instanceFlags struct {
-	worktree string
-	envFiles stringList
+	worktree     string
+	envFiles     stringList
+	composeFiles stringList
+}
+
+// options are the instance options the flags select.
+func (f *instanceFlags) options() engine.InstanceOptions {
+	return engine.InstanceOptions{EnvFiles: f.envFiles, ComposeFiles: f.composeFiles}
 }
 
 func (f *instanceFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&f.worktree, "worktree", "", "branch, directory name or path of the worktree")
 	fs.StringVar(&f.worktree, "w", "", "shorthand for --worktree")
 	fs.Var(&f.envFiles, "env-file", "env file to use instead of the usual one (repeatable)")
+	fs.Var(&f.composeFiles, "compose-file", "Compose file to use instead of the project's, relative to the worktree (repeatable; the order matters)")
 }
 
 func runInstance(e *engine.Engine, cmd string, args []string, stdout, stderr io.Writer) error {
@@ -52,7 +59,7 @@ func runInstance(e *engine.Engine, cmd string, args []string, stdout, stderr io.
 	}
 
 	ctx := context.Background()
-	inst, err := e.Instance(ctx, pos[0], sel.worktree, sel.envFiles)
+	inst, err := e.InstanceFor(ctx, pos[0], sel.worktree, sel.options())
 	if err != nil {
 		return err
 	}
@@ -116,6 +123,12 @@ func describe(w io.Writer, inst *engine.Instance) {
 		where = inst.Branch + " · " + inst.Workspace
 	}
 	fmt.Fprintf(w, "theo: %s (compose project %q)\n", where, inst.Compose)
+	if len(inst.ComposeFiles) > 0 {
+		fmt.Fprintf(w, "theo: compose files (%s): %s\n", inst.ComposeFilesSource, strings.Join(mapEach(inst.ComposeFiles, func(f string) string { return relative(inst.Workspace, f) }), ", "))
+	}
+	if len(inst.Profiles) > 0 {
+		fmt.Fprintf(w, "theo: profiles of this instance: %s\n", strings.Join(inst.Profiles, ", "))
+	}
 }
 
 func worktreeArg(inst *engine.Instance) string {
@@ -139,7 +152,7 @@ func runPS(e *engine.Engine, args []string, stdout io.Writer) error {
 	}
 	ctx := context.Background()
 
-	if sel.worktree == "" && len(sel.envFiles) == 0 {
+	if sel.worktree == "" && len(sel.envFiles) == 0 && len(sel.composeFiles) == 0 {
 		overview, err := e.Overview(ctx, pos[0])
 		if err != nil {
 			return err
@@ -166,7 +179,7 @@ func runPS(e *engine.Engine, args []string, stdout io.Writer) error {
 		return nil
 	}
 
-	inst, err := e.Instance(ctx, pos[0], sel.worktree, sel.envFiles)
+	inst, err := e.InstanceFor(ctx, pos[0], sel.worktree, sel.options())
 	if err != nil {
 		return err
 	}
@@ -235,7 +248,7 @@ func runPorts(e *engine.Engine, args []string, stdout io.Writer) error {
 		return usageErrorf("ports needs exactly one project name")
 	}
 	ctx := context.Background()
-	inst, err := e.Instance(ctx, pos[0], sel.worktree, sel.envFiles)
+	inst, err := e.InstanceFor(ctx, pos[0], sel.worktree, sel.options())
 	if err != nil {
 		return err
 	}

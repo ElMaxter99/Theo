@@ -39,7 +39,7 @@ func runVolumes(e *engine.Engine, args []string, stdout io.Writer) error {
 		return usageErrorf("%s needs exactly one project name", name)
 	}
 	ctx := context.Background()
-	inst, err := e.Instance(ctx, pos[0], sel.worktree, sel.envFiles)
+	inst, err := e.InstanceFor(ctx, pos[0], sel.worktree, sel.options())
 	if err != nil {
 		return err
 	}

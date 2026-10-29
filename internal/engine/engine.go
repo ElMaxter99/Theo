@@ -74,6 +74,7 @@ type Engine struct {
 	portFree  func(hostIP string, port int, proto string) bool
 	dataDir   string // where generated files are kept; empty if none
 	baseFiles func(dir string) []string
+	renamers  []ProjectRenamer // extra stores to migrate on `project rename`
 }
 
 // New returns an engine that uses the given store and adapters.
@@ -271,12 +272,16 @@ func (e *Engine) Worktrees(ctx context.Context, project string) ([]Worktree, err
 
 // Services is the resolved Compose configuration of one workspace.
 type Services struct {
-	Project   string    `json:"project"`
-	Workspace string    `json:"workspace"`
-	Branch    string    `json:"branch,omitempty"`
-	Compose   string    `json:"compose_project"`
-	EnvFile   EnvFile   `json:"env_file"`
-	Services  []Service `json:"services"`
+	Project   string  `json:"project"`
+	Workspace string  `json:"workspace"`
+	Branch    string  `json:"branch,omitempty"`
+	Compose   string  `json:"compose_project"`
+	EnvFile   EnvFile `json:"env_file"`
+	// ComposeFiles are set when the files were chosen (flag, project
+	// setting or COMPOSE_FILE) instead of found by Compose.
+	ComposeFiles       []string  `json:"compose_files,omitempty"`
+	ComposeFilesSource string    `json:"compose_files_source,omitempty"`
+	Services           []Service `json:"services"`
 }
 
 // EnvFile is the env file docker compose used and where it came from.
@@ -322,12 +327,17 @@ type Mount struct {
 // worktrees, which Git creates without untracked files, share the main
 // worktree's .env unless they have their own.
 func (e *Engine) Services(ctx context.Context, project, worktree string, envFiles []string) (*Services, error) {
-	inst, cfg, err := e.instance(ctx, project, worktree, envFiles)
+	return e.services(ctx, project, worktree, InstanceOptions{EnvFiles: envFiles})
+}
+
+func (e *Engine) services(ctx context.Context, project, worktree string, opts InstanceOptions) (*Services, error) {
+	inst, cfg, err := e.resolveInstance(ctx, project, worktree, opts)
 	if err != nil {
 		return nil, err
 	}
 	wt := inst.worktree
-	result := &Services{Project: inst.Project, Workspace: inst.Workspace, Branch: inst.Branch, Compose: inst.Compose, EnvFile: inst.EnvFile}
+	result := &Services{Project: inst.Project, Workspace: inst.Workspace, Branch: inst.Branch, Compose: inst.Compose, EnvFile: inst.EnvFile,
+		ComposeFiles: inst.ComposeFiles, ComposeFilesSource: inst.ComposeFilesSource}
 	for _, name := range compose.SortedKeys(cfg.Services) {
 		s := cfg.Services[name]
 		svc := Service{

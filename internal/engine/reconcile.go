@@ -197,6 +197,9 @@ func (e *Engine) Reconcile(ctx context.Context, project string) (*Report, error)
 				Fix:    "check them, then `docker volume rm " + strings.Join(names, " ") + "` if the data is not needed. Theo never deletes them on its own"})
 		}
 	}
+	for _, check := range reconcileChecks {
+		check(ctx, e, project, add)
+	}
 	return report, nil
 }
 

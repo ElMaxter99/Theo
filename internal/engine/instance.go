@@ -23,10 +23,18 @@ type Instance struct {
 	Compose   string  `json:"compose_project"`
 	Main      bool    `json:"main"` // the project's main worktree
 	EnvFile   EnvFile `json:"env_file"`
+	// ComposeFiles are the Compose files the instance uses when they were
+	// chosen rather than found by Compose (see InstanceOptions), and where
+	// the choice came from. Profiles are the Compose profiles the instance
+	// always starts with (see SetProfiles).
+	ComposeFiles       []string `json:"compose_files,omitempty"`
+	ComposeFilesSource string   `json:"compose_files_source,omitempty"`
+	Profiles           []string `json:"profiles,omitempty"`
 
 	worktree git.Worktree
 	envFiles []string
-	files    []string // Compose files, when Theo adds its own; empty otherwise
+	selected []string // chosen Compose files, absolute; empty means: let Compose find them
+	files    []string // Compose files passed to Compose: selected, plus Theo's own when it adds any
 	// instanceEnv is the generated env file with the instance's variables,
 	// read after the others; generated lists the files Theo generated.
 	instanceEnv string
@@ -46,6 +54,10 @@ func (i *Instance) target() compose.Target {
 // instance resolves the instance of a worktree and its Compose
 // configuration (see Services for how worktree and envFiles are used).
 func (e *Engine) instance(ctx context.Context, project, worktree string, envFiles []string) (*Instance, *compose.Project, error) {
+	return e.resolveInstance(ctx, project, worktree, InstanceOptions{EnvFiles: envFiles})
+}
+
+func (e *Engine) resolveInstance(ctx context.Context, project, worktree string, opts InstanceOptions) (*Instance, *compose.Project, error) {
 	p, err := e.Project(project)
 	if err != nil {
 		return nil, nil, err
@@ -65,12 +77,24 @@ func (e *Engine) instance(ctx context.Context, project, worktree string, envFile
 		return nil, nil, fmt.Errorf("worktree %s no longer exists on disk", wt.Path)
 	}
 
-	env, files, err := resolveEnvFile(p, wt, list[0], envFiles)
+	env, files, err := resolveEnvFile(p, wt, list[0], opts.EnvFiles)
 	if err != nil {
 		return nil, nil, err
 	}
-	cfg, err := e.compose.Config(ctx, wt.Path, files)
+	sel, err := e.selectComposeFiles(p, wt, env, files, opts.ComposeFiles)
 	if err != nil {
+		return nil, nil, err
+	}
+	// Compose reads the default .env from the directory of the first
+	// Compose file, so name the worktree's own .env when that is elsewhere.
+	if len(sel.files) > 0 && files == nil && env.Source == EnvFromWorktree && !samePath(filepath.Dir(sel.files[0]), wt.Path) {
+		files = []string{env.Path}
+	}
+	cfg, err := e.configWithFiles(ctx, wt.Path, files, sel.files)
+	if err != nil {
+		if len(sel.files) > 0 {
+			err = fmt.Errorf("%w\n\n(compose files, from %s: %s)", err, sel.source, strings.Join(sel.files, ", "))
+		}
 		if env.Source == EnvNone {
 			return nil, nil, fmt.Errorf("%w\n\nNo .env found in this worktree or in the main worktree. Set one for the project with `theo project set %s --env-file <path>`, or pass --env-file.", err, p.Name)
 		}
@@ -86,7 +110,15 @@ func (e *Engine) instance(ctx context.Context, project, worktree string, envFile
 		EnvFile:   env,
 		worktree:  wt,
 		envFiles:  files,
+		selected:  sel.files,
+		files:     sel.files,
 		config:    cfg,
+	}
+	if len(sel.files) > 0 {
+		inst.ComposeFiles, inst.ComposeFilesSource = sel.files, sel.source
+	}
+	if state, err := e.settings.Load(); err == nil {
+		inst.Profiles = state[wt.Path].Profiles
 	}
 	return inst, cfg, nil
 }
@@ -140,6 +172,10 @@ func (e *Engine) Instance(ctx context.Context, project, worktree string, envFile
 
 // Up creates and starts the containers of a worktree's instance.
 func (e *Engine) Up(ctx context.Context, inst *Instance, opts compose.UpOptions, stdout, stderr io.Writer) error {
+	if err := e.CheckUniqueName(ctx, inst); err != nil {
+		return err
+	}
+	opts.Profiles = mergeProfiles(inst.Profiles, opts.Profiles)
 	err := e.compose.Up(ctx, inst.target(), opts, stdout, stderr)
 	e.record(inst, "up", err)
 	return err

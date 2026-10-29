@@ -207,7 +207,10 @@ func parse(fs *flag.FlagSet, args []string) ([]string, error) {
 
 func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return usageErrorf("project needs a subcommand: add, set, list or remove")
+		return usageErrorf("project needs a subcommand: add, set, show, rename, list or remove")
+	}
+	if fn, ok := projectSubcommands[args[0]]; ok {
+		return fn(e, args[1:], stdout)
 	}
 	switch args[0] {
 	case "add":
@@ -237,6 +240,9 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 		noEnvFile := fs.Bool("no-env-file", false, "clear the env file; use the main worktree's .env")
 		worktreeDir := fs.String("worktree-dir", "", "directory where `theo worktree add` creates worktrees")
 		defaultDir := fs.Bool("default-worktree-dir", false, "go back to Theo's own worktree directory")
+		var composeFiles stringList
+		fs.Var(&composeFiles, "compose-file", "Compose file, relative to each worktree (repeatable; the order matters)")
+		defaultCompose := fs.Bool("default-compose-files", false, "go back to the Compose files Compose finds by itself")
 		pos, err := parse(fs, args[1:])
 		if err != nil {
 			return err
@@ -246,8 +252,23 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 		}
 		setsEnv := *envFile != "" || *noEnvFile
 		setsDir := *worktreeDir != "" || *defaultDir
-		if *envFile != "" && *noEnvFile || *worktreeDir != "" && *defaultDir || !setsEnv && !setsDir {
-			return usageErrorf("project set needs --env-file <path> or --no-env-file, and/or --worktree-dir <path> or --default-worktree-dir")
+		setsCompose := len(composeFiles) > 0 || *defaultCompose
+		if *envFile != "" && *noEnvFile || *worktreeDir != "" && *defaultDir || len(composeFiles) > 0 && *defaultCompose || !setsEnv && !setsDir && !setsCompose {
+			return usageErrorf("project set needs --env-file <path> or --no-env-file, and/or --worktree-dir <path> or --default-worktree-dir, and/or --compose-file <path> or --default-compose-files")
+		}
+		if setsCompose {
+			p, err := e.SetComposeFiles(context.Background(), pos[0], composeFiles)
+			if err != nil {
+				return err
+			}
+			if len(p.ComposeFiles) == 0 {
+				fmt.Fprintf(stdout, "Project %q: Compose files are the ones Compose finds by itself\n", p.Name)
+			} else {
+				fmt.Fprintf(stdout, "Project %q: Compose files are %s (in this order, relative to each worktree)\n", p.Name, strings.Join(p.ComposeFiles, ", "))
+			}
+			if !setsEnv && !setsDir {
+				return nil
+			}
 		}
 		if setsDir {
 			if err := e.SetWorktreeDir(pos[0], *worktreeDir); err != nil {
@@ -304,22 +325,6 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 			fmt.Fprintf(tw, "%s\t%s\t%s\n", p.Name, p.Path, env)
 		}
 		return tw.Flush()
-
-	case "remove":
-		fs := flag.NewFlagSet("project remove", flag.ContinueOnError)
-		pos, err := parse(fs, args[1:])
-		if err != nil {
-			return err
-		}
-		if len(pos) != 1 {
-			return usageErrorf("project remove needs exactly one project name")
-		}
-		p, err := e.RemoveProject(pos[0])
-		if err != nil {
-			return err
-		}
-		fmt.Fprintf(stdout, "Removed project %q from the registry. Its files, containers and volumes were not touched (%s).\n", p.Name, p.Path)
-		return nil
 
 	default:
 		return usageErrorf("unknown project subcommand %q", args[0])
@@ -387,8 +392,9 @@ func runServices(e *engine.Engine, args []string, stdout io.Writer) error {
 	asJSON := fs.Bool("json", false, "print JSON")
 	worktree := fs.String("worktree", "", "branch, directory name or path of the worktree")
 	fs.StringVar(worktree, "w", "", "shorthand for --worktree")
-	var envFiles stringList
+	var envFiles, composeFiles stringList
 	fs.Var(&envFiles, "env-file", "env file to use instead of the worktree's .env (repeatable)")
+	fs.Var(&composeFiles, "compose-file", "Compose file to use instead of the project's, relative to the worktree (repeatable)")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -396,7 +402,7 @@ func runServices(e *engine.Engine, args []string, stdout io.Writer) error {
 	if len(pos) != 1 {
 		return usageErrorf("services needs exactly one project name")
 	}
-	res, err := e.Services(context.Background(), pos[0], *worktree, envFiles)
+	res, err := e.ServicesFor(context.Background(), pos[0], *worktree, engine.InstanceOptions{EnvFiles: envFiles, ComposeFiles: composeFiles})
 	if err != nil {
 		return err
 	}
@@ -413,6 +419,9 @@ func runServices(e *engine.Engine, args []string, stdout io.Writer) error {
 		env = res.EnvFile.Path + " (" + envSourceLabel[res.EnvFile.Source] + ")"
 	}
 	fmt.Fprintf(stdout, "Project  %s (compose project %q)\nWorktree %s\nEnv file %s\n", res.Project, res.Compose, where, env)
+	if len(res.ComposeFiles) > 0 {
+		fmt.Fprintf(stdout, "Compose  %s (%s)\n", strings.Join(mapEach(res.ComposeFiles, func(f string) string { return relative(res.Workspace, f) }), ", "), res.ComposeFilesSource)
+	}
 	if len(res.Services) == 0 {
 		fmt.Fprintln(stdout, "\nNo services.")
 		return nil
