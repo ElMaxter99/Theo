@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/ElMaxter99/Theo/internal/compose"
+	"github.com/ElMaxter99/Theo/internal/execx"
 	"github.com/ElMaxter99/Theo/internal/git"
 	"github.com/ElMaxter99/Theo/internal/instances"
 	"github.com/ElMaxter99/Theo/internal/registry"
@@ -32,8 +33,11 @@ type Finding struct {
 	Kind    string `json:"kind"`
 	Project string `json:"project,omitempty"`
 	Subject string `json:"subject"`
-	Detail  string `json:"detail"`
-	Fix     string `json:"fix,omitempty"` // what to do about it
+	// Worktree is the path of the worktree the finding is about, when it is
+	// about one.
+	Worktree string `json:"worktree,omitempty"`
+	Detail   string `json:"detail"`
+	Fix      string `json:"fix,omitempty"` // what to do about it
 	// Forgettable marks Theo's own records, which `reconcile --apply` can
 	// forget. Containers, volumes and worktrees are never touched.
 	Forgettable bool `json:"forgettable,omitempty"`
@@ -94,7 +98,7 @@ func (e *Engine) Reconcile(ctx context.Context, project string) (*Report, error)
 		}
 	}
 
-	report := &Report{}
+	report := &Report{Findings: []Finding{}}
 	add := func(f Finding) { report.Findings = append(report.Findings, f) }
 
 	stacks, stacksErr := e.compose.Stacks(ctx)
@@ -120,7 +124,7 @@ func (e *Engine) Reconcile(ctx context.Context, project string) (*Report, error)
 				continue
 			}
 			if wt.Prunable || !dirExists(wt.Path) {
-				add(Finding{Kind: FindWorktreeMissing, Project: p.Name, Subject: wt.Path,
+				add(Finding{Kind: FindWorktreeMissing, Project: p.Name, Subject: wt.Path, Worktree: wt.Path,
 					Detail: "Git still lists this worktree but its directory is gone",
 					Fix:    "run `git worktree prune` in " + p.Path})
 				continue
@@ -214,7 +218,7 @@ func (e *Engine) checkWorktreeStacks(p registry.Project, wt git.Worktree, list [
 			if first == "" || !samePath(filepath.Dir(first), wt.Path) || s.Name == want {
 				continue
 			}
-			add(Finding{Kind: FindForeignStack, Project: p.Name, Subject: s.Name,
+			add(Finding{Kind: FindForeignStack, Project: p.Name, Subject: s.Name, Worktree: wt.Path,
 				Detail: fmt.Sprintf("Compose project %s (%s) runs from %s, but Theo uses the name %s for this worktree, so `theo ps` and `theo down` do not manage it", s.Name, s.Status, wt.Path, want),
 				Fix:    fmt.Sprintf("docker compose -p %s down, then `theo up %s -w %s`", s.Name, p.Name, wt.Branch)})
 		}
@@ -222,7 +226,7 @@ func (e *Engine) checkWorktreeStacks(p registry.Project, wt git.Worktree, list [
 	if lastCompose != "" {
 		if _, running := names[lastCompose]; !running {
 			if last := e.lastOperation(wt.Path); last == "up" {
-				add(Finding{Kind: FindStopped, Project: p.Name, Subject: lastCompose,
+				add(Finding{Kind: FindStopped, Project: p.Name, Subject: lastCompose, Worktree: wt.Path,
 					Detail: fmt.Sprintf("the last Theo operation on %s was `up`, but %s has no containers now: they were removed outside Theo", wt.Path, lastCompose),
 					Fix:    fmt.Sprintf("`theo up %s -w %s` starts it again; its volumes were kept", p.Name, wt.Branch)})
 			}
@@ -295,6 +299,9 @@ func (e *Engine) ApplyReconcile(report *Report) (int, error) {
 		case FindStalePorts:
 			delete(assigned, f.workspace)
 		case FindStaleFiles:
+			if execx.Explaining() { // --explain deletes nothing
+				break
+			}
 			if err := os.Remove(f.path); err != nil && !os.IsNotExist(err) {
 				return n, err
 			}

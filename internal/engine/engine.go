@@ -327,7 +327,7 @@ func (e *Engine) Services(ctx context.Context, project, worktree string, envFile
 		return nil, err
 	}
 	wt := inst.worktree
-	result := &Services{Project: inst.Project, Workspace: inst.Workspace, Branch: inst.Branch, Compose: inst.Compose, EnvFile: inst.EnvFile}
+	result := &Services{Project: inst.Project, Workspace: inst.Workspace, Branch: inst.Branch, Compose: inst.Compose, EnvFile: inst.EnvFile, Services: []Service{}}
 	for _, name := range compose.SortedKeys(cfg.Services) {
 		s := cfg.Services[name]
 		svc := Service{

@@ -140,6 +140,9 @@ func (e *Engine) Instance(ctx context.Context, project, worktree string, envFile
 
 // Up creates and starts the containers of a worktree's instance.
 func (e *Engine) Up(ctx context.Context, inst *Instance, opts compose.UpOptions, stdout, stderr io.Writer) error {
+	if err := inst.CheckServices(opts.Services); err != nil {
+		return err
+	}
 	err := e.compose.Up(ctx, inst.target(), opts, stdout, stderr)
 	e.record(inst, "up", err)
 	return err
@@ -197,6 +200,7 @@ func (e *Engine) Overview(ctx context.Context, project string) ([]WorktreeStacks
 	result := make([]WorktreeStacks, len(list))
 	for i, wt := range list {
 		result[i].Worktree = wt
+		result[i].Stacks = []compose.Stack{} // JSON: an empty list, not null
 	}
 	for _, s := range stacks {
 		first, _, _ := strings.Cut(s.ConfigFiles, ",")

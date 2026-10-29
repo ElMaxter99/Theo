@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/ElMaxter99/Theo/internal/compose"
+	"github.com/ElMaxter99/Theo/internal/execx"
 	"github.com/ElMaxter99/Theo/internal/instances"
 )
 
@@ -191,7 +192,7 @@ func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []s
 				return nil, err
 			}
 		}
-		if e.dataDir != "" { // stale files of settings that were removed
+		if e.dataDir != "" && !execx.Explaining() { // stale files of settings that were removed
 			os.Remove(overlayPath)
 			os.Remove(envPath)
 		}
@@ -205,20 +206,28 @@ func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []s
 	if e.dataDir == "" {
 		return nil, errors.New("no data directory to keep the generated Compose file")
 	}
-	if err := os.MkdirAll(filepath.Dir(overlayPath), 0o755); err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(overlayPath, overlay.Render(), 0o600); err != nil {
-		return nil, err
-	}
 	instanceEnv := ""
 	if len(env) > 0 {
-		if err := os.WriteFile(envPath, renderEnvFile(env), 0o600); err != nil {
+		instanceEnv = envPath
+	}
+	// --explain writes nothing, not even Theo's generated files: it lists the
+	// commands with the files they would use, and skips the validation that
+	// needs those files to exist.
+	explaining := execx.Explaining()
+	if !explaining {
+		if err := os.MkdirAll(filepath.Dir(overlayPath), 0o755); err != nil {
 			return nil, err
 		}
-		instanceEnv = envPath
-	} else {
-		os.Remove(envPath)
+		if err := os.WriteFile(overlayPath, overlay.Render(), 0o600); err != nil {
+			return nil, err
+		}
+		if instanceEnv != "" {
+			if err := os.WriteFile(envPath, renderEnvFile(env), 0o600); err != nil {
+				return nil, err
+			}
+		} else {
+			os.Remove(envPath)
+		}
 	}
 
 	t := inst.target()
@@ -226,12 +235,14 @@ func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []s
 	if instanceEnv != "" {
 		t.EnvFiles = append(append([]string(nil), t.EnvFiles...), instanceEnv)
 	}
-	cfg, err := e.compose.ConfigFor(ctx, t)
-	if err != nil {
-		return nil, fmt.Errorf("the configuration with this instance's settings is not valid (generated file %s): %s", overlayPath, MaskSecrets(err.Error(), settings))
-	}
-	if err := checkEffective(plan, cfg); err != nil {
-		return nil, fmt.Errorf("%w (generated file %s)", err, overlayPath)
+	if !explaining {
+		cfg, err := e.compose.ConfigFor(ctx, t)
+		if err != nil {
+			return nil, fmt.Errorf("the configuration with this instance's settings is not valid (generated file %s): %s", overlayPath, MaskSecrets(err.Error(), settings))
+		}
+		if err := checkEffective(plan, cfg); err != nil {
+			return nil, fmt.Errorf("%w (generated file %s)", err, overlayPath)
+		}
 	}
 	if auto {
 		if err := e.portStore.Save(state); err != nil {
