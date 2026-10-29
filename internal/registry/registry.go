@@ -18,10 +18,13 @@ const fileName = "registry.json"
 
 // Project is a registered project.
 type Project struct {
-	Name    string    `json:"name"`
-	Path    string    `json:"path"`
-	EnvFile string    `json:"env_file,omitempty"` // shared by worktrees without their own .env
-	AddedAt time.Time `json:"added_at"`
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	EnvFile string `json:"env_file,omitempty"` // shared by worktrees without their own .env
+	// WorktreeDir is where `theo worktree add` creates worktrees for the
+	// project. Empty means Theo's own directory (see engine.WorktreeDir).
+	WorktreeDir string    `json:"worktree_dir,omitempty"`
+	AddedAt     time.Time `json:"added_at"`
 }
 
 type document struct {

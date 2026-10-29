@@ -48,6 +48,23 @@ theo services my-api --worktree feature/x  # by branch, directory name or path
 theo project set my-api --env-file ~/secrets/my-api.env   # or --no-env-file
 theo services my-api -w feature/x --env-file other.env    # one-off override
 
+# Branches and worktrees. Theo never forces: a branch that is checked out in
+# another worktree is refused, and nothing is deleted without confirmation.
+theo branches my-api                                   # local and remote, and which have a worktree
+theo worktree add my-api feature/x                     # existing branch (or a single remote one)
+theo worktree add my-api fix/bug-1 --new --from main   # new branch
+theo worktree add my-api feature/x --path ~/trees/x    # choose the directory
+theo project set my-api --worktree-dir ~/trees/my-api  # default directory for this project
+# Without --path or --worktree-dir, worktrees go to <Theo data dir>/worktrees/<project>/<branch>.
+# Git does not copy ignored files such as .env: Theo says which are missing and
+# which env file the worktree will use by reference. Nothing is copied.
+theo worktree remove my-api feature/x
+# Refused while the worktree has containers (run `theo down` first) or
+# uncommitted or untracked files, which are listed. To lose them on purpose:
+theo worktree remove my-api feature/x --discard-changes --confirm <directory-name>
+# The main worktree is never removed, and neither are branches or volumes.
+# Worktrees created with plain `git worktree add` show up in `theo worktrees` too.
+
 # Run a worktree. Each worktree is its own Compose project: the main worktree
 # keeps the name Compose gives it, and linked worktrees get
 # <project>-<directory>, so their containers, networks and volumes never mix.

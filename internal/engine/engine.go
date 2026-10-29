@@ -38,6 +38,11 @@ type Git interface {
 	TopLevel(ctx context.Context, dir string) (string, error)
 	Worktrees(ctx context.Context, dir string) ([]git.Worktree, error)
 	Dirty(ctx context.Context, dir string) (bool, error)
+	Branches(ctx context.Context, dir string) ([]git.Branch, error)
+	AddWorktree(ctx context.Context, dir, path, branch string, newBranch bool, base string) error
+	RemoveWorktree(ctx context.Context, dir, path string, force bool) error
+	Changes(ctx context.Context, dir string) ([]string, error)
+	IgnoredFiles(ctx context.Context, dir, pattern string) ([]string, error)
 }
 
 // Compose reads and operates Compose projects.

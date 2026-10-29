@@ -33,12 +33,21 @@ Usage:
 Commands:
   project add <path> [--name <name>] [--env-file <f>]
                                                Register the Git repository at <path>
-  project set <name> --env-file <f> | --no-env-file
+  project set <name> --env-file <f> | --no-env-file | --worktree-dir <d> | --default-worktree-dir
                                                Set or clear the env file shared by worktrees
-                                               that have no .env of their own
+                                               that have no .env of their own, or where new
+                                               worktrees are created
   project list [--json]                        List registered projects
   project remove <name>                        Unregister a project (files and containers are kept)
   worktrees <project> [--json]                 List the worktrees of a project
+  branches <project> [--json]                  List local and remote branches and which have a worktree
+  worktree add <project> <branch> [--new [--from <base>]] [--path <dir>]
+                                               Create a worktree for a branch. Never forces:
+                                               a branch checked out elsewhere is refused
+  worktree remove <project> <worktree> [--discard-changes --confirm <dirname>]
+                                               Remove a linked worktree. Refused while it has
+                                               containers or uncommitted/untracked files; the
+                                               branch and volumes are always kept
   services <project> [--worktree <w>] [--env-file <f>] [--json]
                                                List the services docker compose resolves
                                                for the main worktree, or for <w>
@@ -96,6 +105,10 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = withEngine(func(e *engine.Engine) error { return runProject(e, args[1:], stdout) })
 	case "worktrees":
 		err = withEngine(func(e *engine.Engine) error { return runWorktrees(e, args[1:], stdout) })
+	case "branches":
+		err = withEngine(func(e *engine.Engine) error { return runBranches(e, args[1:], stdout) })
+	case "worktree":
+		err = withEngine(func(e *engine.Engine) error { return runWorktree(e, args[1:], stdout) })
 	case "services":
 		err = withEngine(func(e *engine.Engine) error { return runServices(e, args[1:], stdout) })
 	case "up", "down", "restart", "logs":
@@ -186,6 +199,8 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 		fs := flag.NewFlagSet("project set", flag.ContinueOnError)
 		envFile := fs.String("env-file", "", "env file shared by worktrees without their own .env")
 		noEnvFile := fs.Bool("no-env-file", false, "clear the env file; use the main worktree's .env")
+		worktreeDir := fs.String("worktree-dir", "", "directory where `theo worktree add` creates worktrees")
+		defaultDir := fs.Bool("default-worktree-dir", false, "go back to Theo's own worktree directory")
 		pos, err := parse(fs, args[1:])
 		if err != nil {
 			return err
@@ -193,8 +208,23 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 		if len(pos) != 1 {
 			return usageErrorf("project set needs exactly one project name")
 		}
-		if (*envFile == "") == !*noEnvFile {
-			return usageErrorf("project set needs either --env-file <path> or --no-env-file")
+		setsEnv := *envFile != "" || *noEnvFile
+		setsDir := *worktreeDir != "" || *defaultDir
+		if *envFile != "" && *noEnvFile || *worktreeDir != "" && *defaultDir || !setsEnv && !setsDir {
+			return usageErrorf("project set needs --env-file <path> or --no-env-file, and/or --worktree-dir <path> or --default-worktree-dir")
+		}
+		if setsDir {
+			if err := e.SetWorktreeDir(pos[0], *worktreeDir); err != nil {
+				return err
+			}
+			if *defaultDir {
+				fmt.Fprintf(stdout, "Project %q: new worktrees go to Theo's own directory\n", pos[0])
+			} else {
+				fmt.Fprintf(stdout, "Project %q: new worktrees go to %s\n", pos[0], *worktreeDir)
+			}
+			if !setsEnv {
+				return nil
+			}
 		}
 		p, err := e.SetEnvFile(pos[0], *envFile)
 		if err != nil {

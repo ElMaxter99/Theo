@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -32,6 +33,11 @@ type fakeGit struct {
 	worktrees []git.Worktree
 	dirty     map[string]bool
 	checked   []string
+
+	branches []git.Branch
+	changes  map[string][]string
+	ignored  []string
+	calls    []string // "add <path> <branch> new=<bool> base=<base>", "remove <path> force=<bool>"
 }
 
 func (g *fakeGit) TopLevel(_ context.Context, dir string) (string, error) {
@@ -50,6 +56,27 @@ func (g *fakeGit) Worktrees(context.Context, string) ([]git.Worktree, error) {
 func (g *fakeGit) Dirty(_ context.Context, dir string) (bool, error) {
 	g.checked = append(g.checked, dir)
 	return g.dirty[dir], nil
+}
+
+func (g *fakeGit) Branches(context.Context, string) ([]git.Branch, error) { return g.branches, nil }
+
+func (g *fakeGit) AddWorktree(_ context.Context, _, path, branch string, newBranch bool, base string) error {
+	g.calls = append(g.calls, fmt.Sprintf("add %s %s new=%v base=%s", path, branch, newBranch, base))
+	g.worktrees = append(g.worktrees, git.Worktree{Path: path, Branch: branch})
+	return nil
+}
+
+func (g *fakeGit) RemoveWorktree(_ context.Context, _, path string, force bool) error {
+	g.calls = append(g.calls, fmt.Sprintf("remove %s force=%v", path, force))
+	return nil
+}
+
+func (g *fakeGit) Changes(_ context.Context, dir string) ([]string, error) {
+	return g.changes[dir], nil
+}
+
+func (g *fakeGit) IgnoredFiles(context.Context, string, string) ([]string, error) {
+	return g.ignored, nil
 }
 
 type fakeCompose struct {
