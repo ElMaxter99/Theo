@@ -26,7 +26,7 @@ You need Git, Docker with the Compose plugin (a running daemon) and `theo` in yo
 
 Each step says what to run, what you should see, and what it proves. Outputs are abridged; paths and timings differ. Commands are given for **bash** (Linux, macOS, Git Bash) and **PowerShell** (Windows). `up --build` prints a lot of Docker build output; only its last line matters.
 
-Steps 0 to 8, 10 (without backup) and 11 to 12 are exercised by `internal/acceptance/demo_test.go` against a real daemon. `theo status`, the `theo shared` commands (step 9) and `theo volumes backup|restore|clone` come from newer commands: their expected output here describes the intended behaviour, so compare it with `theo help` and the pages in `docs/cli/`.
+Steps 0 to 12 are exercised against a real Docker daemon by `internal/acceptance/demo_test.go` and `demo_shared_test.go` (the commands and flags in this guide are the ones those tests run). The outputs shown are what to expect; if something differs on your machine, `theo doctor` checks your Git and Docker setup first.
 
 A real `.env` is never committed. `.env.example` is the template; the real file lives only in the main worktree and the other worktrees use it by reference.
 
@@ -287,7 +287,15 @@ Expect your `up` operations with result (`ok` or the error of the failed ones), 
 
 ## 9. Share the cache between instances
 
-Until now each instance had its own redis. Share one:
+Until now each instance had its own redis. Stop both instances first, so no copy of the cache is left running, then share one:
+
+```sh
+theo down theo-demo
+```
+
+```sh
+theo down theo-demo -w feature/x
+```
 
 ```sh
 theo shared add theo-demo cache
@@ -297,7 +305,7 @@ theo shared add theo-demo cache
 theo shared up theo-demo
 ```
 
-Expect the shared `cache` to start once, outside both instances. Then point both instances at it:
+Expect the shared `cache` to start once, in its own Compose project (`theo-demo-shared`), outside both instances and without a host port. Then point both instances at it:
 
 ```sh
 theo shared use theo-demo -w main cache
@@ -359,21 +367,41 @@ theo volumes purge theo-demo -w feature/x --confirm theo-demo-feature-x
 
 Expect `Deleted 2 volume(s) of theo-demo-feature-x`. Main's volumes are untouched (`docker volume ls`).
 
-Backup, restore and clone are part of the same command (see [volumes](../../docs/cli/volumes.md) for the exact flags):
+Backup, restore and clone of an instance's data (see [volumes](../../docs/cli/volumes.md) for every flag). The first time you run these, Docker pulls the small helper image `alpine:3.20`:
 
 ```sh
-theo volumes backup theo-demo -w main
+theo volumes backup theo-demo -w main --volume data --out ./backups
+```
+
+Expect one `.tar.gz` and a `.json` manifest in `./backups`. Restoring over a volume that already has data is refused unless you say `--replace` and confirm:
+
+```sh
+theo volumes restore theo-demo -w main --from ./backups/<the-file>.tar.gz --replace --confirm theo-demo
+```
+
+Copy the data of `main` into the second instance (the way to seed a new branch with real data; the target must be stopped):
+
+```sh
+theo volumes clone theo-demo --from main -w feature/x --volume data --replace --confirm theo-demo-feature-x
+```
+
+The shared cache's data is deleted separately, and only when it is stopped:
+
+```sh
+theo shared purge theo-demo --confirm theo-demo-shared
 ```
 
 ```sh
-theo volumes restore theo-demo -w main
+theo shared unuse theo-demo -w main
 ```
 
 ```sh
-theo volumes clone theo-demo --from main --to feature/x
+theo shared unuse theo-demo -w feature/x
 ```
 
-Check that, after restore or clone, the counter continues from the saved value.
+```sh
+theo shared remove theo-demo
+```
 
 ## 11. Reconcile after deleting a worktree by hand
 
