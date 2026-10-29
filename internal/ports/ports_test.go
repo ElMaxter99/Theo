@@ -36,3 +36,10 @@ func TestStoreRoundTrip(t *testing.T) {
 		t.Errorf("got %v, %v", got, err)
 	}
 }
+
+func TestFreeAddressNotOnThisHost(t *testing.T) {
+	// 192.0.2.0/24 is reserved for documentation: no interface has it.
+	if !Free("192.0.2.1", 8080, "tcp") {
+		t.Error("a port on an address this host does not have must count as free (not testable), not taken")
+	}
+}

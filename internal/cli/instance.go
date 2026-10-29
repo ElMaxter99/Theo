@@ -64,6 +64,9 @@ func runInstance(e *engine.Engine, cmd string, args []string, stdout, stderr io.
 		if err := preparePorts(ctx, e, inst, profiles, autoPorts, stderr); err != nil {
 			return err
 		}
+		if up.Build {
+			warnSharedImages(ctx, e, stderr, inst)
+		}
 		if err := e.Up(ctx, inst, up, stdout, stderr); err != nil {
 			return err
 		}
@@ -106,6 +109,20 @@ func preparePorts(ctx context.Context, e *engine.Engine, inst *engine.Instance, 
 			strings.Join(compose.SortedKeys(names), ", "), inst.Project, worktreeArg(inst))
 	}
 	return nil
+}
+
+// warnSharedImages warns about services that build into an image tag shared
+// by every instance of the project (B-009).
+func warnSharedImages(ctx context.Context, e *engine.Engine, w io.Writer, inst *engine.Instance) {
+	shared, err := e.SharedImageBuilds(ctx, inst)
+	if err != nil || len(shared) == 0 { // the warning is advice: Compose reports real problems itself
+		return
+	}
+	var parts []string
+	for _, svc := range compose.SortedKeys(shared) {
+		parts = append(parts, fmt.Sprintf("%s (%s)", svc, shared[svc]))
+	}
+	fmt.Fprintf(w, "theo: warning: services built into a fixed image name, which every worktree of this project shares: %s. This build replaces the image the other instances use (they keep running the old one until recreated). Make the name depend on the instance, for example image: myapp-${COMPOSE_PROJECT_NAME}, or drop image: so Compose names it <project>-<service>.\n", strings.Join(parts, ", "))
 }
 
 // describe says which instance a command acts on, on stderr so that it does

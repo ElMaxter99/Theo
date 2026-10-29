@@ -44,8 +44,9 @@ func TestDefaultFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// compose.yaml wins and has no override: the docker-compose ones are ignored.
-	if got, want := DefaultFiles(dir), []string{filepath.Join(dir, "compose.yaml")}; !reflect.DeepEqual(got, want) {
+	// compose.yaml wins; an override is loaded whatever its extension and
+	// prefix, as Compose does (compose.yaml + docker-compose.override.yml).
+	if got, want := DefaultFiles(dir), []string{filepath.Join(dir, "compose.yaml"), filepath.Join(dir, "docker-compose.override.yml")}; !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
 	}
 	os.Remove(filepath.Join(dir, "compose.yaml"))
@@ -84,5 +85,12 @@ func TestOverlayContainerNamesAndEnvironment(t *testing.T) {
 	}
 	if (Overlay{}).Empty() == false || o.Empty() {
 		t.Errorf("Empty is wrong")
+	}
+}
+
+func TestOverlayEscapesDollarInEnvironment(t *testing.T) {
+	got := string(Overlay{Environment: map[string]map[string]string{"api": {"A": "pre$HOME ${X:-y} $$"}}}.Render())
+	if !strings.Contains(got, `"A": "pre$$HOME $${X:-y} $$$$"`) {
+		t.Errorf("overlay:\n%s", got)
 	}
 }

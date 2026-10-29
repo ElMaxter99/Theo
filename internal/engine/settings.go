@@ -198,7 +198,10 @@ func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []s
 		return plan, nil
 	}
 
-	base, err := e.baseComposeFiles(inst)
+	if err := e.requireOverlayCompose(ctx); err != nil {
+		return nil, err
+	}
+	base, err := e.baseComposeFiles(ctx, inst)
 	if err != nil {
 		return nil, err
 	}
@@ -223,14 +226,15 @@ func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []s
 
 	t := inst.target()
 	t.Files = append(base, overlayPath)
-	if instanceEnv != "" {
-		t.EnvFiles = append(append([]string(nil), t.EnvFiles...), instanceEnv)
-	}
+	t.EnvFiles = withInstanceEnv(inst.Workspace, inst.envFiles, instanceEnv)
 	cfg, err := e.compose.ConfigFor(ctx, t)
 	if err != nil {
 		return nil, fmt.Errorf("the configuration with this instance's settings is not valid (generated file %s): %s", overlayPath, MaskSecrets(err.Error(), settings))
 	}
 	if err := checkEffective(plan, cfg); err != nil {
+		return nil, fmt.Errorf("%w (generated file %s)", err, overlayPath)
+	}
+	if err := checkOverlay(overlay, cfg); err != nil {
 		return nil, fmt.Errorf("%w (generated file %s)", err, overlayPath)
 	}
 	if auto {
