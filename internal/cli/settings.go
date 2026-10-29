@@ -124,12 +124,14 @@ func runInstanceCmd(e *engine.Engine, args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("instance "+sub, flag.ContinueOnError)
 	var sel instanceFlags
 	sel.register(fs)
-	var neutralize, keep, auto, asJSON bool
+	var neutralize, keep, auto, asJSON, autoOn, autoOff bool
 	var profiles stringList
 	switch sub {
 	case "set":
 		fs.BoolVar(&neutralize, "neutralize-container-names", false, "remove fixed container_name settings for this instance")
 		fs.BoolVar(&keep, "keep-container-names", false, "keep the project's container_name settings")
+		fs.BoolVar(&autoOn, "auto-ports", false, "reassign host ports that are taken, on every start")
+		fs.BoolVar(&autoOff, "no-auto-ports", false, "use the configured host ports again")
 	case "show":
 		fs.BoolVar(&asJSON, "json", false, "print JSON")
 	case "config":
@@ -153,16 +155,28 @@ func runInstanceCmd(e *engine.Engine, args []string, stdout io.Writer) error {
 
 	switch sub {
 	case "set":
-		if neutralize == keep {
-			return usageErrorf("instance set needs --neutralize-container-names or --keep-container-names")
+		if neutralize && keep || autoOn && autoOff || !neutralize && !keep && !autoOn && !autoOff {
+			return usageErrorf("instance set needs --neutralize-container-names | --keep-container-names and/or --auto-ports | --no-auto-ports")
 		}
-		if err := e.SetNeutralizeContainerNames(inst, neutralize); err != nil {
-			return err
+		if neutralize || keep {
+			if err := e.SetNeutralizeContainerNames(inst, neutralize); err != nil {
+				return err
+			}
+			if neutralize {
+				fmt.Fprintf(stdout, "%s will start without fixed container names (the project's files are not changed).\n", inst.Compose)
+			} else {
+				fmt.Fprintf(stdout, "%s will keep the project's container names.\n", inst.Compose)
+			}
 		}
-		if neutralize {
-			fmt.Fprintf(stdout, "%s will start without fixed container names (the project's files are not changed).\n", inst.Compose)
-		} else {
-			fmt.Fprintf(stdout, "%s will keep the project's container names.\n", inst.Compose)
+		if autoOn || autoOff {
+			if err := e.SetAutoPorts(inst, autoOn); err != nil {
+				return err
+			}
+			if autoOn {
+				fmt.Fprintf(stdout, "%s will reassign host ports that are taken, and keep them.\n", inst.Compose)
+			} else {
+				fmt.Fprintf(stdout, "%s will use the configured host ports.\n", inst.Compose)
+			}
 		}
 	case "show":
 		cfg, err := e.Settings(inst)

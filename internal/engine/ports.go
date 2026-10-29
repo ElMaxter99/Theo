@@ -70,6 +70,7 @@ type PortPlan struct {
 	Overlay  string        `json:"overlay,omitempty"` // generated Compose file for the reassigned ports
 
 	changed map[string][]compose.Port // services whose ports are rewritten, with their complete list
+	auto    bool                      // ports were reassigned automatically (asked for, or remembered)
 }
 
 // Conflicts returns the mappings that ask for a port that is taken.
@@ -100,6 +101,10 @@ func (e *Engine) PlanPorts(ctx context.Context, inst *Instance, profiles []strin
 }
 
 func (e *Engine) planPorts(ctx context.Context, inst *Instance, profiles []string, auto bool) (*PortPlan, ports.State, error) {
+	// An instance that was started with --auto-ports keeps doing it.
+	if cfg, err := e.Settings(inst); err == nil && cfg.AutoPorts {
+		auto = true
+	}
 	state, err := e.portStore.Load()
 	if err != nil {
 		return nil, nil, err
@@ -141,7 +146,7 @@ func (e *Engine) planPorts(ctx context.Context, inst *Instance, profiles []strin
 		}
 	}
 
-	plan := &PortPlan{}
+	plan := &PortPlan{auto: auto}
 	used := map[string]bool{}
 	next := ports.State{}
 	changed := map[string][]compose.Port{} // services whose ports are rewritten

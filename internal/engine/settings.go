@@ -118,6 +118,16 @@ func (e *Engine) UnsetEnv(inst *Instance, name string) (bool, error) {
 	return found, err
 }
 
+// SetAutoPorts sets whether the instance keeps reassigning host ports that
+// are taken. `theo up --auto-ports` turns it on; it stays on until turned off,
+// so the instance keeps its addresses between restarts (FR-063).
+func (e *Engine) SetAutoPorts(inst *Instance, on bool) error {
+	return e.updateSettings(inst, func(c *instances.Config) error {
+		c.AutoPorts = on
+		return nil
+	})
+}
+
 // SetNeutralizeContainerNames sets whether the instance removes fixed
 // container_name settings from the services that have one.
 func (e *Engine) SetNeutralizeContainerNames(inst *Instance, on bool) error {
@@ -164,6 +174,7 @@ func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []s
 	if err != nil {
 		return nil, err
 	}
+	auto = plan.auto
 	settings, err := e.Settings(inst)
 	if err != nil {
 		return nil, err

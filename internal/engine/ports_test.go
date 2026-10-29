@@ -258,3 +258,34 @@ func TestHistoryRecordsOperations(t *testing.T) {
 		t.Errorf("limit: %+v", got)
 	}
 }
+
+func TestAutoPortsIsRememberedForTheInstance(t *testing.T) {
+	e, c, inst := portsFixture(t, apiPorts(), 3303)
+	c.resolved = &compose.Project{Services: map[string]compose.Service{
+		"api": {Ports: []compose.Port{{Target: 3000, Published: "3304", Protocol: "tcp"}}},
+	}}
+	ctx := context.Background()
+	// Not asked for yet: the taken port is only reported.
+	if plan, _ := e.PlanPorts(ctx, inst, nil, false); plan.auto || mapping(t, plan, "api").Status != PortInUse {
+		t.Fatalf("before: %+v", plan)
+	}
+	if _, err := e.ApplyInstance(ctx, inst, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.SetAutoPorts(inst, true); err != nil {
+		t.Fatal(err)
+	}
+	// A later start without the flag keeps the reassigned port.
+	if _, err := e.ApplyInstance(ctx, inst, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	plan, _ := e.PlanPorts(ctx, inst, nil, false)
+	if m := mapping(t, plan, "api"); !plan.auto || m.Effective != 3304 {
+		t.Errorf("after: %+v", m)
+	}
+	// Turned off, it goes back to reporting.
+	e.SetAutoPorts(inst, false)
+	if plan, _ := e.PlanPorts(ctx, inst, nil, false); plan.auto {
+		t.Errorf("auto ports should be off")
+	}
+}

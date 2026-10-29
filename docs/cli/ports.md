@@ -20,11 +20,11 @@ web      8080/tcp   8080        8080       in use  http://localhost:8080
 
 ## --auto-ports
 
-With `--auto-ports`, `up` publishes the services whose port is taken on another free one (the next free port after the configured one) and remembers it, so the address stays the same when you start the instance again with `--auto-ports`. Ports of other instances that Theo has assigned count as taken, even while those instances are stopped.
+With `--auto-ports`, `up` publishes the services whose port is taken on another free one (the next free port after the configured one) and remembers it, so the address stays the same when you start the instance again. Ports of other instances that Theo has assigned count as taken, even while those instances are stopped.
 
 Your Compose files are not modified. Theo adds a generated Compose file for that instance (this needs Docker Compose 2.24.4 or later). The assigned ports are in `ports.json`, next to the registry, and the generated files in `overlays/`.
 
-Pass `--auto-ports` every time you start an instance that needs it: a plain `theo up` goes back to the configured port.
+The first `up --auto-ports` turns the behaviour on **for that instance**, and it stays on: a later plain `theo up` keeps the remembered port (FR-063). Turn it off with `theo instance set <project> -w <worktree> --no-auto-ports` (and on without starting with `--auto-ports`); the instance then goes back to the configured port. `theo ports` previews with the current setting.
 
 ## Limits
 

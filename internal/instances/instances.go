@@ -37,11 +37,15 @@ type Config struct {
 	// shared service.
 	Shared []string `json:"shared,omitempty"`
 	Join   []string `json:"join,omitempty"`
+	// AutoPorts keeps host ports reassigned when they are taken. It is set the
+	// first time the instance starts with --auto-ports, so that later starts
+	// keep the address instead of going back to the configured port.
+	AutoPorts bool `json:"auto_ports,omitempty"`
 }
 
 // Empty reports whether nothing is configured.
 func (c Config) Empty() bool {
-	return len(c.Env) == 0 && !c.NeutralizeContainerNames && len(c.Shared) == 0 && len(c.Join) == 0
+	return len(c.Env) == 0 && !c.NeutralizeContainerNames && len(c.Shared) == 0 && len(c.Join) == 0 && !c.AutoPorts
 }
 
 // SharedSet is the group of services a project shares between instances.
