@@ -12,7 +12,13 @@ import (
 	"github.com/ElMaxter99/Theo/internal/engine"
 )
 
-func runVolumes(e *engine.Engine, args []string, stdout io.Writer) error {
+func runVolumes(e *engine.Engine, args []string, stdout, stderr io.Writer) error {
+	if len(args) > 0 {
+		switch args[0] {
+		case "backup", "restore", "clone":
+			return runVolumeData(e, args[0], args[1:], stdout, stderr)
+		}
+	}
 	purge := len(args) > 0 && args[0] == "purge"
 	if purge {
 		args = args[1:]
@@ -25,9 +31,12 @@ func runVolumes(e *engine.Engine, args []string, stdout io.Writer) error {
 	var sel instanceFlags
 	sel.register(fs)
 	var asJSON bool
-	var confirm string
+	var confirm, out string
+	var backup bool
 	if purge {
 		fs.StringVar(&confirm, "confirm", "", "the instance's Compose project name, to confirm the deletion")
+		fs.BoolVar(&backup, "backup", false, "back the volumes up first, and delete them only if that succeeded")
+		fs.StringVar(&out, "out", "", "with --backup, the directory for the backups")
 	} else {
 		fs.BoolVar(&asJSON, "json", false, "print JSON")
 	}
@@ -45,12 +54,21 @@ func runVolumes(e *engine.Engine, args []string, stdout io.Writer) error {
 	}
 
 	if purge {
-		removed, err := e.PurgeVolumes(ctx, inst, confirm)
+		var removed []engine.VolumeInfo
+		var report *engine.BackupReport
+		if backup {
+			removed, report, err = e.PurgeVolumesWithBackup(ctx, inst, confirm, out)
+		} else {
+			removed, err = e.PurgeVolumes(ctx, inst, confirm)
+		}
+		if report != nil {
+			printBackups(stdout, stderr, report)
+		}
 		var pe *engine.PurgeError
 		if errors.As(err, &pe) {
 			msg := fmt.Sprintf("%s\n\n%s", err, volumeLines(pe.Volumes))
 			if strings.Contains(err.Error(), "for good") {
-				msg += fmt.Sprintf("\n\nTo delete them:\n  theo volumes purge %s -w %s --confirm %s", inst.Project, worktreeArg(inst), inst.Compose)
+				msg += fmt.Sprintf("\n\nTo delete them:\n  theo volumes purge %s -w %s%s --confirm %s", inst.Project, worktreeArg(inst), flagIf(backup, " --backup")+flagIf(out != "", " --out "+out), inst.Compose)
 			}
 			return errors.New(msg)
 		}

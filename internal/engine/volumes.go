@@ -74,6 +74,16 @@ func (p *PurgeError) Error() string { return p.Reason }
 // volumes and volumes of other instances are never included. It returns what
 // it deleted.
 func (e *Engine) PurgeVolumes(ctx context.Context, inst *Instance, confirm string) ([]VolumeInfo, error) {
+	doomed, err := e.purgePlan(ctx, inst, confirm)
+	if err != nil || len(doomed) == 0 {
+		return nil, err
+	}
+	return e.deleteVolumes(ctx, inst, doomed)
+}
+
+// purgePlan checks that a purge may go ahead and returns what it would
+// delete. Nothing is deleted.
+func (e *Engine) purgePlan(ctx context.Context, inst *Instance, confirm string) ([]VolumeInfo, error) {
 	all, err := e.Volumes(ctx, inst)
 	if err != nil {
 		return nil, err
@@ -105,7 +115,10 @@ func (e *Engine) PurgeVolumes(ctx context.Context, inst *Instance, confirm strin
 		return nil, &PurgeError{Instance: inst.Compose, Volumes: doomed,
 			Reason: fmt.Sprintf("this deletes the data of %d volume(s) of %s for good; nothing was deleted", len(doomed), inst.Compose)}
 	}
+	return doomed, nil
+}
 
+func (e *Engine) deleteVolumes(ctx context.Context, inst *Instance, doomed []VolumeInfo) ([]VolumeInfo, error) {
 	var removed []VolumeInfo
 	for _, v := range doomed {
 		if err := e.compose.RemoveVolume(ctx, v.Name); err != nil {
