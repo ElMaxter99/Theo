@@ -17,7 +17,7 @@ func worktreeFixture(t *testing.T) (*Engine, *fakeGit, *fakeCompose) {
 	if _, err := e.AddProject(context.Background(), root, "", ""); err != nil {
 		t.Fatal(err)
 	}
-	e.dataDir = abs("/data/theo")
+	e.dataDir = t.TempDir()
 	return e, g, c
 }
 
@@ -57,7 +57,7 @@ func TestAddWorktreeUsesTheProjectDirectoryAndRefusesCheckedOutBranches(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantPath := filepath.Join(abs("/data/theo"), "worktrees", "app", "fix-bug-1")
+	wantPath := filepath.Join(e.dataDir, "worktrees", "app", "fix-bug-1")
 	if added.Path != wantPath {
 		t.Errorf("path = %q, want %q", added.Path, wantPath)
 	}
@@ -73,7 +73,7 @@ func TestAddWorktreeUsesTheProjectDirectoryAndRefusesCheckedOutBranches(t *testi
 func TestAddWorktreeExplainsMissingEnvFiles(t *testing.T) {
 	e, g, _ := worktreeFixture(t)
 	g.ignored = []string{".env"}
-	added, err := e.AddWorktree(context.Background(), "app", "new", AddWorktreeOptions{Path: filepath.Join(abs("/data/x"), "new")})
+	added, err := e.AddWorktree(context.Background(), "app", "new", AddWorktreeOptions{Path: filepath.Join(t.TempDir(), "new")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestSetWorktreeDir(t *testing.T) {
 	if err := e.SetWorktreeDir("app", ""); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := e.WorktreeDir("app"); got != filepath.Join(abs("/data/theo"), "worktrees", "app") {
+	if got, _ := e.WorktreeDir("app"); got != filepath.Join(e.dataDir, "worktrees", "app") {
 		t.Errorf("default dir = %q", got)
 	}
 	if err := e.SetWorktreeDir("nope", dir); !errors.Is(err, ErrNotFound) {
