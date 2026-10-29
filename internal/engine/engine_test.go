@@ -84,6 +84,7 @@ type fakeCompose struct {
 	stacks     []compose.Stack
 	calls      []string            // "up <name> <dir> <env files>"
 	resolved   *compose.Project    // returned by ConfigFor
+	text       string              // returned by ConfigText
 	containers []compose.Container // returned by PS
 }
 
@@ -119,6 +120,11 @@ func (c *fakeCompose) PS(_ context.Context, t compose.Target) ([]compose.Contain
 func (c *fakeCompose) ConfigFor(_ context.Context, t compose.Target) (*compose.Project, error) {
 	c.record("config", t)
 	return c.resolved, nil
+}
+
+func (c *fakeCompose) ConfigText(_ context.Context, t compose.Target) ([]byte, error) {
+	c.record("config-text", t)
+	return []byte(c.text), nil
 }
 
 func (c *fakeCompose) Stacks(context.Context) ([]compose.Stack, error) {

@@ -16,6 +16,7 @@ import (
 
 	"github.com/ElMaxter99/Theo/internal/compose"
 	"github.com/ElMaxter99/Theo/internal/git"
+	"github.com/ElMaxter99/Theo/internal/instances"
 	"github.com/ElMaxter99/Theo/internal/ports"
 	"github.com/ElMaxter99/Theo/internal/registry"
 )
@@ -55,6 +56,7 @@ type Compose interface {
 	PS(ctx context.Context, t compose.Target) ([]compose.Container, error)
 	Stacks(ctx context.Context) ([]compose.Stack, error)
 	ConfigFor(ctx context.Context, t compose.Target) (*compose.Project, error)
+	ConfigText(ctx context.Context, t compose.Target) ([]byte, error)
 }
 
 // Engine is the entry point to Theo's operations.
@@ -65,6 +67,7 @@ type Engine struct {
 	now     func() time.Time
 
 	portStore PortStore
+	settings  SettingsStore
 	portFree  func(hostIP string, port int, proto string) bool
 	dataDir   string // where generated files are kept; empty if none
 	baseFiles func(dir string) []string
@@ -72,7 +75,7 @@ type Engine struct {
 
 // New returns an engine that uses the given store and adapters.
 func New(store Store, g Git, c Compose) *Engine {
-	return &Engine{store: store, git: g, compose: c, now: time.Now, portStore: &memPorts{}, portFree: ports.Free, baseFiles: compose.DefaultFiles}
+	return &Engine{store: store, git: g, compose: c, now: time.Now, portStore: &memPorts{}, settings: &memSettings{}, portFree: ports.Free, baseFiles: compose.DefaultFiles}
 }
 
 // memPorts keeps port assignments in memory, for engines that are not given
@@ -98,6 +101,7 @@ func Open() (*Engine, error) {
 	}
 	e := New(registry.Open(dir), git.Git{}, compose.Compose{})
 	e.portStore = ports.Open(dir)
+	e.settings = instances.Open(dir)
 	e.dataDir = dir
 	return e, nil
 }

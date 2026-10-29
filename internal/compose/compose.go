@@ -20,13 +20,14 @@ type Project struct {
 
 // Service is a service of the resolved Compose model.
 type Service struct {
-	Image     string                     `json:"image"`
-	Build     *Build                     `json:"build"`
-	Ports     []Port                     `json:"ports"`
-	Volumes   []Volume                   `json:"volumes"`
-	DependsOn map[string]json.RawMessage `json:"depends_on"`
-	Networks  map[string]json.RawMessage `json:"networks"`
-	Profiles  []string                   `json:"profiles"`
+	Image         string                     `json:"image"`
+	ContainerName string                     `json:"container_name"`
+	Build         *Build                     `json:"build"`
+	Ports         []Port                     `json:"ports"`
+	Volumes       []Volume                   `json:"volumes"`
+	DependsOn     map[string]json.RawMessage `json:"depends_on"`
+	Networks      map[string]json.RawMessage `json:"networks"`
+	Profiles      []string                   `json:"profiles"`
 }
 
 // Build is the build section of a service.

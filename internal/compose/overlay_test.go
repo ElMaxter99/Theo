@@ -8,11 +8,11 @@ import (
 	"testing"
 )
 
-func TestRenderPortsOverlay(t *testing.T) {
-	got := string(RenderPortsOverlay(map[string][]Port{
+func TestOverlayPorts(t *testing.T) {
+	got := string(Overlay{Ports: map[string][]Port{
 		"web": {{Target: 80, Published: "8081", HostIP: "127.0.0.1", Protocol: "tcp"}, {Target: 53, Published: "5353", Protocol: "udp", Mode: "host"}},
 		"api": {{Target: 3000, Published: "3304"}},
-	}))
+	}}.Render())
 	want := `services:
   "api":
     ports: !override
@@ -60,5 +60,29 @@ func TestTargetArgsPutFilesFirst(t *testing.T) {
 	want := []string{"compose", "-p", "p", "-f", "a.yaml", "-f", "b.yaml", "--env-file", "e", "up"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("args = %v", got)
+	}
+}
+
+func TestOverlayContainerNamesAndEnvironment(t *testing.T) {
+	o := Overlay{
+		ResetContainerName: []string{"db"},
+		Environment:        map[string]map[string]string{"api": {"B": "x\"y\nz", "A": "1"}, "db": {"C": "3"}},
+	}
+	got := string(o.Render())
+	want := `services:
+  "api":
+    environment:
+      "A": "1"
+      "B": "x\"y\nz"
+  "db":
+    container_name: !reset null
+    environment:
+      "C": "3"
+`
+	if !strings.HasSuffix(got, want) {
+		t.Errorf("overlay:\n%s", got)
+	}
+	if (Overlay{}).Empty() == false || o.Empty() {
+		t.Errorf("Empty is wrong")
 	}
 }
