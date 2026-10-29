@@ -359,7 +359,7 @@ func (e *Engine) History(ctx context.Context, project, worktree string, limit in
 	}
 	var path string
 	if worktree != "" {
-		list, err := e.git.Worktrees(ctx, p.Path)
+		list, err := e.worktreeList(ctx, p)
 		if err != nil {
 			return nil, err
 		}
