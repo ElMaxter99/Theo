@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -117,7 +118,7 @@ func TestApplyPortsReassignsAndKeepsThePortBetweenRuns(t *testing.T) {
 		"api": {Ports: []compose.Port{{Target: 3000, Published: "3304", Protocol: "tcp"}}},
 	}}
 
-	plan, err := e.ApplyPorts(context.Background(), inst, nil)
+	plan, err := e.ApplyInstance(context.Background(), inst, nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +146,7 @@ func TestApplyPortsRejectsAResultThatDoesNotPublishThePlan(t *testing.T) {
 	c.resolved = &compose.Project{Services: map[string]compose.Service{
 		"api": {Ports: []compose.Port{{Target: 3000, Published: "3303"}}},
 	}}
-	if _, err := e.ApplyPorts(context.Background(), inst, nil); err == nil || !strings.Contains(err.Error(), "3304") {
+	if _, err := e.ApplyInstance(context.Background(), inst, nil, true); err == nil || !strings.Contains(err.Error(), "3304") {
 		t.Errorf("err = %v", err)
 	}
 }
@@ -158,5 +159,102 @@ func TestPlanPortsSkipsPortsReservedForOtherInstances(t *testing.T) {
 	plan, _ := e.PlanPorts(context.Background(), inst, nil, true)
 	if m := mapping(t, plan, "api"); m.Effective != 3305 {
 		t.Errorf("effective = %d, want 3305 (3304 is reserved)", m.Effective)
+	}
+}
+
+func TestApplyInstanceAppliesSettingsAndMasksSecrets(t *testing.T) {
+	svcs := map[string]compose.Service{
+		"api": {},
+		"db":  {ContainerName: "fixed-db"},
+	}
+	e, c, inst := portsFixture(t, svcs)
+	c.resolved = &compose.Project{Services: svcs}
+	c.text = "services:\n  api:\n    environment:\n      TOKEN: s3cret\n"
+	ctx := context.Background()
+
+	if err := e.SetEnv(inst, "TOKEN", "s3cret", true, []string{"api"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.SetEnv(inst, "MODE", "x y", false, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.SetNeutralizeContainerNames(inst, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.SetEnv(inst, "1BAD", "v", false, nil); err == nil {
+		t.Error("an invalid variable name must be refused")
+	}
+	if err := e.SetEnv(inst, "OK", "v", false, []string{"nope"}); err == nil || !strings.Contains(err.Error(), "api, db") {
+		t.Errorf("an unknown service must be refused, listing the real ones: %v", err)
+	}
+
+	if _, err := e.ApplyInstance(ctx, inst, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	files := inst.GeneratedFiles()
+	if len(files) != 2 {
+		t.Fatalf("generated = %v", files)
+	}
+	overlay, _ := os.ReadFile(files[0])
+	for _, want := range []string{`"db":`, "container_name: !reset null", `"TOKEN": "s3cret"`, `"MODE": "x y"`} {
+		if !strings.Contains(string(overlay), want) {
+			t.Errorf("overlay lacks %q:\n%s", want, overlay)
+		}
+	}
+	// TOKEN only goes to api, MODE to every service.
+	if strings.Count(string(overlay), `"MODE"`) != 2 || strings.Count(string(overlay), `"TOKEN"`) != 1 {
+		t.Errorf("overlay scoping:\n%s", overlay)
+	}
+	envFile, _ := os.ReadFile(files[1])
+	if !strings.Contains(string(envFile), "MODE='x y'") {
+		t.Errorf("env file:\n%s", envFile)
+	}
+	if info, err := os.Stat(files[0]); err != nil || info.Mode().Perm()&0o077 != 0 && filepath.Separator == '/' {
+		t.Errorf("the generated files must be private: %v %v", info, err)
+	}
+	// The env file comes last, so it wins over the project's.
+	if got := inst.target().EnvFiles; len(got) == 0 || got[len(got)-1] != files[1] {
+		t.Errorf("env files = %v", got)
+	}
+
+	text, err := e.ResolvedConfig(ctx, inst, nil, false)
+	if err != nil || strings.Contains(text, "s3cret") || !strings.Contains(text, Mask) {
+		t.Errorf("resolved config must mask secrets: %v\n%s", err, text)
+	}
+
+	// Removing every setting goes back to the project's own files.
+	e.UnsetEnv(inst, "TOKEN")
+	e.UnsetEnv(inst, "MODE")
+	e.SetNeutralizeContainerNames(inst, false)
+	if _, err := e.ApplyInstance(ctx, inst, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if len(inst.GeneratedFiles()) != 0 || len(inst.target().Files) != 0 {
+		t.Errorf("files still in use: %v %v", inst.GeneratedFiles(), inst.target().Files)
+	}
+	if _, err := os.Stat(files[0]); err == nil {
+		t.Errorf("the stale overlay was not removed")
+	}
+}
+
+func TestHistoryRecordsOperations(t *testing.T) {
+	e, c, inst := portsFixture(t, apiPorts())
+	ctx := context.Background()
+	_ = c
+	if err := e.Up(ctx, inst, compose.UpOptions{}, io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Down(ctx, inst, io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	all, err := e.History(ctx, "app", "", 0)
+	if err != nil || len(all) != 2 || all[0].Operation != "up" || all[1].Operation != "down" || all[0].Result != "ok" {
+		t.Fatalf("history = %+v, %v", all, err)
+	}
+	if got, _ := e.History(ctx, "app", "main", 0); len(got) != 0 {
+		t.Errorf("the main worktree has no operations: %+v", got)
+	}
+	if got, _ := e.History(ctx, "app", "feature/login", 1); len(got) != 1 || got[0].Operation != "down" {
+		t.Errorf("limit: %+v", got)
 	}
 }

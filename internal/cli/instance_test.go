@@ -144,3 +144,92 @@ services:
 	}
 	checkOutput(t, "second up", stderr, fmt.Sprintf("host port %d instead of %d", port+1, port))
 }
+
+// TestInstanceSettings runs two worktrees with the same fixed container_name,
+// with a real Docker daemon: the second needs the name neutralized, and an
+// instance variable reaches the container while the secret stays masked.
+func TestInstanceSettings(t *testing.T) {
+	testutil.RequireDaemon(t)
+	main, linked := testutil.NewRepo(t, map[string]string{
+		".gitignore": "server\nDockerfile\n",
+		"compose.yaml": `name: theo-test-settings
+services:
+  web:
+    build: .
+    container_name: theo-test-fixed
+    environment:
+      FROM_FILE: original
+`,
+	})
+	testutil.WriteServerImage(t, main)
+	testutil.WriteServerImage(t, linked)
+	t.Setenv(registry.EnvHome, t.TempDir())
+	if _, stderr, code := run("project", "add", main); code != ExitOK {
+		t.Fatalf("project add: %s", stderr)
+	}
+	t.Cleanup(func() {
+		for _, w := range []string{"", "feature/x"} {
+			run("down", "app", "-w", w)
+		}
+		testutil.Docker(t, "rm", "--force", "theo-test-fixed")
+	})
+
+	if _, stderr, code := run("up", "app"); code != ExitOK {
+		t.Fatalf("up main: %s", stderr)
+	}
+
+	// Without neutralizing, the linked instance warns and Docker refuses.
+	_, stderr, code := run("up", "app", "-w", "feature/x")
+	if code == ExitOK {
+		t.Fatalf("a second instance with the same container_name should fail")
+	}
+	checkOutput(t, "warning", stderr, "--neutralize-container-names")
+
+	if _, stderr, code := run("instance", "set", "app", "-w", "feature/x", "--neutralize-container-names"); code != ExitOK {
+		t.Fatalf("instance set: %s", stderr)
+	}
+	if _, stderr, code := run("env", "set", "app", "-w", "feature/x", "TOKEN=s3cret-value", "--secret"); code != ExitOK {
+		t.Fatalf("env set: %s", stderr)
+	}
+	if _, stderr, code := run("env", "set", "app", "-w", "feature/x", "FROM_FILE=changed", "--service", "web"); code != ExitOK {
+		t.Fatalf("env set: %s", stderr)
+	}
+	stdout, _, _ := run("env", "list", "app", "-w", "feature/x")
+	checkOutput(t, "env list", stdout, "TOKEN")
+	if strings.Contains(stdout, "s3cret-value") {
+		t.Errorf("env list shows the secret:\n%s", stdout)
+	}
+	stdout, _, _ = run("env", "list", "app", "-w", "feature/x", "--show-secrets")
+	checkOutput(t, "env list --show-secrets", stdout, "s3cret-value")
+
+	stdout, _, _ = run("instance", "config", "app", "-w", "feature/x")
+	if strings.Contains(stdout, "s3cret-value") {
+		t.Errorf("instance config shows the secret:\n%s", stdout)
+	}
+	checkOutput(t, "instance config", stdout, "changed")
+
+	if stdout, stderr, code := run("up", "app", "-w", "feature/x"); code != ExitOK {
+		t.Fatalf("up linked: %s\n%s", stdout, stderr)
+	}
+	id := testutil.Docker(t, "ps", "-q", "--filter", "label=com.docker.compose.project=app-app-feature")
+	env := testutil.Docker(t, "inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", id)
+	for _, want := range []string{"TOKEN=s3cret-value", "FROM_FILE=changed"} {
+		checkOutput(t, "container env", env, want)
+	}
+	if name := testutil.Docker(t, "inspect", "--format", "{{.Name}}", id); name == "/theo-test-fixed" {
+		t.Errorf("the linked container kept the fixed name")
+	}
+	// The main instance keeps its own value and name.
+	mainID := testutil.Docker(t, "ps", "-q", "--filter", "name=^theo-test-fixed$")
+	mainEnv := testutil.Docker(t, "inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", mainID)
+	checkOutput(t, "main env", mainEnv, "FROM_FILE=original")
+
+	// The project's files were not touched.
+	testutil.GitClean(t, main)
+	testutil.GitClean(t, linked)
+
+	stdout, _, _ = run("history", "app", "-w", "feature/x")
+	checkOutput(t, "history", stdout, "up")
+	checkOutput(t, "history", stdout, "error") // the first, refused up
+	checkOutput(t, "history", stdout, "ok")
+}

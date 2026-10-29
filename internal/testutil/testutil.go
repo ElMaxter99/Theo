@@ -168,3 +168,18 @@ func FreePort(t *testing.T) int {
 	t.Fatal("no free pair of consecutive ports")
 	return 0
 }
+
+// GitClean fails the test if the worktree at dir has uncommitted changes.
+// Files ignored by Git do not count.
+func GitClean(t *testing.T, dir string) {
+	t.Helper()
+	cmd := exec.Command("git", "status", "--porcelain")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(out)) != "" {
+		t.Errorf("%s has changes:\n%s", dir, out)
+	}
+}

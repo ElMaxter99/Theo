@@ -69,6 +69,18 @@ Running a worktree (each worktree runs as its own Compose project):
   ps <project> -w <w> [--json]                      Show the containers of one worktree
   logs <project> [-w <w>] [-f] [--tail <n>] [service...]
                                                     Show its logs
+  env set <project> [-w <w>] NAME=VALUE [--secret] [--service <s>]
+  env unset <project> [-w <w>] NAME
+  env list <project> [-w <w>] [--show-secrets] [--json]
+                                                    Variables for this instance only, applied at
+                                                    up through a generated file; your files and
+                                                    .env are not changed. Secrets are masked
+  instance set <project> [-w <w>] --neutralize-container-names | --keep-container-names
+  instance show <project> [-w <w>] [--json]         Settings Theo keeps for the instance
+  instance config <project> [-w <w>] [--auto-ports] [--profile <p>]
+                                                    The configuration it would run with
+                                                    (secrets masked)
+  history <project> [-w <w>] [--limit <n>] [--json] Operations Theo ran: up, down, restart
   ports <project> [-w <w>] [--profile <p>] [--auto-ports] [--json]
                                                     Show the host ports it publishes, whether
                                                     they are free, and their URLs
@@ -115,6 +127,12 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = withEngine(func(e *engine.Engine) error { return runInstance(e, args[0], args[1:], stdout, stderr) })
 	case "ps":
 		err = withEngine(func(e *engine.Engine) error { return runPS(e, args[1:], stdout) })
+	case "env":
+		err = withEngine(func(e *engine.Engine) error { return runEnv(e, args[1:], stdout) })
+	case "instance":
+		err = withEngine(func(e *engine.Engine) error { return runInstanceCmd(e, args[1:], stdout) })
+	case "history":
+		err = withEngine(func(e *engine.Engine) error { return runHistory(e, args[1:], stdout) })
 	case "ports":
 		err = withEngine(func(e *engine.Engine) error { return runPorts(e, args[1:], stdout) })
 	default:
