@@ -70,7 +70,10 @@ func Open() (*Engine, error) {
 // inside a linked worktree, the repository's main worktree is registered.
 // The name defaults to the main worktree's directory name. Nothing in the
 // repository is modified.
-func (e *Engine) AddProject(ctx context.Context, path, name string) (registry.Project, error) {
+//
+// envFile, if not empty, is the env file shared by worktrees that have no
+// .env of their own; see SetEnvFile.
+func (e *Engine) AddProject(ctx context.Context, path, name, envFile string) (registry.Project, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return registry.Project{}, err
@@ -107,7 +110,10 @@ func (e *Engine) AddProject(ctx context.Context, path, name string) (registry.Pr
 		}
 	}
 
-	p := registry.Project{Name: name, Path: root, AddedAt: e.now().UTC().Truncate(time.Second)}
+	if envFile, err = checkEnvFile(envFile); err != nil {
+		return registry.Project{}, err
+	}
+	p := registry.Project{Name: name, Path: root, EnvFile: envFile, AddedAt: e.now().UTC().Truncate(time.Second)}
 	if err := e.store.Save(append(projects, p)); err != nil {
 		return registry.Project{}, err
 	}
@@ -131,6 +137,45 @@ func (e *Engine) Project(name string) (registry.Project, error) {
 		}
 	}
 	return registry.Project{}, fmt.Errorf("project %q: %w (see `theo project list`)", name, ErrNotFound)
+}
+
+// SetEnvFile sets the env file that worktrees without their own .env use.
+// An empty path clears it, so they fall back to the main worktree's .env.
+func (e *Engine) SetEnvFile(name, envFile string) (registry.Project, error) {
+	envFile, err := checkEnvFile(envFile)
+	if err != nil {
+		return registry.Project{}, err
+	}
+	projects, err := e.store.Load()
+	if err != nil {
+		return registry.Project{}, err
+	}
+	for i, p := range projects {
+		if strings.EqualFold(p.Name, name) {
+			projects[i].EnvFile = envFile
+			if err := e.store.Save(projects); err != nil {
+				return registry.Project{}, err
+			}
+			return projects[i], nil
+		}
+	}
+	return registry.Project{}, fmt.Errorf("project %q: %w (see `theo project list`)", name, ErrNotFound)
+}
+
+// checkEnvFile returns the absolute path of an existing env file, or an
+// empty string for an empty path.
+func checkEnvFile(path string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	if !fileExists(abs) {
+		return "", fmt.Errorf("env file %s does not exist", abs)
+	}
+	return abs, nil
 }
 
 // RemoveProject removes a project from the registry. Its files, containers
@@ -187,8 +232,24 @@ type Services struct {
 	Workspace string    `json:"workspace"`
 	Branch    string    `json:"branch,omitempty"`
 	Compose   string    `json:"compose_project"`
+	EnvFile   EnvFile   `json:"env_file"`
 	Services  []Service `json:"services"`
 }
+
+// EnvFile is the env file docker compose used and where it came from.
+type EnvFile struct {
+	Path   string `json:"path,omitempty"` // empty when there is none
+	Source string `json:"source"`         // flag, worktree, project, main worktree or none
+}
+
+// Sources of the env file of a worktree.
+const (
+	EnvFromFlag     = "flag"
+	EnvFromWorktree = "worktree"
+	EnvFromProject  = "project"
+	EnvFromMain     = "main worktree"
+	EnvNone         = "none"
+)
 
 // Service is a service of the resolved Compose configuration.
 type Service struct {
@@ -211,8 +272,12 @@ type Mount struct {
 
 // Services returns the services of a project as docker compose resolves
 // them. worktree selects the workspace by branch name, directory name or
-// path; empty means the project's main worktree. envFiles, when given,
-// replace the worktree's .env file.
+// path; empty means the project's main worktree.
+//
+// The env file is, in order: envFiles when given; the worktree's own .env;
+// the project's env file (SetEnvFile); the main worktree's .env. So linked
+// worktrees, which Git creates without untracked files, share the main
+// worktree's .env unless they have their own.
 func (e *Engine) Services(ctx context.Context, project, worktree string, envFiles []string) (*Services, error) {
 	p, err := e.Project(project)
 	if err != nil {
@@ -233,20 +298,19 @@ func (e *Engine) Services(ctx context.Context, project, worktree string, envFile
 		return nil, fmt.Errorf("worktree %s no longer exists on disk", wt.Path)
 	}
 
-	for i, f := range envFiles {
-		if envFiles[i], err = filepath.Abs(f); err != nil {
-			return nil, err
-		}
-	}
-	cfg, err := e.compose.Config(ctx, wt.Path, envFiles)
+	env, files, err := resolveEnvFile(p, wt, list[0], envFiles)
 	if err != nil {
-		if hint := envFileHint(wt, list[0], envFiles); hint != "" {
-			return nil, fmt.Errorf("%w\n\n%s", err, hint)
-		}
 		return nil, err
 	}
+	cfg, err := e.compose.Config(ctx, wt.Path, files)
+	if err != nil {
+		if env.Source == EnvNone {
+			return nil, fmt.Errorf("%w\n\nNo .env found in this worktree or in the main worktree. Set one for the project with `theo project set %s --env-file <path>`, or pass --env-file.", err, p.Name)
+		}
+		return nil, fmt.Errorf("%w\n\n(env file: %s, from the %s)", err, env.Path, env.Source)
+	}
 
-	result := &Services{Project: p.Name, Workspace: wt.Path, Branch: wt.Branch, Compose: cfg.Name}
+	result := &Services{Project: p.Name, Workspace: wt.Path, Branch: wt.Branch, Compose: cfg.Name, EnvFile: env}
 	for _, name := range compose.SortedKeys(cfg.Services) {
 		s := cfg.Services[name]
 		svc := Service{
@@ -272,17 +336,34 @@ func (e *Engine) Services(ctx context.Context, project, worktree string, envFile
 	return result, nil
 }
 
-// envFileHint explains a likely cause of a Compose failure: linked
-// worktrees do not get the untracked .env file of the main worktree.
-func envFileHint(wt, main git.Worktree, envFiles []string) string {
-	if len(envFiles) > 0 || fileExists(filepath.Join(wt.Path, ".env")) {
-		return ""
+// resolveEnvFile chooses the env file for a worktree (see Services) and
+// returns it with the files to pass to docker compose: nil means Compose's
+// default, the worktree's own .env.
+func resolveEnvFile(p registry.Project, wt, main git.Worktree, flagFiles []string) (EnvFile, []string, error) {
+	if len(flagFiles) > 0 {
+		files := make([]string, len(flagFiles))
+		for i, f := range flagFiles {
+			abs, err := checkEnvFile(f)
+			if err != nil {
+				return EnvFile{}, nil, err
+			}
+			files[i] = abs
+		}
+		return EnvFile{Path: strings.Join(files, ", "), Source: EnvFromFlag}, files, nil
 	}
-	hint := "This worktree has no .env file. Git does not copy untracked files such as .env to new worktrees."
-	if mainEnv := filepath.Join(main.Path, ".env"); !samePath(wt.Path, main.Path) && fileExists(mainEnv) {
-		return hint + "\nTo use the main worktree's one: --env-file " + mainEnv
+	if own := filepath.Join(wt.Path, ".env"); fileExists(own) {
+		return EnvFile{Path: own, Source: EnvFromWorktree}, nil, nil
 	}
-	return hint + "\nCreate one, or pass another with --env-file <path>."
+	if p.EnvFile != "" {
+		if !fileExists(p.EnvFile) {
+			return EnvFile{}, nil, fmt.Errorf("the env file of project %q, %s, no longer exists; change it with `theo project set %s --env-file <path>`", p.Name, p.EnvFile, p.Name)
+		}
+		return EnvFile{Path: p.EnvFile, Source: EnvFromProject}, []string{p.EnvFile}, nil
+	}
+	if shared := filepath.Join(main.Path, ".env"); fileExists(shared) {
+		return EnvFile{Path: shared, Source: EnvFromMain}, []string{shared}, nil
+	}
+	return EnvFile{Source: EnvNone}, nil, nil
 }
 
 func fileExists(path string) bool {

@@ -31,7 +31,11 @@ Usage:
   theo <command> [arguments]
 
 Commands:
-  project add <path> [--name <name>]           Register the Git repository at <path>
+  project add <path> [--name <name>] [--env-file <f>]
+                                               Register the Git repository at <path>
+  project set <name> --env-file <f> | --no-env-file
+                                               Set or clear the env file shared by worktrees
+                                               that have no .env of their own
   project list [--json]                        List registered projects
   project remove <name>                        Unregister a project (files and containers are kept)
   worktrees <project> [--json]                 List the worktrees of a project
@@ -39,7 +43,10 @@ Commands:
                                                List the services docker compose resolves
                                                for the main worktree, or for <w>
                                                (a branch, directory name or path).
-                                               --env-file replaces the worktree's .env
+                                               --env-file overrides the env file choice
+
+Env file used by services, in order: --env-file; the worktree's own .env; the
+project's env file (project set); the main worktree's .env.
   version                                      Print the Theo version
   help                                         Show this help
 
@@ -127,12 +134,13 @@ func parse(fs *flag.FlagSet, args []string) ([]string, error) {
 
 func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return usageErrorf("project needs a subcommand: add, list or remove")
+		return usageErrorf("project needs a subcommand: add, set, list or remove")
 	}
 	switch args[0] {
 	case "add":
 		fs := flag.NewFlagSet("project add", flag.ContinueOnError)
 		name := fs.String("name", "", "project name")
+		envFile := fs.String("env-file", "", "env file shared by worktrees without their own .env")
 		pos, err := parse(fs, args[1:])
 		if err != nil {
 			return err
@@ -140,11 +148,39 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 		if len(pos) != 1 {
 			return usageErrorf("project add needs exactly one path")
 		}
-		p, err := e.AddProject(context.Background(), pos[0], *name)
+		p, err := e.AddProject(context.Background(), pos[0], *name, *envFile)
 		if err != nil {
 			return err
 		}
 		fmt.Fprintf(stdout, "Registered project %q at %s\n", p.Name, p.Path)
+		if p.EnvFile != "" {
+			fmt.Fprintf(stdout, "Worktrees without their own .env will use %s\n", p.EnvFile)
+		}
+		return nil
+
+	case "set":
+		fs := flag.NewFlagSet("project set", flag.ContinueOnError)
+		envFile := fs.String("env-file", "", "env file shared by worktrees without their own .env")
+		noEnvFile := fs.Bool("no-env-file", false, "clear the env file; use the main worktree's .env")
+		pos, err := parse(fs, args[1:])
+		if err != nil {
+			return err
+		}
+		if len(pos) != 1 {
+			return usageErrorf("project set needs exactly one project name")
+		}
+		if (*envFile == "") == !*noEnvFile {
+			return usageErrorf("project set needs either --env-file <path> or --no-env-file")
+		}
+		p, err := e.SetEnvFile(pos[0], *envFile)
+		if err != nil {
+			return err
+		}
+		if p.EnvFile == "" {
+			fmt.Fprintf(stdout, "Project %q: worktrees without their own .env will use the main worktree's .env\n", p.Name)
+		} else {
+			fmt.Fprintf(stdout, "Project %q: worktrees without their own .env will use %s\n", p.Name, p.EnvFile)
+		}
 		return nil
 
 	case "list":
@@ -169,9 +205,13 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 			return nil
 		}
 		tw := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "NAME\tPATH")
+		fmt.Fprintln(tw, "NAME\tPATH\tENV FILE")
 		for _, p := range projects {
-			fmt.Fprintf(tw, "%s\t%s\n", p.Name, p.Path)
+			env := p.EnvFile
+			if env == "" {
+				env = "(main worktree's .env)"
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\n", p.Name, p.Path, env)
 		}
 		return tw.Flush()
 
@@ -278,7 +318,11 @@ func runServices(e *engine.Engine, args []string, stdout io.Writer) error {
 	if res.Branch != "" {
 		where = res.Branch + " · " + res.Workspace
 	}
-	fmt.Fprintf(stdout, "Project %s (compose project %q)\nWorktree %s\n", res.Project, res.Compose, where)
+	env := "none"
+	if res.EnvFile.Path != "" {
+		env = res.EnvFile.Path + " (" + envSourceLabel[res.EnvFile.Source] + ")"
+	}
+	fmt.Fprintf(stdout, "Project  %s (compose project %q)\nWorktree %s\nEnv file %s\n", res.Project, res.Compose, where, env)
 	if len(res.Services) == 0 {
 		fmt.Fprintln(stdout, "\nNo services.")
 		return nil
@@ -302,6 +346,13 @@ func runServices(e *engine.Engine, args []string, stdout io.Writer) error {
 		}
 	}
 	return nil
+}
+
+var envSourceLabel = map[string]string{
+	engine.EnvFromFlag:     "--env-file",
+	engine.EnvFromWorktree: "this worktree",
+	engine.EnvFromProject:  "project setting",
+	engine.EnvFromMain:     "main worktree",
 }
 
 // stringList is a flag that can be repeated.

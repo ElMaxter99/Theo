@@ -111,6 +111,7 @@ func TestServicesWithRealCompose(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Worktree feature/x · " + linked,
+		"Env file none",
 		"nginx:alpine",
 		"8080 -> 80/tcp",
 		"3000/tcp (random host port)",
@@ -118,6 +119,44 @@ func TestServicesWithRealCompose(t *testing.T) {
 		"[outside the worktree]",
 	} {
 		checkOutput(t, "stdout", stdout, want)
+	}
+}
+
+func TestServicesShareMainEnvFile(t *testing.T) {
+	testutil.RequireCompose(t)
+	main, _ := testutil.NewRepo(t, map[string]string{
+		".gitignore":   ".env\n",
+		"compose.yaml": "services:\n  web:\n    image: \"nginx:${TAG:?TAG is required}\"\n",
+	})
+	t.Setenv(registry.EnvHome, t.TempDir())
+	if _, stderr, code := run("project", "add", main); code != ExitOK {
+		t.Fatalf("project add: %s", stderr)
+	}
+
+	_, stderr, code := run("services", "app", "-w", "feature/x")
+	if code != ExitError || !strings.Contains(stderr, "No .env found") {
+		t.Errorf("without any .env: code %d, stderr %s", code, stderr)
+	}
+
+	testutil.WriteFile(t, main, ".env", "TAG=alpine\n")
+	stdout, stderr, code := run("services", "app", "-w", "feature/x")
+	if code != ExitOK {
+		t.Fatalf("services: code %d, stderr %s", code, stderr)
+	}
+	checkOutput(t, "stdout", stdout, "Env file "+filepath.Join(main, ".env")+" (main worktree)")
+	checkOutput(t, "stdout", stdout, "nginx:alpine")
+
+	shared := filepath.Join(testutil.TempDir(t), "shared.env")
+	testutil.WriteFile(t, filepath.Dir(shared), "shared.env", "TAG=latest\n")
+	if _, stderr, code := run("project", "set", "app", "--env-file", shared); code != ExitOK {
+		t.Fatalf("project set: %s", stderr)
+	}
+	stdout, _, _ = run("services", "app", "-w", "feature/x")
+	checkOutput(t, "stdout", stdout, "nginx:latest")
+	checkOutput(t, "stdout", stdout, "(project setting)")
+
+	if _, _, code := run("project", "set", "app"); code != ExitUsage {
+		t.Errorf("project set without a flag: code %d, want %d", code, ExitUsage)
 	}
 }
 

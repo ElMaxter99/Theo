@@ -20,6 +20,7 @@ const fileName = "registry.json"
 type Project struct {
 	Name    string    `json:"name"`
 	Path    string    `json:"path"`
+	EnvFile string    `json:"env_file,omitempty"` // shared by worktrees without their own .env
 	AddedAt time.Time `json:"added_at"`
 }
 

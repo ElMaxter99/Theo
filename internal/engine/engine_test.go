@@ -96,7 +96,7 @@ func newEngine() (*Engine, *memStore, *fakeGit, *fakeCompose) {
 
 func TestAddProjectFromLinkedWorktreeRegistersMainWorktree(t *testing.T) {
 	e, store, _, _ := newEngine()
-	p, err := e.AddProject(context.Background(), feature, "")
+	p, err := e.AddProject(context.Background(), feature, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,21 +111,21 @@ func TestAddProjectFromLinkedWorktreeRegistersMainWorktree(t *testing.T) {
 func TestAddProjectRejectsDuplicatesAndBadNames(t *testing.T) {
 	e, _, g, _ := newEngine()
 	ctx := context.Background()
-	if _, err := e.AddProject(ctx, root, "api"); err != nil {
+	if _, err := e.AddProject(ctx, root, "api", ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.AddProject(ctx, root, "again"); err == nil || !strings.Contains(err.Error(), "already registered as") {
+	if _, err := e.AddProject(ctx, root, "again", ""); err == nil || !strings.Contains(err.Error(), "already registered as") {
 		t.Errorf("same path: err = %v", err)
 	}
 
 	g.worktrees = []git.Worktree{{Path: abs("/src/other"), Branch: "main"}}
-	if _, err := e.AddProject(ctx, abs("/src/other"), "API"); err == nil || !strings.Contains(err.Error(), "--name") {
+	if _, err := e.AddProject(ctx, abs("/src/other"), "API", ""); err == nil || !strings.Contains(err.Error(), "--name") {
 		t.Errorf("same name: err = %v", err)
 	}
-	if _, err := e.AddProject(ctx, abs("/src/other"), "my api"); err == nil {
+	if _, err := e.AddProject(ctx, abs("/src/other"), "my api", ""); err == nil {
 		t.Error("name with a space should be rejected")
 	}
-	if _, err := e.AddProject(ctx, abs("/elsewhere"), ""); err == nil {
+	if _, err := e.AddProject(ctx, abs("/elsewhere"), "", ""); err == nil {
 		t.Error("path outside a repository should be rejected")
 	}
 }
@@ -133,7 +133,7 @@ func TestAddProjectRejectsDuplicatesAndBadNames(t *testing.T) {
 func TestRemoveProject(t *testing.T) {
 	e, store, _, _ := newEngine()
 	ctx := context.Background()
-	if _, err := e.AddProject(ctx, root, ""); err != nil {
+	if _, err := e.AddProject(ctx, root, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.RemoveProject("APP"); err != nil {
@@ -150,7 +150,7 @@ func TestRemoveProject(t *testing.T) {
 func TestWorktreesReportsChangesAndSkipsMissingOnes(t *testing.T) {
 	e, _, g, _ := newEngine()
 	ctx := context.Background()
-	if _, err := e.AddProject(ctx, root, ""); err != nil {
+	if _, err := e.AddProject(ctx, root, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	list, err := e.Worktrees(ctx, "app")
@@ -168,7 +168,7 @@ func TestWorktreesReportsChangesAndSkipsMissingOnes(t *testing.T) {
 func TestServices(t *testing.T) {
 	e, _, _, c := newEngine()
 	ctx := context.Background()
-	if _, err := e.AddProject(ctx, root, ""); err != nil {
+	if _, err := e.AddProject(ctx, root, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	c.configs[feature] = &compose.Project{
@@ -263,7 +263,7 @@ func TestIsInside(t *testing.T) {
 	}
 }
 
-func TestEnvFileHint(t *testing.T) {
+func TestResolveEnvFile(t *testing.T) {
 	dir := t.TempDir()
 	main := git.Worktree{Path: filepath.Join(dir, "app")}
 	linked := git.Worktree{Path: filepath.Join(dir, "app-feature")}
@@ -272,22 +272,71 @@ func TestEnvFileHint(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-
-	if hint := envFileHint(linked, main, nil); !strings.Contains(hint, "no .env file") || !strings.Contains(hint, "--env-file <path>") {
-		t.Errorf("no .env anywhere: hint = %q", hint)
+	write := func(path string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte("A=1\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
+	p := registry.Project{Name: "app", Path: main.Path}
+	check := func(name string, p registry.Project, wt git.Worktree, flags []string, wantSource, wantPath string, wantFiles []string) {
+		t.Helper()
+		env, files, err := resolveEnvFile(p, wt, main, flags)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if env.Source != wantSource || env.Path != wantPath || !reflect.DeepEqual(files, wantFiles) {
+			t.Errorf("%s: got %+v %v, want %s %q %v", name, env, files, wantSource, wantPath, wantFiles)
+		}
+	}
+
+	check("nothing anywhere", p, linked, nil, EnvNone, "", nil)
 
 	mainEnv := filepath.Join(main.Path, ".env")
-	if err := os.WriteFile(mainEnv, []byte("A=1\n"), 0o644); err != nil {
+	write(mainEnv)
+	check("linked worktree shares main .env", p, linked, nil, EnvFromMain, mainEnv, []string{mainEnv})
+	check("main worktree uses its own", p, main, nil, EnvFromWorktree, mainEnv, nil)
+
+	shared := filepath.Join(dir, "shared.env")
+	write(shared)
+	withEnv := p
+	withEnv.EnvFile = shared
+	check("project env file beats main .env", withEnv, linked, nil, EnvFromProject, shared, []string{shared})
+
+	own := filepath.Join(linked.Path, ".env")
+	write(own)
+	check("worktree's own .env wins", withEnv, linked, nil, EnvFromWorktree, own, nil)
+	check("flag wins over everything", withEnv, linked, []string{shared}, EnvFromFlag, shared, []string{shared})
+
+	if _, _, err := resolveEnvFile(p, linked, main, []string{filepath.Join(dir, "missing.env")}); err == nil {
+		t.Error("missing --env-file should fail")
+	}
+	gone := p
+	gone.EnvFile = filepath.Join(dir, "gone.env")
+	if err := os.Remove(own); err != nil {
 		t.Fatal(err)
 	}
-	if hint := envFileHint(linked, main, nil); !strings.Contains(hint, "--env-file "+mainEnv) {
-		t.Errorf("main has .env: hint = %q, want it to suggest %s", hint, mainEnv)
+	if _, _, err := resolveEnvFile(gone, linked, main, nil); err == nil || !strings.Contains(err.Error(), "no longer exists") {
+		t.Errorf("missing project env file: err = %v", err)
 	}
-	if hint := envFileHint(main, main, nil); hint != "" {
-		t.Errorf("main worktree with .env: hint = %q, want none", hint)
+}
+
+func TestSetEnvFile(t *testing.T) {
+	e, store, _, _ := newEngine()
+	if _, err := e.AddProject(context.Background(), root, "", ""); err != nil {
+		t.Fatal(err)
 	}
-	if hint := envFileHint(linked, main, []string{mainEnv}); hint != "" {
-		t.Errorf("with --env-file: hint = %q, want none", hint)
+	envFile := filepath.Join(t.TempDir(), "app.env")
+	if err := os.WriteFile(envFile, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.SetEnvFile("app", envFile); err != nil || store.projects[0].EnvFile != envFile {
+		t.Fatalf("SetEnvFile() err = %v, stored %q", err, store.projects[0].EnvFile)
+	}
+	if _, err := e.SetEnvFile("app", ""); err != nil || store.projects[0].EnvFile != "" {
+		t.Errorf("clearing: err = %v, stored %q", err, store.projects[0].EnvFile)
+	}
+	if _, err := e.SetEnvFile("app", envFile+".missing"); err == nil {
+		t.Error("a missing env file should be rejected")
 	}
 }
