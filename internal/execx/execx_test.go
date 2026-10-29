@@ -76,6 +76,10 @@ func TestExplainListsAndSkipsChanges(t *testing.T) {
 	if err := StreamInteractive(context.Background(), dir, nil, nil, nil, "theo-no-such-tool", "exec"); err != nil {
 		t.Errorf("StreamInteractive under --explain: %v", err)
 	}
+	// Pipe moves data in and out of volumes: listed, never run.
+	if err := Pipe(context.Background(), nil, nil, "theo-no-such-tool", "run", "--rm"); err != nil {
+		t.Errorf("Pipe under --explain: %v", err)
+	}
 	// A mutating verb through Run is caught too.
 	if out, err := Run(context.Background(), dir, "theo-no-such-tool-git", "worktree", "list"); err == nil {
 		t.Errorf("a read of a missing tool should fail, got %q", out)
