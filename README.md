@@ -1,157 +1,95 @@
 # Theo
 
-> **Status:** early prototype. Theo can register a project, show its worktrees and the services Docker Compose resolves for each of them, and start, stop and inspect each worktree as its own Compose project. It does not yet reassign ports, so two worktrees that publish the same fixed port cannot run at the same time.
+Theo is a cross-platform command-line tool (macOS, Linux, Windows) that manages **several isolated environments of the same project, based on Git worktrees and Docker Compose**. Each branch gets its own running copy, so a developer, or several AI agents, can work on different features and fixes at the same time, choosing which services are isolated and which are deliberately shared.
 
-Theo is a cross-platform tool (macOS, Linux and Windows) for managing development projects and **multiple isolated environments based on Git and Docker Compose**. The goal is to let a developer, or several AI agents, work at the same time on different branches, features and fixes of the same project, each one with its own running environment, while choosing which services are isolated and which ones are deliberately shared.
+> **Status:** early. The features below work and are tested on Linux against a real Docker daemon; macOS and Windows are covered by CI only, and Docker-based tests are skipped there.
 
-## Design principles
+## Install
 
-- **Orchestrate, don't reimplement.** Theo drives the `git` and `docker compose` tools you already use and relies on their own behaviour and validation.
-- **Never touch your files.** Your project's Compose files stay as they are; Theo adds its own configuration per instance.
-- **Safe by default.** No destructive operation (deleting volumes, data or worktrees) happens implicitly.
-- **Local engine first.** All logic lives in a local engine. The first interface is a minimal command-line tool; a graphical interface will be built later on top of the same engine.
-- **Cross-platform from day one.** macOS, Linux and Windows are supported by design, not as an afterthought.
+**Release binaries.** Download the archive for your system from the [releases page](https://github.com/ElMaxter99/Theo/releases) (`tar.gz` for Linux and macOS, `zip` for Windows, amd64 and arm64), check it against `checksums.txt`, and put `theo` in your `PATH`.
 
-## Requirements
-
-- [Go](https://go.dev/dl/) 1.24 or later, to build from source.
-- Git and Docker with the Compose plugin, in your `PATH`. Reading a project's services runs `docker compose config`, which does not need the Docker daemon. Starting and inspecting containers does.
-
-## Build and run
+**With Go** (1.24 or later):
 
 ```sh
-go build ./cmd/theo
+go install github.com/ElMaxter99/Theo/cmd/theo@latest
+```
+
+**From source:**
+
+```sh
+git clone https://github.com/ElMaxter99/Theo
+cd Theo
+go build ./cmd/theo      # or scripts/build.sh, scripts/build.ps1
 ./theo help
 ```
 
-Or run it directly with `go run ./cmd/theo <command>`.
+You also need Git and Docker with the Compose plugin in your `PATH`. Reading a project's services runs `docker compose config`, which does not need the daemon; starting and inspecting containers does.
 
-## Usage
+## Quickstart
 
 ```sh
-# Register a Git repository. From a linked worktree, its main worktree is registered.
-theo project add ~/code/my-api --name my-api
-theo project list
-
-# Worktrees of the project: branch, uncommitted changes and path.
-theo worktrees my-api
-
-# Services as `docker compose config` resolves them: image or build, ports,
-# mounts (bind mounts outside the worktree are flagged), dependencies,
-# networks and profiles. Services behind profiles are included.
-theo services my-api                       # main worktree
-theo services my-api --worktree feature/x  # by branch, directory name or path
-
-# Git creates linked worktrees without untracked files such as .env, so they
-# share an env file. In order: --env-file; the worktree's own .env; the
-# project's env file; the main worktree's .env.
-theo project set my-api --env-file ~/secrets/my-api.env   # or --no-env-file
-theo services my-api -w feature/x --env-file other.env    # one-off override
-
-# Branches and worktrees. Theo never forces: a branch that is checked out in
-# another worktree is refused, and nothing is deleted without confirmation.
-theo branches my-api                                   # local and remote, and which have a worktree
-theo worktree add my-api feature/x                     # existing branch (or a single remote one)
-theo worktree add my-api fix/bug-1 --new --from main   # new branch
-theo worktree add my-api feature/x --path ~/trees/x    # choose the directory
-theo project set my-api --worktree-dir ~/trees/my-api  # default directory for this project
-# Without --path or --worktree-dir, worktrees go to <Theo data dir>/worktrees/<project>/<branch>.
-# Git does not copy ignored files such as .env: Theo says which are missing and
-# which env file the worktree will use by reference. Nothing is copied.
-theo worktree remove my-api feature/x
-# Refused while the worktree has containers (run `theo down` first) or
-# uncommitted or untracked files, which are listed. To lose them on purpose:
-theo worktree remove my-api feature/x --discard-changes --confirm <directory-name>
-# The main worktree is never removed, and neither are branches or volumes.
-# Worktrees created with plain `git worktree add` show up in `theo worktrees` too.
-
-# Run a worktree. Each worktree is its own Compose project: the main worktree
-# keeps the name Compose gives it, and linked worktrees get
-# <project>-<directory>, so their containers, networks and volumes never mix.
-theo up my-api -w feature/x [--build] [--profile worker] [--auto-ports]
-theo ps my-api                  # which worktrees have containers
-theo ps my-api -w feature/x     # containers, state and ports of one worktree
-theo logs my-api -w feature/x -f --tail 100 [service...]
-theo restart my-api -w feature/x
-theo down my-api -w feature/x   # removes containers and networks, never volumes
-
-# Host ports. Two worktrees that publish the same fixed port cannot run at
-# once. `ports` shows what each service publishes and whether the port is free;
-# `up` warns when one is taken. With --auto-ports, `up` publishes the services
-# whose port is taken on another free one (the next free port after the
-# configured one) and remembers it, so the address stays the same on restart.
-# Your Compose files are not modified: Theo adds a generated Compose file for
-# that instance (needs Docker Compose 2.24.4 or later). Ports of other
-# instances Theo has assigned count as taken.
-theo ports my-api -w feature/x [--auto-ports] [--profile worker]
-theo up my-api -w feature/x --auto-ports
-
-# Per-instance settings. They never touch your Compose files or .env: Theo
-# generates a Compose file and an env file for the instance (outside the
-# project, readable only by you) and runs it with them.
-theo env set my-api -w feature/x LOG_LEVEL=debug [--service api]
-theo env set my-api -w feature/x API_TOKEN=... --secret   # masked when shown
-theo env list my-api -w feature/x [--show-secrets]
-theo env unset my-api -w feature/x LOG_LEVEL
-# A fixed container_name stops a second instance from starting (`up` warns).
-theo instance set my-api -w feature/x --neutralize-container-names
-theo instance show my-api -w feature/x
-theo instance config my-api -w feature/x   # what it will run with; secrets masked
-theo history my-api [-w feature/x] [--limit 20]   # up, down and restart, with result and user
-
-# Volumes. `down` never deletes them; deleting data is a separate, explicit step.
-theo volumes my-api -w feature/x   # in use, or kept with their data after down; external ones listed
-theo volumes purge my-api -w feature/x --confirm <compose-project>
-# Refused while the instance has containers, and without the matching
-# --confirm (it lists what would be deleted and gives the exact command).
-# Volumes declared external are never touched; neither are other instances'.
-
-# Reconcile Theo's records with what really exists. It reports worktrees or
-# containers removed outside Theo, a stack started by hand under another
-# name, and containers or volumes left behind by a deleted worktree. It
-# changes nothing; --apply only forgets Theo's own stale records (settings,
-# reserved ports, generated files), never containers, volumes or your files.
-theo reconcile [my-api] [--apply]
-
-# Unregister the project. Files, containers and volumes are not touched.
-theo project remove my-api
+theo project add ~/code/my-api --name my-api    # register a Git repository
+theo services my-api                            # what Compose will run
+theo up my-api                                  # start the main worktree
+theo worktree add my-api feature/x --new       # a second worktree
+theo up my-api -w feature/x --auto-ports        # run it next to the first
+theo ps my-api
+theo down my-api -w feature/x                   # volumes are kept
 ```
 
-`project list`, `worktrees` and `services` accept `--json` for scripts and agents.
+More in the [quickstart](docs/cli/quickstart.md). To try everything on a small app made for it, follow [`examples/demo`](examples/demo/README.md).
 
-Theo never changes your files or branches and never deletes volumes. Only `up`, `down` and `restart` change containers.
+## Commands
 
-Values set with `theo env --secret` are stored in plain text in `instances.json` and in the generated files, which are readable only by your user; Theo masks them in its own output, but they are not encrypted. Passing a secret on the command line leaves it in your shell history.
+Run `theo help` for the full list. Every command that prints data supports `--json`.
 
-`--auto-ports` does not support projects that set `COMPOSE_FILE` yet, and leaves random ports (`"3000"`) and ranges (`"8000-8010"`) as they are. The ports it assigned are in `ports.json`, next to the registry, and the generated Compose files in `overlays/`.
+| Topic | Commands | Page |
+|---|---|---|
+| Quickstart | the basics, step by step | [quickstart](docs/cli/quickstart.md) |
+| Projects | `project add\|set\|list\|remove` | [project](docs/cli/project.md) |
+| Compose files | which files and env files are used | [compose-files](docs/cli/compose-files.md) |
+| Worktrees | `worktrees`, `branches`, `worktree add\|remove`, `up`, `down`, `restart`, `ps`, `logs` | [worktrees](docs/cli/worktrees.md) |
+| Host ports | `ports`, `up --auto-ports` | [ports](docs/cli/ports.md) |
+| Instance settings | `env set\|unset\|list`, `instance set\|show\|config`, `history` | [instance-settings](docs/cli/instance-settings.md) |
+| Volumes | `volumes`, `volumes purge\|backup\|restore\|clone` | [volumes](docs/cli/volumes.md) |
+| Shared services | `shared add\|use\|up\|status\|down` | [shared](docs/cli/shared.md) |
+| Status | `status` | [status](docs/cli/status.md) |
+| Explain | `explain` | [explain](docs/cli/explain.md) |
+| Reconcile | `reconcile` | [reconcile](docs/cli/reconcile.md) |
+| Shell completion | `completion` | [completion](docs/cli/completion.md) |
+| Output formats | `--json` and friends | [output](docs/cli/output.md) |
+| Compose compatibility | supported Compose features and limits | [compose-compat](docs/cli/compose-compat.md) |
+| Env precedence | which value wins | [env-precedence](docs/cli/env-precedence.md) |
 
-Theo keeps its registry in `theo/registry.json` inside your user configuration directory (for example `~/.config` on Linux, `~/Library/Application Support` on macOS, `%AppData%` on Windows). Set `THEO_HOME` to use another directory.
+## Safety principles
+
+- **Orchestrate, don't reimplement.** Theo drives the `git` and `docker compose` you already use and relies on their validation.
+- **Never touch your files.** Your Compose files and `.env` stay as they are; Theo writes its own generated files per instance, outside the project. Ignored files are never copied or overwritten.
+- **No implicit deletion.** `down` never removes volumes. Deleting volumes, worktrees or data is a separate command that lists what it will delete and needs an explicit confirmation. Volumes declared `external` and other instances' volumes are never touched.
+- **Reports before repairs.** `reconcile` only reports; `--apply` forgets Theo's own stale records, never containers, volumes or your files.
+- **Secrets are masked, not encrypted.** Values set with `theo env --secret` are masked in Theo's output but stored in plain text in Theo's data files, readable only by your user. Passing a secret on the command line leaves it in your shell history.
+- **Local engine first.** All logic is in a local engine; the command line is the first interface and a graphical one can be built on the same engine.
+
+Theo keeps its registry and data in `theo/` inside your user configuration directory (`~/.config` on Linux, `~/Library/Application Support` on macOS, `%AppData%` on Windows). Set `THEO_HOME` to use another directory.
+
+## Platform notes
+
+- Linux: the reference platform for the Docker-based tests.
+- macOS and Windows: CI builds, vets and runs the tests that need no Docker daemon. Anything that starts containers is unverified there, so please report problems.
+- On Windows, use a Docker daemon running Linux containers (Docker Desktop with WSL 2). Paths with spaces and accents are supported.
+- `--auto-ports` and per-instance settings need Docker Compose 2.24.4 or later.
 
 ## Development
 
 ```sh
+gofmt -l .          # must print nothing
 go vet ./...
 go test ./...
 ```
 
-`internal/acceptance` has one test per use case of the MVP (UC-01 to UC-08), driven through the command line. CI prints what ran and what was skipped on each system.
+Tests that use Git and Docker skip themselves when those are missing; they build tiny images, and the `examples/demo` guide test pulls `golang`, `alpine` and `redis`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the layout and the rules, [SECURITY.md](SECURITY.md) to report a vulnerability and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). `scripts/build.sh` and `scripts/build.ps1` build for the current system or every release target; pushing a `v*` tag builds and publishes a release.
 
-Some tests use the real `git` and `docker compose` tools, and a Docker daemon that runs Linux containers. They are skipped when those are not available. They build a tiny image `FROM scratch`, so they never pull images.
-
-## Project layout
-
-| Path | Contents |
-|---|---|
-| `cmd/theo/` | Entry point of the `theo` command-line tool. |
-| `internal/cli/` | Command-line interface: argument parsing and output. No domain logic. |
-| `internal/engine/` | Local engine: domain logic and operations shared by every interface. |
-| `internal/registry/` | Persistent registry of projects. |
-| `internal/ports/` | Host port availability and the ports assigned to instances. |
-| `internal/acceptance/` | Acceptance suite: one test per use case, against real Git and Docker. |
-| `internal/instances/` | Per-instance settings and the operation history. |
-| `internal/git/`, `internal/compose/` | Read-only adapters for the `git` and `docker compose` tools. |
-| `internal/execx/` | Runs external tools directly, without a shell. |
-| `internal/testutil/` | Test helpers for tests that use real `git` and `docker compose`. |
+The repository is in English.
 
 ## License
 

@@ -118,7 +118,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	var err error
 	switch args[0] {
 	case "version", "--version":
-		fmt.Fprintf(stdout, "theo %s\n", engine.Version)
+		fmt.Fprintln(stdout, engine.VersionLine())
 		return ExitOK
 	case "help", "--help", "-h":
 		fmt.Fprint(stdout, helpText())
