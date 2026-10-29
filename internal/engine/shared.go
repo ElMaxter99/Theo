@@ -219,7 +219,7 @@ func (e *Engine) SharedConsumers(ctx context.Context, project string) ([]SharedC
 	}
 	composeOf := map[string]string{}
 	for _, ev := range events {
-		if ev.Compose != "" && !strings.HasSuffix(ev.Compose, "-shared") {
+		if ev.Compose != "" && !strings.HasPrefix(ev.Operation, "shared ") {
 			composeOf[ev.Workspace] = ev.Compose
 		}
 	}

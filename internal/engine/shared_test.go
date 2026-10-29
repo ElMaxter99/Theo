@@ -194,3 +194,18 @@ func TestReconcileReportsBrokenSharedServices(t *testing.T) {
 		t.Errorf("findings = %v, %v", kinds(r), err)
 	}
 }
+
+func TestPortsOfServicesTakenFromTheSharedOnesAreNotPlanned(t *testing.T) {
+	e, _, inst := portsFixture(t, sharedServices(), 27017)
+	ctx := context.Background()
+	e.SharedAdd(ctx, "app", []string{"db"}, "feature/login", false)
+	plan, _ := e.PlanPorts(ctx, inst, nil, false)
+	if len(plan.Conflicts()) != 1 {
+		t.Fatalf("before using the shared db its port conflicts: %+v", plan.Mappings)
+	}
+	e.SharedUse(inst, []string{"db"}, nil)
+	plan, _ = e.PlanPorts(ctx, inst, nil, false)
+	if len(plan.Mappings) != 0 {
+		t.Errorf("the instance does not run db, so its port is not planned: %+v", plan.Mappings)
+	}
+}
