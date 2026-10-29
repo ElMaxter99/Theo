@@ -69,6 +69,12 @@ Running a worktree (each worktree runs as its own Compose project):
   ps <project> -w <w> [--json]                      Show the containers of one worktree
   logs <project> [-w <w>] [-f] [--tail <n>] [service...]
                                                     Show its logs
+  volumes <project> [-w <w>] [--json]               Volumes of the instance: in use, or kept with
+                                                    their data after down; external ones are listed
+                                                    and never touched
+  volumes purge <project> -w <w> --confirm <compose-project>
+                                                    Delete the instance's data. Separate from down,
+                                                    refused while it has containers
   env set <project> [-w <w>] NAME=VALUE [--secret] [--service <s>]
   env unset <project> [-w <w>] NAME
   env list <project> [-w <w>] [--show-secrets] [--json]
@@ -127,6 +133,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = withEngine(func(e *engine.Engine) error { return runInstance(e, args[0], args[1:], stdout, stderr) })
 	case "ps":
 		err = withEngine(func(e *engine.Engine) error { return runPS(e, args[1:], stdout) })
+	case "volumes":
+		err = withEngine(func(e *engine.Engine) error { return runVolumes(e, args[1:], stdout) })
 	case "env":
 		err = withEngine(func(e *engine.Engine) error { return runEnv(e, args[1:], stdout) })
 	case "instance":

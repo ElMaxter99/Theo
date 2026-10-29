@@ -57,6 +57,9 @@ type Compose interface {
 	Stacks(ctx context.Context) ([]compose.Stack, error)
 	ConfigFor(ctx context.Context, t compose.Target) (*compose.Project, error)
 	ConfigText(ctx context.Context, t compose.Target) ([]byte, error)
+	Volumes(ctx context.Context, project string) ([]compose.DockerVolume, error)
+	VolumeUsers(ctx context.Context, volume string) ([]string, error)
+	RemoveVolume(ctx context.Context, volume string) error
 }
 
 // Engine is the entry point to Theo's operations.
