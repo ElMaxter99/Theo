@@ -106,6 +106,13 @@ theo volumes purge my-api -w feature/x --confirm <compose-project>
 # --confirm (it lists what would be deleted and gives the exact command).
 # Volumes declared external are never touched; neither are other instances'.
 
+# Reconcile Theo's records with what really exists. It reports worktrees or
+# containers removed outside Theo, a stack started by hand under another
+# name, and containers or volumes left behind by a deleted worktree. It
+# changes nothing; --apply only forgets Theo's own stale records (settings,
+# reserved ports, generated files), never containers, volumes or your files.
+theo reconcile [my-api] [--apply]
+
 # Unregister the project. Files, containers and volumes are not touched.
 theo project remove my-api
 ```
@@ -127,6 +134,8 @@ go vet ./...
 go test ./...
 ```
 
+`internal/acceptance` has one test per use case of the MVP (UC-01 to UC-08), driven through the command line. CI prints what ran and what was skipped on each system.
+
 Some tests use the real `git` and `docker compose` tools, and a Docker daemon that runs Linux containers. They are skipped when those are not available. They build a tiny image `FROM scratch`, so they never pull images.
 
 ## Project layout
@@ -138,6 +147,7 @@ Some tests use the real `git` and `docker compose` tools, and a Docker daemon th
 | `internal/engine/` | Local engine: domain logic and operations shared by every interface. |
 | `internal/registry/` | Persistent registry of projects. |
 | `internal/ports/` | Host port availability and the ports assigned to instances. |
+| `internal/acceptance/` | Acceptance suite: one test per use case, against real Git and Docker. |
 | `internal/instances/` | Per-instance settings and the operation history. |
 | `internal/git/`, `internal/compose/` | Read-only adapters for the `git` and `docker compose` tools. |
 | `internal/execx/` | Runs external tools directly, without a shell. |
