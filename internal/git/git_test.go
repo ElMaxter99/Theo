@@ -69,3 +69,15 @@ func TestGitAgainstRealRepository(t *testing.T) {
 		t.Error("TopLevel() outside a repository should fail")
 	}
 }
+
+func TestParseChanges(t *testing.T) {
+	out := []byte(" M a.go\x00?? notes.txt\x00R  new.go\x00old.go\x00A  b.go\x00")
+	got := ParseChanges(out)
+	want := []string{" M a.go", "?? notes.txt", "R  new.go", "A  b.go"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("changes = %q, want %q", got, want)
+	}
+	if got := ParseChanges(nil); len(got) != 0 {
+		t.Errorf("empty output: %q", got)
+	}
+}
