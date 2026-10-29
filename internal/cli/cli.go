@@ -25,7 +25,7 @@ const (
 	ExitUsage = 2
 )
 
-const usage = `Theo manages development projects and isolated environments based on Git and Docker Compose.
+const usageBase = `Theo manages development projects and isolated environments based on Git and Docker Compose.
 
 Usage:
   theo <command> [arguments]
@@ -96,7 +96,7 @@ Running a worktree (each worktree runs as its own Compose project):
                                                     they are free, and their URLs
   These commands also accept --env-file. Without -w they use the main worktree,
   except ps, which then shows every worktree.
-
+%MORE%
   version                                      Print the Theo version
   help                                         Show this help
 
@@ -111,7 +111,7 @@ var errUsage = errors.New("usage")
 // process exit code.
 func Run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprint(stderr, usage)
+		fmt.Fprint(stderr, helpText())
 		return ExitUsage
 	}
 
@@ -121,7 +121,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "theo %s\n", engine.Version)
 		return ExitOK
 	case "help", "--help", "-h":
-		fmt.Fprint(stdout, usage)
+		fmt.Fprint(stdout, helpText())
 		return ExitOK
 	case "project":
 		err = withEngine(func(e *engine.Engine) error { return runProject(e, args[1:], stdout) })
@@ -150,17 +150,21 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "ports":
 		err = withEngine(func(e *engine.Engine) error { return runPorts(e, args[1:], stdout) })
 	default:
-		err = usageErrorf("unknown command %q", args[0])
+		if c, ok := commands[args[0]]; ok {
+			err = withEngine(func(e *engine.Engine) error { return c(e, args[1:], stdout, stderr) })
+		} else {
+			err = usageErrorf("unknown command %q", args[0])
+		}
 	}
 
 	switch {
 	case err == nil:
 		return ExitOK
 	case errors.Is(err, flag.ErrHelp):
-		fmt.Fprint(stdout, usage)
+		fmt.Fprint(stdout, helpText())
 		return ExitOK
 	case errors.Is(err, errUsage):
-		fmt.Fprintf(stderr, "theo: %s\n\n%s", strings.TrimPrefix(err.Error(), "usage: "), usage)
+		fmt.Fprintf(stderr, "theo: %s\n\n%s", strings.TrimPrefix(err.Error(), "usage: "), helpText())
 		return ExitUsage
 	default:
 		fmt.Fprintf(stderr, "theo: %s\n", err)
