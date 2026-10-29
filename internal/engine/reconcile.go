@@ -291,6 +291,11 @@ func dirExists(path string) bool {
 // the files generated for them. It never touches worktrees, containers,
 // volumes or any file of the user. It returns how many records it forgot.
 func (e *Engine) ApplyReconcile(report *Report) (int, error) {
+	unlock, err := e.locked()
+	if err != nil {
+		return 0, err
+	}
+	defer unlock()
 	settings, err := e.settings.Load()
 	if err != nil {
 		return 0, err

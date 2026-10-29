@@ -67,6 +67,11 @@ func (e *Engine) Settings(inst *Instance) (instances.Config, error) {
 }
 
 func (e *Engine) updateSettings(inst *Instance, change func(*instances.Config) error) error {
+	unlock, err := e.locked()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	state, err := e.settings.Load()
 	if err != nil {
 		return err
@@ -215,7 +220,7 @@ func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []s
 	overlayPath, envPath := e.instanceFile(inst, ".yaml"), e.instanceFile(inst, ".env")
 	if overlay.Empty() && len(env) == 0 {
 		if auto {
-			if err := e.portStore.Save(state); err != nil {
+			if err := e.savePorts(inst.Workspace, state); err != nil {
 				return nil, err
 			}
 		}
@@ -236,7 +241,7 @@ func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []s
 		}
 	}
 	if auto {
-		if err := e.portStore.Save(state); err != nil {
+		if err := e.savePorts(inst.Workspace, state); err != nil {
 			return nil, err
 		}
 	}

@@ -94,6 +94,11 @@ func workspaceOwner(p registry.Project, wsPath string) string {
 
 // updateProject applies fn to the stored project called name.
 func (e *Engine) updateProject(name string, fn func(*registry.Project) error) error {
+	unlock, err := e.locked()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	projects, err := e.store.Load()
 	if err != nil {
 		return err

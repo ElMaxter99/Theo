@@ -98,6 +98,27 @@ func (e *Engine) PlanPorts(ctx context.Context, inst *Instance, profiles []strin
 	return plan, err
 }
 
+// savePorts records the ports of one instance. The file is read again under
+// the lock and only this instance's entry is replaced, so two instances
+// starting at the same time do not undo each other's reservations.
+func (e *Engine) savePorts(workspace string, mine ports.State) error {
+	unlock, err := e.locked()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	current, err := e.portStore.Load()
+	if err != nil {
+		return err
+	}
+	if v, ok := mine[workspace]; ok {
+		current[workspace] = v
+	} else {
+		delete(current, workspace)
+	}
+	return e.portStore.Save(current)
+}
+
 func (e *Engine) planPorts(ctx context.Context, inst *Instance, profiles []string, auto bool) (*PortPlan, ports.State, error) {
 	// An instance that was started with --auto-ports keeps doing it.
 	if cfg, err := e.Settings(inst); err == nil && cfg.AutoPorts {

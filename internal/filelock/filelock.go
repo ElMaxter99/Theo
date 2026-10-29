@@ -14,10 +14,35 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
 )
+
+// WriteFile replaces the file at path with data: it writes a temporary file
+// with a name of its own in the same directory and renames it over path, so
+// a reader never sees half a file and two writers never share a temporary
+// file.
+func WriteFile(path string, data []byte, perm os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	defer os.Remove(name)
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(name, perm); err != nil {
+		return err
+	}
+	return os.Rename(name, path)
+}
 
 // StaleAfter is how long a lock file may exist before it is considered
 // abandoned. Writers hold the lock for milliseconds.

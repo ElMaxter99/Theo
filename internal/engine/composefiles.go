@@ -195,6 +195,11 @@ func (e *Engine) SetComposeFiles(ctx context.Context, name string, files []strin
 			}
 		}
 	}
+	unlock, err := e.locked()
+	if err != nil {
+		return registry.Project{}, err
+	}
+	defer unlock()
 	projects, err := e.store.Load()
 	if err != nil {
 		return registry.Project{}, err

@@ -105,6 +105,11 @@ func (e *Engine) SetWorktreeDir(name, dir string) error {
 		}
 		dir = abs
 	}
+	unlock, err := e.locked()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	projects, err := e.store.Load()
 	if err != nil {
 		return err

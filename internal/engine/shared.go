@@ -44,6 +44,11 @@ func (e *Engine) SharedSet(project string) (instances.SharedSet, bool, error) {
 }
 
 func (e *Engine) saveSharedSet(project string, set *instances.SharedSet) error {
+	unlock, err := e.locked()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	all, err := e.settings.LoadShared()
 	if err != nil {
 		return err
