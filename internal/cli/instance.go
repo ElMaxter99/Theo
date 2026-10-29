@@ -82,28 +82,28 @@ func runInstance(e *engine.Engine, cmd string, args []string, stdout, stderr io.
 	return nil
 }
 
-// preparePorts checks the host ports before `up`. With auto it reassigns the
-// ones that are taken; without it, it only warns, and Docker has the last
-// word.
+// preparePorts prepares the instance before `up`: it applies the instance's
+// settings and checks the host ports. With auto it reassigns the ones that
+// are taken; without it, it only warns, and Docker has the last word.
 func preparePorts(ctx context.Context, e *engine.Engine, inst *engine.Instance, profiles []string, auto bool, stderr io.Writer) error {
-	if auto {
-		plan, err := e.ApplyPorts(ctx, inst, profiles)
-		if err != nil {
-			return err
-		}
-		for _, m := range plan.Mappings {
-			if m.Status == engine.PortReassigned || m.Status == engine.PortKept {
-				fmt.Fprintf(stderr, "theo: %s publishes %d/%s on host port %d instead of %s (%s)\n", m.Service, m.Target, m.Protocol, m.Effective, m.Configured, m.Status)
-			}
-		}
-		return nil
-	}
-	plan, err := e.PlanPorts(ctx, inst, profiles, false)
+	plan, err := e.ApplyInstance(ctx, inst, profiles, auto)
 	if err != nil {
 		return err
 	}
+	for _, m := range plan.Mappings {
+		if m.Status == engine.PortReassigned || m.Status == engine.PortKept {
+			fmt.Fprintf(stderr, "theo: %s publishes %d/%s on host port %d instead of %s (%s)\n", m.Service, m.Target, m.Protocol, m.Effective, m.Configured, m.Status)
+		}
+	}
 	for _, m := range plan.Conflicts() {
 		fmt.Fprintf(stderr, "theo: warning: host port %s (%s, container port %d/%s) is already in use. Free it, or start with --auto-ports.\n", m.Configured, m.Service, m.Target, m.Protocol)
+	}
+	for _, f := range inst.GeneratedFiles() {
+		fmt.Fprintf(stderr, "theo: using generated file %s\n", f)
+	}
+	if names := inst.FixedContainerNames(); len(names) > 0 && !inst.Main && !inst.Neutralized() {
+		fmt.Fprintf(stderr, "theo: warning: %s set a fixed container_name, so another instance of this project cannot run at the same time. `theo instance set %s -w %s --neutralize-container-names` removes it for this instance.\n",
+			strings.Join(compose.SortedKeys(names), ", "), inst.Project, worktreeArg(inst))
 	}
 	return nil
 }

@@ -8,25 +8,41 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/ElMaxter99/Theo/internal/execx"
 )
 
 // Project is the part of the resolved Compose model that Theo uses.
 type Project struct {
-	Name     string             `json:"name"`
-	Services map[string]Service `json:"services"`
+	Name     string                  `json:"name"`
+	Services map[string]Service      `json:"services"`
+	Volumes  map[string]VolumeConfig `json:"volumes"`
+}
+
+// VolumeConfig is a top-level volume of the resolved Compose model.
+type VolumeConfig struct {
+	Name     string          `json:"name"`
+	External json.RawMessage `json:"external"` // true, or an object in older versions; absent otherwise
+}
+
+// IsExternal reports whether Compose expects the volume to exist already
+// and never creates or removes it.
+func (v VolumeConfig) IsExternal() bool {
+	s := strings.TrimSpace(string(v.External))
+	return s != "" && s != "false" && s != "null"
 }
 
 // Service is a service of the resolved Compose model.
 type Service struct {
-	Image     string                     `json:"image"`
-	Build     *Build                     `json:"build"`
-	Ports     []Port                     `json:"ports"`
-	Volumes   []Volume                   `json:"volumes"`
-	DependsOn map[string]json.RawMessage `json:"depends_on"`
-	Networks  map[string]json.RawMessage `json:"networks"`
-	Profiles  []string                   `json:"profiles"`
+	Image         string                     `json:"image"`
+	ContainerName string                     `json:"container_name"`
+	Build         *Build                     `json:"build"`
+	Ports         []Port                     `json:"ports"`
+	Volumes       []Volume                   `json:"volumes"`
+	DependsOn     map[string]json.RawMessage `json:"depends_on"`
+	Networks      map[string]json.RawMessage `json:"networks"`
+	Profiles      []string                   `json:"profiles"`
 }
 
 // Build is the build section of a service.

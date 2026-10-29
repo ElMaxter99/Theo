@@ -82,8 +82,12 @@ func (g *fakeGit) IgnoredFiles(context.Context, string, string) ([]string, error
 type fakeCompose struct {
 	configs    map[string]*compose.Project
 	stacks     []compose.Stack
-	calls      []string            // "up <name> <dir> <env files>"
-	resolved   *compose.Project    // returned by ConfigFor
+	calls      []string                          // "up <name> <dir> <env files>"
+	resolved   *compose.Project                  // returned by ConfigFor
+	text       string                            // returned by ConfigText
+	volumes    map[string][]compose.DockerVolume // by Compose project
+	users      map[string][]string               // containers by volume
+	removed    []string
 	containers []compose.Container // returned by PS
 }
 
@@ -119,6 +123,24 @@ func (c *fakeCompose) PS(_ context.Context, t compose.Target) ([]compose.Contain
 func (c *fakeCompose) ConfigFor(_ context.Context, t compose.Target) (*compose.Project, error) {
 	c.record("config", t)
 	return c.resolved, nil
+}
+
+func (c *fakeCompose) ConfigText(_ context.Context, t compose.Target) ([]byte, error) {
+	c.record("config-text", t)
+	return []byte(c.text), nil
+}
+
+func (c *fakeCompose) Volumes(_ context.Context, project string) ([]compose.DockerVolume, error) {
+	return c.volumes[project], nil
+}
+
+func (c *fakeCompose) VolumeUsers(_ context.Context, volume string) ([]string, error) {
+	return c.users[volume], nil
+}
+
+func (c *fakeCompose) RemoveVolume(_ context.Context, volume string) error {
+	c.removed = append(c.removed, volume)
+	return nil
 }
 
 func (c *fakeCompose) Stacks(context.Context) ([]compose.Stack, error) {

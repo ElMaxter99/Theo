@@ -2,12 +2,9 @@ package engine
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -70,7 +67,9 @@ func (m PortMapping) URL() string {
 // PortPlan is the result of PlanPorts.
 type PortPlan struct {
 	Mappings []PortMapping `json:"ports"`
-	Overlay  string        `json:"overlay,omitempty"` // generated Compose file, when ports are reassigned
+	Overlay  string        `json:"overlay,omitempty"` // generated Compose file for the reassigned ports
+
+	changed map[string][]compose.Port // services whose ports are rewritten, with their complete list
 }
 
 // Conflicts returns the mappings that ask for a port that is taken.
@@ -224,55 +223,10 @@ func (e *Engine) planPorts(ctx context.Context, inst *Instance, profiles []strin
 		out[inst.Workspace] = saved
 	}
 	if len(changed) > 0 {
-		plan.Overlay = string(compose.RenderPortsOverlay(changed))
+		plan.changed = changed
+		plan.Overlay = string(compose.Overlay{Ports: changed}.Render())
 	}
 	return plan, out, nil
-}
-
-// ApplyPorts plans the ports with auto assignment, validates the result and
-// records it. When ports had to change it writes the generated Compose file
-// outside the project, and from then on the instance runs with it. Only
-// `up` needs this: the other operations find the instance by project name.
-func (e *Engine) ApplyPorts(ctx context.Context, inst *Instance, profiles []string) (*PortPlan, error) {
-	plan, state, err := e.planPorts(ctx, inst, profiles, true)
-	if err != nil {
-		return nil, err
-	}
-	inst.files = nil
-	if plan.Overlay == "" {
-		return plan, e.portStore.Save(state)
-	}
-
-	base, err := e.baseComposeFiles(inst)
-	if err != nil {
-		return nil, err
-	}
-	if e.dataDir == "" {
-		return nil, errors.New("no data directory to keep the generated Compose file")
-	}
-	sum := sha256.Sum256([]byte(filepath.Clean(inst.Workspace)))
-	path := filepath.Join(e.dataDir, "overlays", slug(inst.Compose)+"-"+hex.EncodeToString(sum[:3])+".yaml")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(path, []byte(plan.Overlay), 0o644); err != nil {
-		return nil, err
-	}
-
-	t := inst.target()
-	t.Files = append(base, path)
-	cfg, err := e.compose.ConfigFor(ctx, t)
-	if err != nil {
-		return nil, fmt.Errorf("the configuration with reassigned ports is not valid (generated file %s): %w", path, err)
-	}
-	if err := checkEffective(plan, cfg); err != nil {
-		return nil, fmt.Errorf("%w (generated file %s)", err, path)
-	}
-	if err := e.portStore.Save(state); err != nil {
-		return nil, err
-	}
-	inst.files = t.Files
-	return plan, nil
 }
 
 // checkEffective verifies that the resolved configuration publishes the

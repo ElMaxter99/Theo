@@ -129,3 +129,23 @@ func TestConfigWithEnvFile(t *testing.T) {
 		t.Errorf("image = %q, want nginx:alpine", got)
 	}
 }
+
+func TestParseVolumesAndExternal(t *testing.T) {
+	out := []byte(`{"Driver":"local","Labels":"com.docker.compose.project=app,com.docker.compose.volume=data","Name":"app_data"}
+{"Driver":"local","Labels":"","Name":"plain"}
+`)
+	list, err := ParseVolumes(out)
+	if err != nil || len(list) != 2 {
+		t.Fatalf("%v %v", list, err)
+	}
+	if list[0].Name != "app_data" || list[0].Labels[LabelVolume] != "data" || len(list[1].Labels) != 0 {
+		t.Errorf("list = %+v", list)
+	}
+	p, err := ParseConfig([]byte(`{"name":"x","services":{},"volumes":{"a":{"name":"x_a"},"b":{"name":"b","external":true},"c":{"external":false}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Volumes["a"].IsExternal() || !p.Volumes["b"].IsExternal() || p.Volumes["c"].IsExternal() {
+		t.Errorf("volumes = %+v", p.Volumes)
+	}
+}

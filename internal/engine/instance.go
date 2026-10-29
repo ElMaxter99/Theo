@@ -21,16 +21,26 @@ type Instance struct {
 	Workspace string  `json:"workspace"`
 	Branch    string  `json:"branch,omitempty"`
 	Compose   string  `json:"compose_project"`
+	Main      bool    `json:"main"` // the project's main worktree
 	EnvFile   EnvFile `json:"env_file"`
 
 	worktree git.Worktree
 	envFiles []string
-	files    []string         // Compose files, when Theo adds its own; empty otherwise
-	config   *compose.Project // resolved configuration of the worktree
+	files    []string // Compose files, when Theo adds its own; empty otherwise
+	// instanceEnv is the generated env file with the instance's variables,
+	// read after the others; generated lists the files Theo generated.
+	instanceEnv string
+	neutralized bool // fixed container names are removed
+	generated   []string
+	config      *compose.Project // resolved configuration of the worktree
 }
 
 func (i *Instance) target() compose.Target {
-	return compose.Target{Dir: i.Workspace, Name: i.Compose, EnvFiles: i.envFiles, Files: i.files}
+	envFiles := i.envFiles
+	if i.instanceEnv != "" {
+		envFiles = append(append([]string(nil), envFiles...), i.instanceEnv)
+	}
+	return compose.Target{Dir: i.Workspace, Name: i.Compose, EnvFiles: envFiles, Files: i.files}
 }
 
 // instance resolves the instance of a worktree and its Compose
@@ -72,6 +82,7 @@ func (e *Engine) instance(ctx context.Context, project, worktree string, envFile
 		Workspace: wt.Path,
 		Branch:    wt.Branch,
 		Compose:   instanceName(p.Name, cfg.Name, wt, list),
+		Main:      samePath(wt.Path, list[0].Path),
 		EnvFile:   env,
 		worktree:  wt,
 		envFiles:  files,
@@ -129,18 +140,24 @@ func (e *Engine) Instance(ctx context.Context, project, worktree string, envFile
 
 // Up creates and starts the containers of a worktree's instance.
 func (e *Engine) Up(ctx context.Context, inst *Instance, opts compose.UpOptions, stdout, stderr io.Writer) error {
-	return e.compose.Up(ctx, inst.target(), opts, stdout, stderr)
+	err := e.compose.Up(ctx, inst.target(), opts, stdout, stderr)
+	e.record(inst, "up", err)
+	return err
 }
 
 // Down stops and removes the containers and networks of a worktree's
 // instance. Named volumes and host files are always kept.
 func (e *Engine) Down(ctx context.Context, inst *Instance, stdout, stderr io.Writer) error {
-	return e.compose.Down(ctx, inst.target(), stdout, stderr)
+	err := e.compose.Down(ctx, inst.target(), stdout, stderr)
+	e.record(inst, "down", err)
+	return err
 }
 
 // Restart restarts the containers of a worktree's instance.
 func (e *Engine) Restart(ctx context.Context, inst *Instance, stdout, stderr io.Writer) error {
-	return e.compose.Restart(ctx, inst.target(), stdout, stderr)
+	err := e.compose.Restart(ctx, inst.target(), stdout, stderr)
+	e.record(inst, "restart", err)
+	return err
 }
 
 // Logs writes the logs of a worktree's instance.
@@ -204,3 +221,7 @@ func (e *Engine) Overview(ctx context.Context, project string) ([]WorktreeStacks
 	}
 	return result, nil
 }
+
+// Neutralized reports whether the instance removes fixed container names,
+// after ApplyInstance.
+func (i *Instance) Neutralized() bool { return i.neutralized }

@@ -86,6 +86,26 @@ theo down my-api -w feature/x   # removes containers and networks, never volumes
 theo ports my-api -w feature/x [--auto-ports] [--profile worker]
 theo up my-api -w feature/x --auto-ports
 
+# Per-instance settings. They never touch your Compose files or .env: Theo
+# generates a Compose file and an env file for the instance (outside the
+# project, readable only by you) and runs it with them.
+theo env set my-api -w feature/x LOG_LEVEL=debug [--service api]
+theo env set my-api -w feature/x API_TOKEN=... --secret   # masked when shown
+theo env list my-api -w feature/x [--show-secrets]
+theo env unset my-api -w feature/x LOG_LEVEL
+# A fixed container_name stops a second instance from starting (`up` warns).
+theo instance set my-api -w feature/x --neutralize-container-names
+theo instance show my-api -w feature/x
+theo instance config my-api -w feature/x   # what it will run with; secrets masked
+theo history my-api [-w feature/x] [--limit 20]   # up, down and restart, with result and user
+
+# Volumes. `down` never deletes them; deleting data is a separate, explicit step.
+theo volumes my-api -w feature/x   # in use, or kept with their data after down; external ones listed
+theo volumes purge my-api -w feature/x --confirm <compose-project>
+# Refused while the instance has containers, and without the matching
+# --confirm (it lists what would be deleted and gives the exact command).
+# Volumes declared external are never touched; neither are other instances'.
+
 # Unregister the project. Files, containers and volumes are not touched.
 theo project remove my-api
 ```
@@ -93,6 +113,8 @@ theo project remove my-api
 `project list`, `worktrees` and `services` accept `--json` for scripts and agents.
 
 Theo never changes your files or branches and never deletes volumes. Only `up`, `down` and `restart` change containers.
+
+Values set with `theo env --secret` are stored in plain text in `instances.json` and in the generated files, which are readable only by your user; Theo masks them in its own output, but they are not encrypted. Passing a secret on the command line leaves it in your shell history.
 
 `--auto-ports` does not support projects that set `COMPOSE_FILE` yet, and leaves random ports (`"3000"`) and ranges (`"8000-8010"`) as they are. The ports it assigned are in `ports.json`, next to the registry, and the generated Compose files in `overlays/`.
 
@@ -116,6 +138,7 @@ Some tests use the real `git` and `docker compose` tools, and a Docker daemon th
 | `internal/engine/` | Local engine: domain logic and operations shared by every interface. |
 | `internal/registry/` | Persistent registry of projects. |
 | `internal/ports/` | Host port availability and the ports assigned to instances. |
+| `internal/instances/` | Per-instance settings and the operation history. |
 | `internal/git/`, `internal/compose/` | Read-only adapters for the `git` and `docker compose` tools. |
 | `internal/execx/` | Runs external tools directly, without a shell. |
 | `internal/testutil/` | Test helpers for tests that use real `git` and `docker compose`. |
