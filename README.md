@@ -99,6 +99,13 @@ theo instance show my-api -w feature/x
 theo instance config my-api -w feature/x   # what it will run with; secrets masked
 theo history my-api [-w feature/x] [--limit 20]   # up, down and restart, with result and user
 
+# Volumes. `down` never deletes them; deleting data is a separate, explicit step.
+theo volumes my-api -w feature/x   # in use, or kept with their data after down; external ones listed
+theo volumes purge my-api -w feature/x --confirm <compose-project>
+# Refused while the instance has containers, and without the matching
+# --confirm (it lists what would be deleted and gives the exact command).
+# Volumes declared external are never touched; neither are other instances'.
+
 # Unregister the project. Files, containers and volumes are not touched.
 theo project remove my-api
 ```

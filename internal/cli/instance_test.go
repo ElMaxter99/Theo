@@ -233,3 +233,78 @@ services:
 	checkOutput(t, "history", stdout, "error") // the first, refused up
 	checkOutput(t, "history", stdout, "ok")
 }
+
+// TestVolumes follows a volume through up, down and an explicit purge with a
+// real Docker daemon, and checks that an external volume is never touched.
+func TestVolumes(t *testing.T) {
+	testutil.RequireDaemon(t)
+	main, _ := testutil.NewRepo(t, map[string]string{
+		".gitignore": "server\nDockerfile\n",
+		"compose.yaml": `name: theo-test-vols
+services:
+  web:
+    build: .
+    volumes: [data:/data, shared:/shared]
+volumes:
+  data: {}
+  shared:
+    external: true
+    name: theo-test-external-vol
+`,
+	})
+	testutil.WriteServerImage(t, main)
+	testutil.Docker(t, "volume", "create", "theo-test-external-vol")
+	t.Setenv(registry.EnvHome, t.TempDir())
+	t.Cleanup(func() {
+		run("down", "app")
+		testutil.Docker(t, "volume", "rm", "--force", "theo-test-vols_data", "theo-test-external-vol")
+	})
+	if _, stderr, code := run("project", "add", main); code != ExitOK {
+		t.Fatalf("project add: %s", stderr)
+	}
+	if _, stderr, code := run("up", "app"); code != ExitOK {
+		t.Fatalf("up: %s", stderr)
+	}
+
+	stdout, _, _ := run("volumes", "app")
+	checkOutput(t, "volumes (up)", stdout, "in use")
+	checkOutput(t, "volumes (up)", stdout, "external")
+
+	// With containers, even a confirmed purge is refused.
+	_, stderr, code := run("volumes", "purge", "app", "--confirm", "theo-test-vols")
+	if code == ExitOK {
+		t.Fatalf("purge with containers succeeded")
+	}
+	checkOutput(t, "purge refused", stderr, "theo down")
+
+	if _, stderr, code := run("down", "app"); code != ExitOK {
+		t.Fatalf("down: %s", stderr)
+	}
+	stdout, _, _ = run("volumes", "app")
+	checkOutput(t, "volumes (down)", stdout, "kept")
+
+	// No confirmation: the list, the exact command, and nothing is deleted.
+	_, stderr, code = run("volumes", "purge", "app")
+	if code == ExitOK {
+		t.Fatalf("purge without confirmation succeeded")
+	}
+	checkOutput(t, "purge unconfirmed", stderr, "theo-test-vols_data")
+	checkOutput(t, "purge unconfirmed", stderr, "--confirm theo-test-vols")
+	if strings.Contains(stderr, "theo-test-external-vol") {
+		t.Errorf("the external volume is in the purge list:\n%s", stderr)
+	}
+	if !strings.Contains(testutil.Docker(t, "volume", "ls", "--format", "{{.Name}}"), "theo-test-vols_data") {
+		t.Fatalf("the volume was deleted without confirmation")
+	}
+
+	if stdout, stderr, code := run("volumes", "purge", "app", "--confirm", "theo-test-vols"); code != ExitOK {
+		t.Fatalf("confirmed purge: %s\n%s", stdout, stderr)
+	}
+	volumes := testutil.Docker(t, "volume", "ls", "--format", "{{.Name}}")
+	if strings.Contains(volumes, "theo-test-vols_data") {
+		t.Errorf("the volume is still there after the purge")
+	}
+	if !strings.Contains(volumes, "theo-test-external-vol") {
+		t.Errorf("the external volume was deleted")
+	}
+}
