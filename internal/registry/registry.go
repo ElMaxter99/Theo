@@ -31,7 +31,11 @@ type Project struct {
 	// Workspaces are the workspaces Theo records beyond what Git lists: the
 	// independent clones it created, and the owner labels of any workspace.
 	Workspaces []Workspace `json:"workspaces,omitempty"`
-	AddedAt    time.Time   `json:"added_at"`
+	// ComposeFiles are the Compose files of the project, relative to the
+	// root of each worktree and in the order Compose merges them (like
+	// repeated -f flags). Empty means: let Compose find them.
+	ComposeFiles []string  `json:"compose_files,omitempty"`
+	AddedAt      time.Time `json:"added_at"`
 }
 
 // Workspace kinds kept in the registry.

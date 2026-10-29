@@ -5,11 +5,13 @@ package instances
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -41,11 +43,14 @@ type Config struct {
 	// first time the instance starts with --auto-ports, so that later starts
 	// keep the address instead of going back to the configured port.
 	AutoPorts bool `json:"auto_ports,omitempty"`
+	// Profiles are the Compose profiles the instance always starts with, on
+	// top of the ones given to `up`.
+	Profiles []string `json:"profiles,omitempty"`
 }
 
 // Empty reports whether nothing is configured.
 func (c Config) Empty() bool {
-	return len(c.Env) == 0 && !c.NeutralizeContainerNames && len(c.Shared) == 0 && len(c.Join) == 0 && !c.AutoPorts
+	return len(c.Env) == 0 && !c.NeutralizeContainerNames && len(c.Shared) == 0 && len(c.Join) == 0 && !c.AutoPorts && len(c.Profiles) == 0
 }
 
 // SharedSet is the group of services a project shares between instances.
@@ -214,4 +219,88 @@ func (s *Store) Events() ([]Event, error) {
 		}
 	}
 	return list, sc.Err()
+}
+
+// RenameProject changes the project name in the settings and in every event
+// of the history, for `theo project rename`. It returns how many records it
+// changed. The names are compared ignoring case.
+func (s *Store) RenameProject(oldName, newName string) (int, error) {
+	n := 0
+	state, err := s.Load()
+	if err != nil {
+		return 0, err
+	}
+	for ws, cfg := range state {
+		if strings.EqualFold(cfg.Project, oldName) {
+			cfg.Project = newName
+			state[ws] = cfg
+			n++
+		}
+	}
+	if n > 0 {
+		if err := s.Save(state); err != nil {
+			return 0, err
+		}
+	}
+	changed, err := s.renameEvents(oldName, newName)
+	if err != nil {
+		return 0, err
+	}
+	shared, err := s.LoadShared()
+	if err != nil {
+		return 0, err
+	}
+	if set, ok := shared[strings.ToLower(oldName)]; ok {
+		delete(shared, strings.ToLower(oldName))
+		shared[strings.ToLower(newName)] = set
+		if err := s.SaveShared(shared); err != nil {
+			return 0, err
+		}
+		n++
+	}
+	return n + changed, nil
+}
+
+// renameEvents rewrites the history file with the new project name. Lines
+// that cannot be read are kept as they are. The file is replaced only after
+// the new one is completely written.
+func (s *Store) renameEvents(oldName, newName string) (int, error) {
+	path := filepath.Join(s.dir, historyFile)
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	var out bytes.Buffer
+	n := 0
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	for sc.Scan() {
+		line := sc.Bytes()
+		var ev Event
+		if json.Unmarshal(line, &ev) == nil && strings.EqualFold(ev.Project, oldName) {
+			ev.Project = newName
+			if renamed, err := json.Marshal(ev); err == nil {
+				line = renamed
+				n++
+			}
+		}
+		out.Write(line)
+		out.WriteByte('\n')
+	}
+	err = sc.Err()
+	f.Close()
+	if err != nil {
+		return 0, err
+	}
+	if n == 0 {
+		return 0, nil
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, out.Bytes(), 0o644); err != nil {
+		return 0, err
+	}
+	return n, os.Rename(tmp, path)
 }

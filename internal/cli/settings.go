@@ -49,7 +49,7 @@ func runEnv(e *engine.Engine, args []string, stdout io.Writer) error {
 		return usageErrorf("env list needs exactly one project name")
 	}
 	ctx := context.Background()
-	inst, err := e.Instance(ctx, pos[0], sel.worktree, sel.envFiles)
+	inst, err := e.InstanceFor(ctx, pos[0], sel.worktree, sel.options())
 	if err != nil {
 		return err
 	}
@@ -124,7 +124,7 @@ func runInstanceCmd(e *engine.Engine, args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("instance "+sub, flag.ContinueOnError)
 	var sel instanceFlags
 	sel.register(fs)
-	var neutralize, keep, auto, asJSON, autoOn, autoOff bool
+	var neutralize, keep, auto, asJSON, autoOn, autoOff, noProfiles bool
 	var profiles stringList
 	switch sub {
 	case "set":
@@ -132,6 +132,8 @@ func runInstanceCmd(e *engine.Engine, args []string, stdout io.Writer) error {
 		fs.BoolVar(&keep, "keep-container-names", false, "keep the project's container_name settings")
 		fs.BoolVar(&autoOn, "auto-ports", false, "reassign host ports that are taken, on every start")
 		fs.BoolVar(&autoOff, "no-auto-ports", false, "use the configured host ports again")
+		fs.Var(&profiles, "profile", "Compose profile the instance always starts with (repeatable)")
+		fs.BoolVar(&noProfiles, "no-profiles", false, "clear the profiles of this instance")
 	case "show":
 		fs.BoolVar(&asJSON, "json", false, "print JSON")
 	case "config":
@@ -148,15 +150,18 @@ func runInstanceCmd(e *engine.Engine, args []string, stdout io.Writer) error {
 		return usageErrorf("instance %s needs exactly one project name", sub)
 	}
 	ctx := context.Background()
-	inst, err := e.Instance(ctx, pos[0], sel.worktree, sel.envFiles)
+	inst, err := e.InstanceFor(ctx, pos[0], sel.worktree, sel.options())
 	if err != nil {
 		return err
 	}
 
 	switch sub {
 	case "set":
-		if neutralize && keep || autoOn && autoOff || !neutralize && !keep && !autoOn && !autoOff {
-			return usageErrorf("instance set needs --neutralize-container-names | --keep-container-names and/or --auto-ports | --no-auto-ports")
+		setsProfiles := len(profiles) > 0 || noProfiles
+		setsNames := neutralize || keep
+		setsAuto := autoOn || autoOff
+		if neutralize && keep || autoOn && autoOff || len(profiles) > 0 && noProfiles || !setsNames && !setsAuto && !setsProfiles {
+			return usageErrorf("instance set needs --neutralize-container-names | --keep-container-names, --auto-ports | --no-auto-ports, and/or --profile <p> (repeatable) | --no-profiles")
 		}
 		if neutralize || keep {
 			if err := e.SetNeutralizeContainerNames(inst, neutralize); err != nil {
@@ -178,6 +183,16 @@ func runInstanceCmd(e *engine.Engine, args []string, stdout io.Writer) error {
 				fmt.Fprintf(stdout, "%s will use the configured host ports.\n", inst.Compose)
 			}
 		}
+		if setsProfiles {
+			if err := e.SetProfiles(inst, profiles); err != nil {
+				return err
+			}
+			if len(inst.Profiles) == 0 {
+				fmt.Fprintf(stdout, "%s starts without extra profiles (only the ones given to `theo up --profile`).\n", inst.Compose)
+			} else {
+				fmt.Fprintf(stdout, "%s always starts with the profile(s) %s, and with the ones given to `theo up --profile`.\n", inst.Compose, strings.Join(inst.Profiles, ", "))
+			}
+		}
 	case "show":
 		cfg, err := e.Settings(inst)
 		if err != nil {
@@ -195,6 +210,10 @@ func runInstanceCmd(e *engine.Engine, args []string, stdout io.Writer) error {
 		describe(stdout, inst)
 		fmt.Fprintf(stdout, "env file:        %s\n", envFileText(inst.EnvFile))
 		fmt.Fprintf(stdout, "variables (theo): %s\n", listOrNone(compose.SortedKeys(cfg.Env)))
+		fmt.Fprintf(stdout, "profiles (theo): %s\n", listOrNone(inst.Profiles))
+		if len(inst.ComposeFiles) > 0 {
+			fmt.Fprintf(stdout, "compose files:   %s (%s)\n", strings.Join(mapEach(inst.ComposeFiles, func(f string) string { return relative(inst.Workspace, f) }), ", "), inst.ComposeFilesSource)
+		}
 		fmt.Fprintf(stdout, "container names: %s\n", containerNamesText(names, cfg.NeutralizeContainerNames))
 	case "config":
 		text, err := e.ResolvedConfig(ctx, inst, profiles, auto)

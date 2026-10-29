@@ -2,9 +2,7 @@ package engine
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -105,6 +103,7 @@ func (e *Engine) planPorts(ctx context.Context, inst *Instance, profiles []strin
 	if cfg, err := e.Settings(inst); err == nil && cfg.AutoPorts {
 		auto = true
 	}
+	profiles = mergeProfiles(inst.Profiles, profiles)
 	state, err := e.portStore.Load()
 	if err != nil {
 		return nil, nil, err
@@ -262,22 +261,16 @@ func checkEffective(plan *PortPlan, cfg *compose.Project) error {
 	return nil
 }
 
-var envComposeFile = regexp.MustCompile(`(?m)^\s*(?:export\s+)?COMPOSE_FILE\s*=`)
-
-// baseComposeFiles returns the Compose files Compose would load for the
-// instance, which --auto-ports must name explicitly to add its own.
+// baseComposeFiles returns the Compose files the instance loads, which
+// Theo must name explicitly to add its own: the chosen ones (a flag, the
+// project's setting or COMPOSE_FILE), or else the ones Compose finds.
 func (e *Engine) baseComposeFiles(inst *Instance) ([]string, error) {
-	if os.Getenv("COMPOSE_FILE") != "" {
-		return nil, errors.New("--auto-ports does not support COMPOSE_FILE yet; unset it or free the ports by hand")
-	}
-	for _, f := range inst.envFiles {
-		if data, err := os.ReadFile(f); err == nil && envComposeFile.Match(data) {
-			return nil, fmt.Errorf("--auto-ports does not support COMPOSE_FILE (set in %s) yet", f)
-		}
+	if len(inst.selected) > 0 {
+		return append([]string(nil), inst.selected...), nil
 	}
 	files := e.baseFiles(inst.Workspace)
 	if len(files) == 0 {
-		return nil, fmt.Errorf("--auto-ports needs a compose.yaml (or docker-compose.yml) in %s", inst.Workspace)
+		return nil, fmt.Errorf("theo needs a compose.yaml (or docker-compose.yml) in %s to add its own settings; choose the files with `theo project set %s --compose-file <file>`", inst.Workspace, inst.Project)
 	}
 	return files, nil
 }

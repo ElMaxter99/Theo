@@ -205,6 +205,9 @@ func (e *Engine) Reconcile(ctx context.Context, project string) (*Report, error)
 		}
 	}
 	e.sharedFindings(projects, settings, add)
+	for _, check := range reconcileChecks {
+		check(ctx, e, project, add)
+	}
 	return report, nil
 }
 
