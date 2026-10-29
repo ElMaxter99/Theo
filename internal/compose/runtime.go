@@ -14,16 +14,21 @@ import (
 )
 
 // Target identifies a Compose project to operate on: the directory with its
-// Compose files, the project name and the env files to use instead of the
-// directory's .env.
+// Compose files, the project name, the env files to use instead of the
+// directory's .env, and the Compose files when they are not the ones
+// Compose finds by itself (empty means: let Compose find them).
 type Target struct {
 	Dir      string
 	Name     string
 	EnvFiles []string
+	Files    []string
 }
 
 func (t Target) args(profiles []string, sub ...string) []string {
 	args := []string{"compose", "-p", t.Name}
+	for _, f := range t.Files {
+		args = append(args, "-f", f)
+	}
 	for _, f := range t.EnvFiles {
 		args = append(args, "--env-file", f)
 	}

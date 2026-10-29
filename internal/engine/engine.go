@@ -16,6 +16,7 @@ import (
 
 	"github.com/ElMaxter99/Theo/internal/compose"
 	"github.com/ElMaxter99/Theo/internal/git"
+	"github.com/ElMaxter99/Theo/internal/ports"
 	"github.com/ElMaxter99/Theo/internal/registry"
 )
 
@@ -48,6 +49,7 @@ type Compose interface {
 	Logs(ctx context.Context, t compose.Target, opts compose.LogOptions, stdout, stderr io.Writer) error
 	PS(ctx context.Context, t compose.Target) ([]compose.Container, error)
 	Stacks(ctx context.Context) ([]compose.Stack, error)
+	ConfigFor(ctx context.Context, t compose.Target) (*compose.Project, error)
 }
 
 // Engine is the entry point to Theo's operations.
@@ -56,12 +58,31 @@ type Engine struct {
 	git     Git
 	compose Compose
 	now     func() time.Time
+
+	portStore PortStore
+	portFree  func(hostIP string, port int, proto string) bool
+	dataDir   string // where generated files are kept; empty if none
+	baseFiles func(dir string) []string
 }
 
 // New returns an engine that uses the given store and adapters.
 func New(store Store, g Git, c Compose) *Engine {
-	return &Engine{store: store, git: g, compose: c, now: time.Now}
+	return &Engine{store: store, git: g, compose: c, now: time.Now, portStore: &memPorts{}, portFree: ports.Free, baseFiles: compose.DefaultFiles}
 }
+
+// memPorts keeps port assignments in memory, for engines that are not given
+// a place to persist them.
+type memPorts struct{ state ports.State }
+
+func (m *memPorts) Load() (ports.State, error) {
+	out := ports.State{}
+	for k, v := range m.state {
+		out[k] = v
+	}
+	return out, nil
+}
+
+func (m *memPorts) Save(s ports.State) error { m.state = s; return nil }
 
 // Open returns an engine that uses the registry in Theo's default data
 // directory and the real git and docker compose tools.
@@ -70,7 +91,10 @@ func Open() (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	return New(registry.Open(dir), git.Git{}, compose.Compose{}), nil
+	e := New(registry.Open(dir), git.Git{}, compose.Compose{})
+	e.portStore = ports.Open(dir)
+	e.dataDir = dir
+	return e, nil
 }
 
 // AddProject registers the Git repository that contains path. When path is

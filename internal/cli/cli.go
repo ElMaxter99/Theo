@@ -49,7 +49,10 @@ Env file used by services, in order: --env-file; the worktree's own .env; the
 project's env file (project set); the main worktree's .env.
 
 Running a worktree (each worktree runs as its own Compose project):
-  up <project> [-w <w>] [--build] [--profile <p>]   Create and start its containers
+  up <project> [-w <w>] [--build] [--profile <p>] [--auto-ports]
+                                                    Create and start its containers. A host port
+                                                    that is taken only warns, unless --auto-ports
+                                                    picks another one and keeps it for next time
   down <project> [-w <w>]                           Stop and remove its containers and
                                                     networks; volumes are always kept
   restart <project> [-w <w>]                        Restart its containers
@@ -57,6 +60,9 @@ Running a worktree (each worktree runs as its own Compose project):
   ps <project> -w <w> [--json]                      Show the containers of one worktree
   logs <project> [-w <w>] [-f] [--tail <n>] [service...]
                                                     Show its logs
+  ports <project> [-w <w>] [--profile <p>] [--auto-ports] [--json]
+                                                    Show the host ports it publishes, whether
+                                                    they are free, and their URLs
   These commands also accept --env-file. Without -w they use the main worktree,
   except ps, which then shows every worktree.
 
@@ -96,6 +102,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = withEngine(func(e *engine.Engine) error { return runInstance(e, args[0], args[1:], stdout, stderr) })
 	case "ps":
 		err = withEngine(func(e *engine.Engine) error { return runPS(e, args[1:], stdout) })
+	case "ports":
+		err = withEngine(func(e *engine.Engine) error { return runPorts(e, args[1:], stdout) })
 	default:
 		err = usageErrorf("unknown command %q", args[0])
 	}

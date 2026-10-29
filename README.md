@@ -51,12 +51,23 @@ theo services my-api -w feature/x --env-file other.env    # one-off override
 # Run a worktree. Each worktree is its own Compose project: the main worktree
 # keeps the name Compose gives it, and linked worktrees get
 # <project>-<directory>, so their containers, networks and volumes never mix.
-theo up my-api -w feature/x [--build] [--profile worker]
+theo up my-api -w feature/x [--build] [--profile worker] [--auto-ports]
 theo ps my-api                  # which worktrees have containers
 theo ps my-api -w feature/x     # containers, state and ports of one worktree
 theo logs my-api -w feature/x -f --tail 100 [service...]
 theo restart my-api -w feature/x
 theo down my-api -w feature/x   # removes containers and networks, never volumes
+
+# Host ports. Two worktrees that publish the same fixed port cannot run at
+# once. `ports` shows what each service publishes and whether the port is free;
+# `up` warns when one is taken. With --auto-ports, `up` publishes the services
+# whose port is taken on another free one (the next free port after the
+# configured one) and remembers it, so the address stays the same on restart.
+# Your Compose files are not modified: Theo adds a generated Compose file for
+# that instance (needs Docker Compose 2.24.4 or later). Ports of other
+# instances Theo has assigned count as taken.
+theo ports my-api -w feature/x [--auto-ports] [--profile worker]
+theo up my-api -w feature/x --auto-ports
 
 # Unregister the project. Files, containers and volumes are not touched.
 theo project remove my-api
@@ -65,6 +76,8 @@ theo project remove my-api
 `project list`, `worktrees` and `services` accept `--json` for scripts and agents.
 
 Theo never changes your files or branches and never deletes volumes. Only `up`, `down` and `restart` change containers.
+
+`--auto-ports` does not support projects that set `COMPOSE_FILE` yet, and leaves random ports (`"3000"`) and ranges (`"8000-8010"`) as they are. The ports it assigned are in `ports.json`, next to the registry, and the generated Compose files in `overlays/`.
 
 Theo keeps its registry in `theo/registry.json` inside your user configuration directory (for example `~/.config` on Linux, `~/Library/Application Support` on macOS, `%AppData%` on Windows). Set `THEO_HOME` to use another directory.
 
@@ -85,6 +98,7 @@ Some tests use the real `git` and `docker compose` tools, and a Docker daemon th
 | `internal/cli/` | Command-line interface: argument parsing and output. No domain logic. |
 | `internal/engine/` | Local engine: domain logic and operations shared by every interface. |
 | `internal/registry/` | Persistent registry of projects. |
+| `internal/ports/` | Host port availability and the ports assigned to instances. |
 | `internal/git/`, `internal/compose/` | Read-only adapters for the `git` and `docker compose` tools. |
 | `internal/execx/` | Runs external tools directly, without a shell. |
 | `internal/testutil/` | Test helpers for tests that use real `git` and `docker compose`. |

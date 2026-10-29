@@ -3,9 +3,11 @@
 package testutil
 
 import (
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -140,4 +142,29 @@ func Docker(t *testing.T, args ...string) string {
 		t.Fatalf("docker %v: %v\n%s", args, err, out)
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// FreePort returns a TCP port that is free now and whose next port is free
+// too, so a test can use one fixed port and know the next is available.
+func FreePort(t *testing.T) int {
+	t.Helper()
+	for i := 0; i < 20; i++ {
+		l, err := net.Listen("tcp", ":0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		port := l.Addr().(*net.TCPAddr).Port
+		l.Close()
+		if port >= 65000 {
+			continue
+		}
+		next, err := net.Listen("tcp", ":"+strconv.Itoa(port+1))
+		if err != nil {
+			continue
+		}
+		next.Close()
+		return port
+	}
+	t.Fatal("no free pair of consecutive ports")
+	return 0
 }

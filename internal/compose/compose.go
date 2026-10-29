@@ -41,6 +41,7 @@ type Port struct {
 	Target    uint32 `json:"target"`
 	Published string `json:"published,omitempty"`
 	Protocol  string `json:"protocol,omitempty"`
+	Mode      string `json:"mode,omitempty"`
 }
 
 // Volume is a mount of a service: a named volume, a bind mount or a tmpfs.
