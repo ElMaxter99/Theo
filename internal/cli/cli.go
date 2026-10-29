@@ -76,7 +76,7 @@ Running a worktree (each worktree runs as its own Compose project):
   volumes <project> [-w <w>] [--json]               Volumes of the instance: in use, or kept with
                                                     their data after down; external ones are listed
                                                     and never touched
-  volumes purge <project> -w <w> --confirm <compose-project>
+  volumes purge <project> -w <w> --confirm <compose-project> [--backup] [--out <dir>]
                                                     Delete the instance's data. Separate from down,
                                                     refused while it has containers
   env set <project> [-w <w>] NAME=VALUE [--secret] [--service <s>]
@@ -140,7 +140,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "reconcile":
 		err = withEngine(func(e *engine.Engine) error { return runReconcile(e, args[1:], stdout) })
 	case "volumes":
-		err = withEngine(func(e *engine.Engine) error { return runVolumes(e, args[1:], stdout) })
+		err = withEngine(func(e *engine.Engine) error { return runVolumes(e, args[1:], stdout, stderr) })
 	case "env":
 		err = withEngine(func(e *engine.Engine) error { return runEnv(e, args[1:], stdout) })
 	case "instance":
