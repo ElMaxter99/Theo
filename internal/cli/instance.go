@@ -42,6 +42,8 @@ func runInstance(e *engine.Engine, cmd string, args []string, stdout, stderr io.
 	var autoPorts, startShared bool
 	switch cmd {
 	case "up":
+		fs.Var((*stringList)(&up.Services), "service", "start only this service and what it depends on (repeatable)")
+		fs.BoolVar(&up.ForceRecreate, "force-recreate", false, "recreate the containers even if nothing changed; volumes are kept")
 		fs.BoolVar(&up.Build, "build", false, "build images before starting")
 		fs.Var(&profiles, "profile", "enable a Compose profile (repeatable)")
 		fs.BoolVar(&autoPorts, "auto-ports", false, "use other host ports for the ones that are taken; remembered for next starts (turn off with `instance set --no-auto-ports`)")
@@ -55,7 +57,7 @@ func runInstance(e *engine.Engine, cmd string, args []string, stdout, stderr io.
 	if err != nil {
 		return err
 	}
-	if len(pos) == 0 || (cmd != "logs" && len(pos) != 1) {
+	if len(pos) == 0 || (cmd != "logs" && cmd != "restart" && len(pos) != 1) {
 		return usageErrorf("%s needs exactly one project name", cmd)
 	}
 
@@ -97,7 +99,7 @@ func runInstance(e *engine.Engine, cmd string, args []string, stdout, stderr io.
 		}
 		fmt.Fprintf(stdout, "Stopped %s. Its volumes were kept.\n", inst.Compose)
 	case "restart":
-		return e.Restart(ctx, inst, stdout, stderr)
+		return e.RestartServices(ctx, inst, pos[1:], stdout, stderr)
 	case "logs":
 		logs.Services = pos[1:]
 		return e.Logs(ctx, inst, logs, stdout, stderr)
@@ -239,6 +241,9 @@ func runPS(e *engine.Engine, args []string, stdout io.Writer) error {
 	containers, err := e.Containers(ctx, inst)
 	if err != nil {
 		return err
+	}
+	if containers == nil {
+		containers = []compose.Container{}
 	}
 	if *asJSON {
 		return writeJSON(stdout, struct {

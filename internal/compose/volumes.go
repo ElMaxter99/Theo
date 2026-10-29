@@ -82,7 +82,7 @@ func (Compose) VolumeUsers(ctx context.Context, volume string) ([]string, error)
 // RemoveVolume deletes a volume and its data. It never forces: Docker
 // refuses a volume that a container still uses.
 func (Compose) RemoveVolume(ctx context.Context, volume string) error {
-	_, err := execx.Run(ctx, "", "docker", "volume", "rm", "--", volume)
+	_, err := execx.RunChange(ctx, "", "docker", "volume", "rm", "--", volume)
 	return err
 }
 

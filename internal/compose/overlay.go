@@ -189,7 +189,12 @@ func quote(s string) string {
 // prints it (YAML), as it would run with the target's name, env files and
 // Compose files.
 func (Compose) ConfigText(ctx context.Context, t Target) ([]byte, error) {
-	return execx.Run(ctx, t.Dir, "docker", t.args([]string{"*"}, "config")...)
+	args := t.args([]string{"*"}, "config")
+	if execx.Explaining() && !t.filesExist() {
+		execx.Describe(t.Dir, "docker", args...) // --explain did not write the generated files
+		return nil, nil
+	}
+	return execx.Run(ctx, t.Dir, "docker", args...)
 }
 
 // ConfigFor returns the configuration of the project as it would run with
@@ -200,4 +205,14 @@ func (Compose) ConfigFor(ctx context.Context, t Target) (*Project, error) {
 		return nil, err
 	}
 	return ParseConfig(out)
+}
+
+// filesExist reports whether the Compose and env files of the target exist.
+func (t Target) filesExist() bool {
+	for _, f := range append(append([]string(nil), t.Files...), t.EnvFiles...) {
+		if _, err := os.Stat(f); err != nil {
+			return false
+		}
+	}
+	return true
 }

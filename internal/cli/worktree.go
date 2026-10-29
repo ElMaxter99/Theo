@@ -105,6 +105,7 @@ func runWorktree(e *engine.Engine, args []string, stdout io.Writer) error {
 		fs := flag.NewFlagSet("worktree remove", flag.ContinueOnError)
 		discard := fs.Bool("discard-changes", false, "remove it even if it has uncommitted or untracked files, which are lost")
 		confirm := fs.String("confirm", "", "with --discard-changes: the directory name of the worktree, to confirm")
+		asJSON := fs.Bool("json", false, "print JSON")
 		pos, err := parse(fs, args[1:])
 		if err != nil {
 			return err
@@ -122,6 +123,13 @@ func runWorktree(e *engine.Engine, args []string, stdout io.Writer) error {
 			return err
 		}
 		wt := res.Worktree
+		if *asJSON {
+			return writeJSON(stdout, struct {
+				Path   string `json:"path"`
+				Branch string `json:"branch,omitempty"`
+				Kind   string `json:"kind"`
+			}{wt.Path, wt.Branch, res.Kind})
+		}
 		switch {
 		case res.Forgot:
 			fmt.Fprintf(stdout, "The clone %s was already gone; Theo forgot its record.\n", wt.Path)

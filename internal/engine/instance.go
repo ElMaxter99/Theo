@@ -195,6 +195,9 @@ func (e *Engine) Up(ctx context.Context, inst *Instance, opts compose.UpOptions,
 	if err := e.CheckUniqueName(ctx, inst); err != nil {
 		return err
 	}
+	if err := inst.CheckServices(opts.Services); err != nil {
+		return err
+	}
 	opts.Profiles = mergeProfiles(inst.Profiles, opts.Profiles)
 	err := e.compose.Up(ctx, inst.target(), opts, stdout, stderr)
 	e.record(inst, "up", err)
@@ -256,6 +259,7 @@ func (e *Engine) Overview(ctx context.Context, project string) ([]WorktreeStacks
 	for i, wt := range list {
 		result[i].Worktree = wt
 		result[i].Kind, result[i].Owner = workspaceKind(p, list, wt.Path), workspaceOwner(p, wt.Path)
+		result[i].Stacks = []compose.Stack{} // JSON: an empty list, not null
 	}
 	for _, s := range stacks {
 		first, _, _ := strings.Cut(s.ConfigFiles, ",")

@@ -146,7 +146,7 @@ func (e *Engine) planPorts(ctx context.Context, inst *Instance, profiles []strin
 		}
 	}
 
-	plan := &PortPlan{auto: auto}
+	plan := &PortPlan{Mappings: []PortMapping{}, auto: auto}
 	used := map[string]bool{}
 	next := ports.State{}
 	changed := map[string][]compose.Port{} // services whose ports are rewritten

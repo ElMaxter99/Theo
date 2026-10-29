@@ -11,7 +11,7 @@ import (
 // CloneLocal clones the repository at src into dst without checking out any
 // files, using Git's local transport. dst must not exist or be empty.
 func (Git) CloneLocal(ctx context.Context, src, dst string) error {
-	_, err := execx.Run(ctx, "", "git", "clone", "--local", "--no-checkout", "--", src, dst)
+	_, err := execx.RunChange(ctx, "", "git", "clone", "--local", "--no-checkout", "--", src, dst)
 	return err
 }
 
@@ -40,7 +40,7 @@ func (Git) RemoteURL(ctx context.Context, dir, name string) (string, error) {
 
 // SetRemoteURL points the existing remote called name at url.
 func (Git) SetRemoteURL(ctx context.Context, dir, name, url string) error {
-	_, err := execx.Run(ctx, dir, "git", "remote", "set-url", name, url)
+	_, err := execx.RunChange(ctx, dir, "git", "remote", "set-url", name, url)
 	return err
 }
 
@@ -57,7 +57,7 @@ func (Git) Checkout(ctx context.Context, dir, branch string, newBranch bool, bas
 	} else {
 		args = append(args, branch, "--")
 	}
-	_, err := execx.Run(ctx, dir, "git", args...)
+	_, err := execx.RunChange(ctx, dir, "git", args...)
 	return err
 }
 
@@ -69,7 +69,7 @@ func (Git) ResolvesTo(ctx context.Context, dir, rev string) bool {
 
 // SubmodulesInit runs `git submodule update --init --recursive` in dir.
 func (Git) SubmodulesInit(ctx context.Context, dir string) error {
-	_, err := execx.Run(ctx, dir, "git", "submodule", "update", "--init", "--recursive")
+	_, err := execx.RunChange(ctx, dir, "git", "submodule", "update", "--init", "--recursive")
 	return err
 }
 

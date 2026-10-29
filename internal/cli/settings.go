@@ -137,6 +137,7 @@ func runInstanceCmd(e *engine.Engine, args []string, stdout io.Writer) error {
 	case "show":
 		fs.BoolVar(&asJSON, "json", false, "print JSON")
 	case "config":
+		fs.BoolVar(&asJSON, "json", false, "print JSON: the configuration as text, in the field \"config\"")
 		fs.BoolVar(&auto, "auto-ports", false, "include the ports --auto-ports would assign")
 		fs.Var(&profiles, "profile", "enable a Compose profile (repeatable)")
 	default:
@@ -219,6 +220,12 @@ func runInstanceCmd(e *engine.Engine, args []string, stdout io.Writer) error {
 		text, err := e.ResolvedConfig(ctx, inst, profiles, auto)
 		if err != nil {
 			return err
+		}
+		if asJSON {
+			return writeJSON(stdout, struct {
+				*engine.Instance
+				Config string `json:"config"`
+			}{inst, text})
 		}
 		fmt.Fprint(stdout, text)
 	}

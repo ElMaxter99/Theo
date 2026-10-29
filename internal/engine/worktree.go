@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ElMaxter99/Theo/internal/execx"
 	"github.com/ElMaxter99/Theo/internal/git"
 	"github.com/ElMaxter99/Theo/internal/registry"
 )
@@ -218,8 +219,10 @@ func (e *Engine) AddWorktree(ctx context.Context, project, branch string, opts A
 	if inside := containing(list, path); inside != "" {
 		return nil, fmt.Errorf("%s is inside the worktree %s; choose a directory outside the project's worktrees", path, inside)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, err
+	if !execx.Explaining() { // explaining creates nothing, not even the parent directory
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return nil, err
+		}
 	}
 	added := &AddedWorktree{Path: path, Branch: branch, Kind: KindWorktree, Owner: opts.Owner}
 	if opts.Clone {

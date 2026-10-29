@@ -11,11 +11,13 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/ElMaxter99/Theo/internal/compose"
 	"github.com/ElMaxter99/Theo/internal/engine"
+	"github.com/ElMaxter99/Theo/internal/execx"
 )
 
 // Exit codes returned by Run.
@@ -114,6 +116,13 @@ var errUsage = errors.New("usage")
 // writing normal output to stdout and errors to stderr, and returns the
 // process exit code.
 func Run(args []string, stdout, stderr io.Writer) int {
+	// Global flags come before the command: `theo --explain up app`.
+	if len(args) > 0 && args[0] == "--explain" {
+		args = args[1:]
+		done := execx.Explain(stdout)
+		defer done()
+		stdout = io.Discard // the commands are listed; what they would have printed is not
+	}
 	if len(args) == 0 {
 		fmt.Fprint(stderr, helpText())
 		return ExitUsage
@@ -122,6 +131,10 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	var err error
 	switch args[0] {
 	case "version", "--version":
+		if len(args) == 2 && args[1] == "--json" {
+			writeJSON(stdout, map[string]string{"version": engine.Version})
+			return ExitOK
+		}
 		fmt.Fprintln(stdout, engine.VersionLine())
 		return ExitOK
 	case "help", "--help", "-h":
@@ -161,9 +174,12 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
+	var exit *exitCodeError
 	switch {
 	case err == nil:
 		return ExitOK
+	case errors.As(err, &exit): // `theo exec`: the command's own exit code
+		return exit.code
 	case errors.Is(err, flag.ErrHelp):
 		fmt.Fprint(stdout, helpText())
 		return ExitOK
@@ -180,6 +196,9 @@ func withEngine(fn func(*engine.Engine) error) error {
 	e, err := engine.Open()
 	if err != nil {
 		return err
+	}
+	if execx.Explaining() {
+		e.DiscardWrites()
 	}
 	return fn(e)
 }
@@ -221,6 +240,7 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 		fs := flag.NewFlagSet("project add", flag.ContinueOnError)
 		name := fs.String("name", "", "project name")
 		envFile := fs.String("env-file", "", "env file shared by worktrees without their own .env")
+		asJSON := fs.Bool("json", false, "print JSON")
 		pos, err := parse(fs, args[1:])
 		if err != nil {
 			return err
@@ -231,6 +251,9 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 		p, err := e.AddProject(context.Background(), pos[0], *name, *envFile)
 		if err != nil {
 			return err
+		}
+		if *asJSON {
+			return writeJSON(stdout, p)
 		}
 		fmt.Fprintf(stdout, "Registered project %q at %s\n", p.Name, p.Path)
 		if p.EnvFile != "" {
@@ -250,6 +273,7 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 		var composeFiles stringList
 		fs.Var(&composeFiles, "compose-file", "Compose file, relative to each worktree (repeatable; the order matters)")
 		defaultCompose := fs.Bool("default-compose-files", false, "go back to the Compose files Compose finds by itself")
+		asJSON := fs.Bool("json", false, "print the project as JSON")
 		pos, err := parse(fs, args[1:])
 		if err != nil {
 			return err
@@ -293,6 +317,23 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 			if !setsEnv && !setsDir {
 				return nil
 			}
+		}
+		if *asJSON {
+			if setsDir {
+				if err := e.SetWorktreeDir(pos[0], *worktreeDir); err != nil {
+					return err
+				}
+			}
+			if setsEnv {
+				if _, err := e.SetEnvFile(pos[0], *envFile); err != nil {
+					return err
+				}
+			}
+			p, err := e.Project(pos[0])
+			if err != nil {
+				return err
+			}
+			return writeJSON(stdout, p)
 		}
 		if setsDir {
 			if err := e.SetWorktreeDir(pos[0], *worktreeDir); err != nil {
@@ -566,6 +607,9 @@ func relative(base, path string) string {
 }
 
 func writeJSON(w io.Writer, v any) error {
+	if rv := reflect.ValueOf(v); rv.Kind() == reflect.Slice && rv.IsNil() {
+		v = reflect.MakeSlice(rv.Type(), 0, 0).Interface() // an empty list, not null
+	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)

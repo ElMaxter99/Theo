@@ -37,9 +37,8 @@ func runVolumes(e *engine.Engine, args []string, stdout, stderr io.Writer) error
 		fs.StringVar(&confirm, "confirm", "", "the instance's Compose project name, to confirm the deletion")
 		fs.BoolVar(&backup, "backup", false, "back the volumes up first, and delete them only if that succeeded")
 		fs.StringVar(&out, "out", "", "with --backup, the directory for the backups")
-	} else {
-		fs.BoolVar(&asJSON, "json", false, "print JSON")
 	}
+	fs.BoolVar(&asJSON, "json", false, "print JSON")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -74,6 +73,15 @@ func runVolumes(e *engine.Engine, args []string, stdout, stderr io.Writer) error
 		}
 		if err != nil {
 			return err
+		}
+		if asJSON {
+			if removed == nil {
+				removed = []engine.VolumeInfo{}
+			}
+			return writeJSON(stdout, struct {
+				Compose string              `json:"compose_project"`
+				Deleted []engine.VolumeInfo `json:"deleted"`
+			}{inst.Compose, removed})
 		}
 		if len(removed) == 0 {
 			fmt.Fprintf(stdout, "%s has no volumes to delete.\n", inst.Compose)
