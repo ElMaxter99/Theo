@@ -12,12 +12,19 @@ import (
 )
 
 // defaultFileNames are the Compose files `docker compose` looks for, in
-// order of preference.
-var defaultFileNames = []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"}
+// order of preference; defaultOverrideNames are its override files, of which
+// the first one that exists is loaded, whatever the extension of the base
+// file (compose.yaml plus docker-compose.override.yml works). Verified with
+// Compose v5.6.1; Theo double-checks the result against Compose itself (see
+// Engine.baseComposeFiles).
+var (
+	defaultFileNames     = []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"}
+	defaultOverrideNames = []string{"compose.override.yml", "compose.override.yaml", "docker-compose.override.yml", "docker-compose.override.yaml"}
+)
 
 // DefaultFiles returns the files `docker compose` loads by itself in dir:
 // the first of compose.yaml, compose.yml, docker-compose.yaml and
-// docker-compose.yml, and its override file when it exists. It is empty when
+// docker-compose.yml, and an override file when one exists. It is empty when
 // there is none. Passing an extra file with -f turns this discovery off, so
 // Theo needs the list to add its own file.
 func DefaultFiles(dir string) []string {
@@ -27,10 +34,11 @@ func DefaultFiles(dir string) []string {
 			continue
 		}
 		files := []string{base}
-		ext := filepath.Ext(name)
-		override := filepath.Join(dir, strings.TrimSuffix(name, ext)+".override"+ext)
-		if isFile(override) {
-			files = append(files, override)
+		for _, o := range defaultOverrideNames {
+			if override := filepath.Join(dir, o); isFile(override) {
+				files = append(files, override)
+				break
+			}
 		}
 		return files
 	}
@@ -130,7 +138,8 @@ func (o Overlay) Render() []byte {
 		if env := o.Environment[svc]; len(env) > 0 {
 			b.WriteString("    environment:\n")
 			for _, k := range SortedKeys(env) {
-				fmt.Fprintf(&b, "      %s: %s\n", quote(k), quote(env[k]))
+				// Compose interpolates the values of its files: a literal $ is $$.
+				fmt.Fprintf(&b, "      %s: %s\n", quote(k), quote(strings.ReplaceAll(env[k], "$", "$$")))
 			}
 		}
 		if nets := o.Networks[svc]; len(nets) > 0 {

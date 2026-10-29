@@ -285,7 +285,7 @@ func TestApplyInstanceBuildsOnComposeFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.c.resolved = &compose.Project{Services: f.c.configs[f.linked].Services}
+	f.c.resolved = resolvedWith(f.c.configs[f.linked].Services, "MODE", "x")
 	if err := f.e.SetEnv(inst, "MODE", "x", false, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +316,7 @@ func TestBaseComposeFilesWithoutAnyFileExplainsTheSetting(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.e.baseFiles = func(string) []string { return nil }
-	if _, err := f.e.baseComposeFiles(inst); err == nil || !strings.Contains(err.Error(), "--compose-file") {
+	if _, err := f.e.baseComposeFiles(context.Background(), inst); err == nil || !strings.Contains(err.Error(), "--compose-file") {
 		t.Errorf("err = %v", err)
 	}
 }

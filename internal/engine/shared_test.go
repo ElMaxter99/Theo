@@ -50,7 +50,7 @@ func TestSharedAddValidatesAndKeepsOneDefiningWorktree(t *testing.T) {
 func TestSharedUseAddsTheConsumerOverlay(t *testing.T) {
 	e, c, inst := portsFixture(t, sharedServices())
 	ctx := context.Background()
-	c.resolved = &compose.Project{Services: sharedServices()}
+	c.resolved = resolvedWith(sharedServices(), "", "")
 	if _, err := e.SharedAdd(ctx, "app", []string{"db"}, "feature/login", false); err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestSharedUseAddsTheConsumerOverlay(t *testing.T) {
 func TestSharedUpDoesNotPublishPortsAndStartsOnlyTheSharedServices(t *testing.T) {
 	e, c, _ := portsFixture(t, sharedServices())
 	ctx := context.Background()
-	c.resolved = &compose.Project{Services: sharedServices()}
+	c.resolved = resolvedWith(sharedServices(), "", "")
 	e.SharedAdd(ctx, "app", []string{"db"}, "feature/login", false)
 	if err := e.SharedUp(ctx, "app", io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
@@ -119,7 +119,7 @@ func TestSharedUpDoesNotPublishPortsAndStartsOnlyTheSharedServices(t *testing.T)
 func TestSharedProtections(t *testing.T) {
 	e, c, inst := portsFixture(t, sharedServices())
 	ctx := context.Background()
-	c.resolved = &compose.Project{Services: sharedServices()}
+	c.resolved = resolvedWith(sharedServices(), "", "")
 	e.SharedAdd(ctx, "app", []string{"db"}, "feature/login", false)
 	if err := e.SharedUse(inst, []string{"db"}, nil); err != nil {
 		t.Fatal(err)
@@ -161,7 +161,7 @@ func TestSharedProtections(t *testing.T) {
 func TestEnsureSharedRefusesUnlessAskedToStart(t *testing.T) {
 	e, c, inst := portsFixture(t, sharedServices())
 	ctx := context.Background()
-	c.resolved = &compose.Project{Services: sharedServices()}
+	c.resolved = resolvedWith(sharedServices(), "", "")
 	e.SharedAdd(ctx, "app", []string{"db"}, "feature/login", false)
 	e.SharedUse(inst, []string{"db"}, nil)
 

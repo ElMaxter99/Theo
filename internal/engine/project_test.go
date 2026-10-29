@@ -205,7 +205,7 @@ func removeFixture(t *testing.T) *diskFixture {
 	f := renameFixture(t)
 	f.write(t, "compose.yaml")
 	inst, _ := f.e.InstanceFor(context.Background(), "app", "feature/login", InstanceOptions{})
-	f.c.resolved = &compose.Project{Services: f.c.configs[f.linked].Services}
+	f.c.resolved = resolvedWith(f.c.configs[f.linked].Services, "MODE", "x")
 	if _, err := f.e.ApplyInstance(context.Background(), inst, nil, false); err != nil {
 		t.Fatal(err)
 	}

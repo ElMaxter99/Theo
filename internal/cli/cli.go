@@ -83,8 +83,12 @@ Running a worktree (each worktree runs as its own Compose project):
   env unset <project> [-w <w>] NAME
   env list <project> [-w <w>] [--show-secrets] [--json]
                                                     Variables for this instance only, applied at
-                                                    up through a generated file; your files and
-                                                    .env are not changed. Secrets are masked
+                                                    up through a generated Compose file (the
+                                                    containers' environment: wins over env_file)
+                                                    and env file (${VAR} in your files; a variable
+                                                    exported in your shell still wins there). Your
+                                                    files and .env are not changed. Secrets are
+                                                    masked. See docs/cli/env-precedence.md
   instance set <project> [-w <w>] --neutralize-container-names | --keep-container-names
   instance show <project> [-w <w>] [--json]         Settings Theo keeps for the instance
   instance config <project> [-w <w>] [--auto-ports] [--profile <p>]

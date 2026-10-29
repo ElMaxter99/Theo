@@ -168,7 +168,13 @@ func TestApplyInstanceAppliesSettingsAndMasksSecrets(t *testing.T) {
 		"db":  {ContainerName: "fixed-db"},
 	}
 	e, c, inst := portsFixture(t, svcs)
-	c.resolved = &compose.Project{Services: svcs}
+	str := func(v string) *string { return &v }
+	// What Compose resolves with the generated file: no container_name, and
+	// the variables set with `theo env`.
+	c.resolved = &compose.Project{Services: map[string]compose.Service{
+		"api": {Environment: map[string]*string{"TOKEN": str("s3cret"), "MODE": str("x y")}},
+		"db":  {Environment: map[string]*string{"MODE": str("x y")}},
+	}}
 	c.text = "services:\n  api:\n    environment:\n      TOKEN: s3cret\n"
 	ctx := context.Background()
 
@@ -287,5 +293,19 @@ func TestAutoPortsIsRememberedForTheInstance(t *testing.T) {
 	e.SetAutoPorts(inst, false)
 	if plan, _ := e.PlanPorts(ctx, inst, nil, false); plan.auto {
 		t.Errorf("auto ports should be off")
+	}
+}
+
+func TestPlanPortsSkipsServicesThatShareANetwork(t *testing.T) {
+	svcs := apiPorts()
+	svcs["host"] = compose.Service{NetworkMode: "host", Ports: []compose.Port{{Target: 80, Published: "3303", Protocol: "tcp"}}}
+	svcs["side"] = compose.Service{NetworkMode: "service:api", Ports: []compose.Port{{Target: 81, Published: "3304", Protocol: "tcp"}}}
+	e, _, inst := portsFixture(t, svcs, 3303)
+	plan, err := e.PlanPorts(context.Background(), inst, nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Mappings) != 1 || plan.Mappings[0].Service != "api" || len(plan.changed) != 1 {
+		t.Errorf("only api publishes ports through Docker: %+v", plan.Mappings)
 	}
 }

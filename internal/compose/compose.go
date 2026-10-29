@@ -41,6 +41,8 @@ type Service struct {
 	DependsOn     map[string]json.RawMessage `json:"depends_on"`
 	Networks      map[string]json.RawMessage `json:"networks"`
 	Profiles      []string                   `json:"profiles"`
+	NetworkMode   string                     `json:"network_mode"`
+	Environment   map[string]*string         `json:"environment"`
 }
 
 // Build is the build section of a service.

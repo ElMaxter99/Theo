@@ -104,6 +104,7 @@ func (e *Engine) planPorts(ctx context.Context, inst *Instance, profiles []strin
 		auto = true
 	}
 	profiles = mergeProfiles(inst.Profiles, profiles)
+	profiles = append(append([]string(nil), profiles...), composeProfiles(inst)...) // COMPOSE_PROFILES
 	state, err := e.portStore.Load()
 	if err != nil {
 		return nil, nil, err
@@ -163,7 +164,7 @@ func (e *Engine) planPorts(ctx context.Context, inst *Instance, profiles []strin
 
 	for _, name := range compose.SortedKeys(inst.config.Services) {
 		svc := inst.config.Services[name]
-		if skip[name] || !startsWith(svc, profiles) {
+		if skip[name] || !startsWith(svc, profiles) || sharesNetwork(svc) {
 			continue
 		}
 		effective := make([]compose.Port, len(svc.Ports))
@@ -235,6 +236,9 @@ func (e *Engine) planPorts(ctx context.Context, inst *Instance, profiles []strin
 		out[inst.Workspace] = saved
 	}
 	if len(changed) > 0 {
+		if err := e.requireOverlayCompose(ctx); err != nil {
+			return nil, nil, err
+		}
 		plan.changed = changed
 		plan.Overlay = string(compose.Overlay{Ports: changed}.Render())
 	}
@@ -261,20 +265,6 @@ func checkEffective(plan *PortPlan, cfg *compose.Project) error {
 	return nil
 }
 
-// baseComposeFiles returns the Compose files the instance loads, which
-// Theo must name explicitly to add its own: the chosen ones (a flag, the
-// project's setting or COMPOSE_FILE), or else the ones Compose finds.
-func (e *Engine) baseComposeFiles(inst *Instance) ([]string, error) {
-	if len(inst.selected) > 0 {
-		return append([]string(nil), inst.selected...), nil
-	}
-	files := e.baseFiles(inst.Workspace)
-	if len(files) == 0 {
-		return nil, fmt.Errorf("theo needs a compose.yaml (or docker-compose.yml) in %s to add its own settings; choose the files with `theo project set %s --compose-file <file>`", inst.Workspace, inst.Project)
-	}
-	return files, nil
-}
-
 // nextFree returns the first available port after from, or 0.
 func (e *Engine) nextFree(hostIP string, from int, proto string, available func(string, int, string) bool) int {
 	for p := from + 1; p <= from+maxPortSearch && p <= 65535; p++ {
@@ -299,6 +289,15 @@ func startsWith(s compose.Service, enabled []string) bool {
 		}
 	}
 	return false
+}
+
+// sharesNetwork reports whether a service uses the network of the host or of
+// another container (network_mode host, service:x, container:x, none): its
+// ports are not published through Docker, so Theo neither plans nor rewrites
+// them, and never gives such a service ports or networks of its own.
+func sharesNetwork(s compose.Service) bool {
+	m := s.NetworkMode
+	return m == "host" || m == "none" || strings.HasPrefix(m, "service:") || strings.HasPrefix(m, "container:")
 }
 
 func orTCP(proto string) string {

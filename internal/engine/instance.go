@@ -41,16 +41,31 @@ type Instance struct {
 	// read after the others; generated lists the files Theo generated.
 	instanceEnv string
 	neutralized bool // fixed container names are removed
+	siblings    int  // other worktrees of the project, which run their own instances
 	generated   []string
 	config      *compose.Project // resolved configuration of the worktree
 }
 
 func (i *Instance) target() compose.Target {
-	envFiles := i.envFiles
-	if i.instanceEnv != "" {
-		envFiles = append(append([]string(nil), envFiles...), i.instanceEnv)
-	}
+	envFiles := withInstanceEnv(i.Workspace, i.envFiles, i.instanceEnv)
 	return compose.Target{Dir: i.Workspace, Name: i.Compose, EnvFiles: envFiles, Files: i.files}
+}
+
+// withInstanceEnv adds the generated env file, read last, to the env files of
+// the instance. Any --env-file makes Compose skip the .env of the project
+// directory, so when the instance relies on that .env it is named too, first:
+// the generated file must add to it, not replace it.
+func withInstanceEnv(workspace string, envFiles []string, instanceEnv string) []string {
+	if instanceEnv == "" {
+		return envFiles
+	}
+	out := append([]string(nil), envFiles...)
+	if len(out) == 0 {
+		if own := filepath.Join(workspace, ".env"); fileExists(own) {
+			out = append(out, own)
+		}
+	}
+	return append(out, instanceEnv)
 }
 
 // instance resolves the instance of a worktree and its Compose
@@ -117,6 +132,7 @@ func (e *Engine) resolveInstance(ctx context.Context, project, worktree string, 
 		selected:  sel.files,
 		files:     sel.files,
 		config:    cfg,
+		siblings:  len(list) - 1,
 	}
 	if len(sel.files) > 0 {
 		inst.ComposeFiles, inst.ComposeFilesSource = sel.files, sel.source

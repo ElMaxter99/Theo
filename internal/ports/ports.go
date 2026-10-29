@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"syscall"
 )
 
 // Free reports whether nothing is listening on the host port. hostIP may be
@@ -32,10 +33,26 @@ func Free(hostIP string, port int, proto string) bool {
 			l.Close()
 		}
 	}
-	if err == nil {
+	if err == nil || addrUnavailable(err) {
 		return true
 	}
 	return errors.Is(err, os.ErrPermission) && runtime.GOOS != "windows"
+}
+
+// addrUnavailable reports whether listening failed because this host has no
+// such address (an IPv6 host_ip on a host without IPv6, an IP of another
+// machine) rather than because the port is taken. Theo cannot test those
+// ports, and counting them as taken would send the search for a free port
+// through the whole range; Docker reports the real conflict if there is one.
+// The Windows socket errors are listed by number, since the syscall package
+// maps them to other values there.
+func addrUnavailable(err error) bool {
+	for _, target := range []error{syscall.EADDRNOTAVAIL, syscall.EAFNOSUPPORT, syscall.Errno(10049), syscall.Errno(10047)} {
+		if errors.Is(err, target) {
+			return true
+		}
+	}
+	return false
 }
 
 // State maps an instance (the path of its worktree) to the host ports
