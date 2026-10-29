@@ -31,4 +31,5 @@ jobs:
         # Shows what ran and what was skipped on this system, and why: the
         # skips are the platform limits that are still unverified.
         shell: bash
-        run: go test -count=1 -v ./internal/acceptance 2>&1 | grep -E '^\s*(---|[a-z_]+_test.go:[0-9]+: )' 
+        run: |
+          go test -count=1 -v ./internal/acceptance 2>&1 | grep -E '^\s*(---|[a-z_]+_test.go:[0-9]+:)'
