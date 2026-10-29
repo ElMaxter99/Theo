@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/ElMaxter99/Theo/internal/compose"
 	"github.com/ElMaxter99/Theo/internal/engine"
 	"github.com/ElMaxter99/Theo/internal/registry"
 	"github.com/ElMaxter99/Theo/internal/testutil"
@@ -205,7 +207,7 @@ services:
 		hold(t, p[0], "tcp")
 		hold(t, p[1], "tcp")
 		compatProject(t, "t3-composefile", map[string]string{
-			".env":       "COMPOSE_FILE=base.yaml:ports.yaml\n",
+			".env":       "COMPOSE_FILE=base.yaml" + compose.PathSeparator() + "ports.yaml\n",
 			"base.yaml":  "name: t3-composefile\nservices:\n  web:\n    " + img,
 			"ports.yaml": fmt.Sprintf("services:\n  web:\n    ports: [\"%d:80\"]\n    environment:\n      FROM_SECOND: yes\n  other:\n    %s    ports: [\"%d:80\"]\n", p[0], img, p[1]),
 			// The default file names must not be picked up when COMPOSE_FILE names others.
@@ -329,7 +331,13 @@ services:
 			byTarget[m.Target] = m
 		}
 		// 82 is on ::1, which a host without IPv6 cannot test: it stays as it is.
-		for target, orig := range map[uint32]int{80: p[0], 81: p[1], 53: p[2], 83: p[4]} {
+		taken := map[uint32]int{80: p[0], 81: p[1], 53: p[2], 83: p[4]}
+		if runtime.GOOS == "windows" {
+			// Windows lets 127.0.0.1:port bind next to a listener on 0.0.0.0:port,
+			// so Docker does not see a conflict there either.
+			delete(taken, 81)
+		}
+		for target, orig := range taken {
 			m := byTarget[target]
 			if m.Status != engine.PortReassigned || m.Effective == orig {
 				t.Errorf("target %d: %+v", target, m)

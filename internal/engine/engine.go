@@ -456,10 +456,21 @@ func validateName(name string) error {
 // samePath compares two cleaned absolute paths, ignoring case on Windows.
 func samePath(a, b string) bool {
 	a, b = filepath.Clean(a), filepath.Clean(b)
-	if runtime.GOOS == "windows" {
-		return strings.EqualFold(a, b)
+	equal := func(x, y string) bool {
+		if runtime.GOOS == "windows" {
+			return strings.EqualFold(x, y)
+		}
+		return x == y
 	}
-	return a == b
+	if equal(a, b) {
+		return true
+	}
+	// The same directory through a symbolic link (macOS keeps /var/folders
+	// as /private/var/folders): Git reports the real path, the user may have
+	// typed the other one.
+	ra, errA := filepath.EvalSymlinks(a)
+	rb, errB := filepath.EvalSymlinks(b)
+	return errA == nil && errB == nil && equal(ra, rb)
 }
 
 // isInside reports whether path is base or a path below it.
