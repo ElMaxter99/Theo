@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/ElMaxter99/Theo/internal/compose"
 	"github.com/ElMaxter99/Theo/internal/git"
+	"github.com/ElMaxter99/Theo/internal/ports"
 	"github.com/ElMaxter99/Theo/internal/registry"
 )
 
@@ -38,9 +40,16 @@ type Git interface {
 	Dirty(ctx context.Context, dir string) (bool, error)
 }
 
-// Compose reads the resolved configuration of Compose projects.
+// Compose reads and operates Compose projects.
 type Compose interface {
 	Config(ctx context.Context, dir string, envFiles []string) (*compose.Project, error)
+	Up(ctx context.Context, t compose.Target, opts compose.UpOptions, stdout, stderr io.Writer) error
+	Down(ctx context.Context, t compose.Target, stdout, stderr io.Writer) error
+	Restart(ctx context.Context, t compose.Target, stdout, stderr io.Writer) error
+	Logs(ctx context.Context, t compose.Target, opts compose.LogOptions, stdout, stderr io.Writer) error
+	PS(ctx context.Context, t compose.Target) ([]compose.Container, error)
+	Stacks(ctx context.Context) ([]compose.Stack, error)
+	ConfigFor(ctx context.Context, t compose.Target) (*compose.Project, error)
 }
 
 // Engine is the entry point to Theo's operations.
@@ -49,12 +58,31 @@ type Engine struct {
 	git     Git
 	compose Compose
 	now     func() time.Time
+
+	portStore PortStore
+	portFree  func(hostIP string, port int, proto string) bool
+	dataDir   string // where generated files are kept; empty if none
+	baseFiles func(dir string) []string
 }
 
 // New returns an engine that uses the given store and adapters.
 func New(store Store, g Git, c Compose) *Engine {
-	return &Engine{store: store, git: g, compose: c, now: time.Now}
+	return &Engine{store: store, git: g, compose: c, now: time.Now, portStore: &memPorts{}, portFree: ports.Free, baseFiles: compose.DefaultFiles}
 }
+
+// memPorts keeps port assignments in memory, for engines that are not given
+// a place to persist them.
+type memPorts struct{ state ports.State }
+
+func (m *memPorts) Load() (ports.State, error) {
+	out := ports.State{}
+	for k, v := range m.state {
+		out[k] = v
+	}
+	return out, nil
+}
+
+func (m *memPorts) Save(s ports.State) error { m.state = s; return nil }
 
 // Open returns an engine that uses the registry in Theo's default data
 // directory and the real git and docker compose tools.
@@ -63,7 +91,10 @@ func Open() (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	return New(registry.Open(dir), git.Git{}, compose.Compose{}), nil
+	e := New(registry.Open(dir), git.Git{}, compose.Compose{})
+	e.portStore = ports.Open(dir)
+	e.dataDir = dir
+	return e, nil
 }
 
 // AddProject registers the Git repository that contains path. When path is
@@ -279,38 +310,12 @@ type Mount struct {
 // worktrees, which Git creates without untracked files, share the main
 // worktree's .env unless they have their own.
 func (e *Engine) Services(ctx context.Context, project, worktree string, envFiles []string) (*Services, error) {
-	p, err := e.Project(project)
+	inst, cfg, err := e.instance(ctx, project, worktree, envFiles)
 	if err != nil {
 		return nil, err
 	}
-	list, err := e.git.Worktrees(ctx, p.Path)
-	if err != nil {
-		return nil, err
-	}
-	wt, err := selectWorktree(list, worktree)
-	if err != nil {
-		return nil, fmt.Errorf("project %q: %w", p.Name, err)
-	}
-	if wt.Bare {
-		return nil, fmt.Errorf("%s is a bare repository; choose a worktree with --worktree (see `theo worktrees %s`)", wt.Path, p.Name)
-	}
-	if wt.Prunable {
-		return nil, fmt.Errorf("worktree %s no longer exists on disk", wt.Path)
-	}
-
-	env, files, err := resolveEnvFile(p, wt, list[0], envFiles)
-	if err != nil {
-		return nil, err
-	}
-	cfg, err := e.compose.Config(ctx, wt.Path, files)
-	if err != nil {
-		if env.Source == EnvNone {
-			return nil, fmt.Errorf("%w\n\nNo .env found in this worktree or in the main worktree. Set one for the project with `theo project set %s --env-file <path>`, or pass --env-file.", err, p.Name)
-		}
-		return nil, fmt.Errorf("%w\n\n(env file: %s, from the %s)", err, env.Path, env.Source)
-	}
-
-	result := &Services{Project: p.Name, Workspace: wt.Path, Branch: wt.Branch, Compose: cfg.Name, EnvFile: env}
+	wt := inst.worktree
+	result := &Services{Project: inst.Project, Workspace: inst.Workspace, Branch: inst.Branch, Compose: inst.Compose, EnvFile: inst.EnvFile}
 	for _, name := range compose.SortedKeys(cfg.Services) {
 		s := cfg.Services[name]
 		svc := Service{

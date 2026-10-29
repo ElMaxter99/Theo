@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -52,7 +53,49 @@ func (g *fakeGit) Dirty(_ context.Context, dir string) (bool, error) {
 }
 
 type fakeCompose struct {
-	configs map[string]*compose.Project
+	configs    map[string]*compose.Project
+	stacks     []compose.Stack
+	calls      []string            // "up <name> <dir> <env files>"
+	resolved   *compose.Project    // returned by ConfigFor
+	containers []compose.Container // returned by PS
+}
+
+func (c *fakeCompose) record(op string, t compose.Target) {
+	c.calls = append(c.calls, strings.Join([]string{op, t.Name, t.Dir, strings.Join(t.EnvFiles, ",")}, " "))
+}
+
+func (c *fakeCompose) Up(_ context.Context, t compose.Target, _ compose.UpOptions, _, _ io.Writer) error {
+	c.record("up", t)
+	return nil
+}
+
+func (c *fakeCompose) Down(_ context.Context, t compose.Target, _, _ io.Writer) error {
+	c.record("down", t)
+	return nil
+}
+
+func (c *fakeCompose) Restart(_ context.Context, t compose.Target, _, _ io.Writer) error {
+	c.record("restart", t)
+	return nil
+}
+
+func (c *fakeCompose) Logs(_ context.Context, t compose.Target, _ compose.LogOptions, _, _ io.Writer) error {
+	c.record("logs", t)
+	return nil
+}
+
+func (c *fakeCompose) PS(_ context.Context, t compose.Target) ([]compose.Container, error) {
+	c.record("ps", t)
+	return c.containers, nil
+}
+
+func (c *fakeCompose) ConfigFor(_ context.Context, t compose.Target) (*compose.Project, error) {
+	c.record("config", t)
+	return c.resolved, nil
+}
+
+func (c *fakeCompose) Stacks(context.Context) ([]compose.Stack, error) {
+	return c.stacks, nil
 }
 
 func (c *fakeCompose) Config(_ context.Context, dir string, _ []string) (*compose.Project, error) {
@@ -193,7 +236,7 @@ func TestServices(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Workspace != feature || res.Branch != "feature/login" || res.Compose != "app-feature" {
+	if res.Workspace != feature || res.Branch != "feature/login" || res.Compose != "app-app-feature" {
 		t.Errorf("Services() header = %+v", res)
 	}
 	if len(res.Services) != 2 || res.Services[0].Name != "db" || res.Services[1].Name != "web" {
@@ -338,5 +381,86 @@ func TestSetEnvFile(t *testing.T) {
 	}
 	if _, err := e.SetEnvFile("app", envFile+".missing"); err == nil {
 		t.Error("a missing env file should be rejected")
+	}
+}
+
+func TestInstanceName(t *testing.T) {
+	list := []git.Worktree{
+		{Path: abs("/src/app")},
+		{Path: abs("/src/wt/Feature.Login")},
+		{Path: abs("/src/a/dup")},
+		{Path: abs("/src/b/dup")},
+	}
+	if got := instanceName("gr", "gasolina-radar-api-dev", list[0], list); got != "gasolina-radar-api-dev" {
+		t.Errorf("main worktree = %q, want Compose's own name", got)
+	}
+	if got := instanceName("GR", "x", list[1], list); got != "gr-feature-login" {
+		t.Errorf("linked worktree = %q, want gr-feature-login", got)
+	}
+	a, b := instanceName("gr", "x", list[2], list), instanceName("gr", "x", list[3], list)
+	if a == b || !strings.HasPrefix(a, "gr-dup-") || !strings.HasPrefix(b, "gr-dup-") {
+		t.Errorf("same directory name: %q and %q, want distinct gr-dup-<hash>", a, b)
+	}
+	if a != instanceName("gr", "x", list[2], list) {
+		t.Error("instance names must be deterministic")
+	}
+}
+
+func TestSlug(t *testing.T) {
+	for in, want := range map[string]string{"api-cors-expose": "api-cors-expose", "_My App.v2": "my-app-v2", "...": "wt"} {
+		if got := slug(in); got != want {
+			t.Errorf("slug(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestInstanceOperationsUseTheWorktreeTarget(t *testing.T) {
+	e, _, _, c := newEngine()
+	ctx := context.Background()
+	if _, err := e.AddProject(ctx, root, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	c.configs[feature] = &compose.Project{Name: "app-feature"}
+	inst, err := e.Instance(ctx, "app", "feature/login", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inst.Compose != "app-app-feature" {
+		t.Errorf("instance name = %q", inst.Compose)
+	}
+	_ = e.Up(ctx, inst, compose.UpOptions{}, io.Discard, io.Discard)
+	_ = e.Down(ctx, inst, io.Discard, io.Discard)
+	want := []string{"up app-app-feature " + feature + " ", "down app-app-feature " + feature + " "}
+	if !reflect.DeepEqual(c.calls, want) {
+		t.Errorf("calls = %q, want %q", c.calls, want)
+	}
+}
+
+func TestOverviewAssignsStacksToInnermostWorktree(t *testing.T) {
+	e, _, g, c := newEngine()
+	ctx := context.Background()
+	nested := abs("/src/app/.worktrees/x")
+	g.worktrees = append(g.worktrees, git.Worktree{Path: nested, Branch: "x"})
+	if _, err := e.AddProject(ctx, root, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	c.stacks = []compose.Stack{
+		{Name: "app", Status: "running(2)", ConfigFiles: filepath.Join(root, "compose.yaml")},
+		{Name: "app-x", Status: "exited(1)", ConfigFiles: filepath.Join(nested, "compose.yaml") + "," + filepath.Join(nested, "compose.override.yaml")},
+		{Name: "elsewhere", Status: "running(1)", ConfigFiles: abs("/other/compose.yaml")},
+	}
+	overview, err := e.Overview(ctx, "app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string][]string{}
+	for _, o := range overview {
+		for _, s := range o.Stacks {
+			got[o.Worktree.Path] = append(got[o.Worktree.Path], s.Name)
+		}
+	}
+	want := map[string][]string{root: {"app"}, nested: {"app-x"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("overview = %v, want %v", got, want)
 	}
 }
