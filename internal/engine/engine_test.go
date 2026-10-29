@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -54,7 +55,7 @@ type fakeCompose struct {
 	configs map[string]*compose.Project
 }
 
-func (c *fakeCompose) Config(_ context.Context, dir string) (*compose.Project, error) {
+func (c *fakeCompose) Config(_ context.Context, dir string, _ []string) (*compose.Project, error) {
 	if p, ok := c.configs[dir]; ok {
 		return p, nil
 	}
@@ -188,7 +189,7 @@ func TestServices(t *testing.T) {
 		},
 	}
 
-	res, err := e.Services(ctx, "app", "feature/login")
+	res, err := e.Services(ctx, "app", "feature/login", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +208,7 @@ func TestServices(t *testing.T) {
 		t.Errorf("outside workspace flags = %v, want only the /src/shared bind mount flagged", outside)
 	}
 
-	if _, err := e.Services(ctx, "app", ""); err == nil {
+	if _, err := e.Services(ctx, "app", "", nil); err == nil {
 		t.Error("main worktree has no Compose files in the fake; expected the compose error")
 	}
 }
@@ -259,5 +260,34 @@ func TestIsInside(t *testing.T) {
 		if got := isInside(base, path); got != want {
 			t.Errorf("isInside(%q, %q) = %v, want %v", base, path, got, want)
 		}
+	}
+}
+
+func TestEnvFileHint(t *testing.T) {
+	dir := t.TempDir()
+	main := git.Worktree{Path: filepath.Join(dir, "app")}
+	linked := git.Worktree{Path: filepath.Join(dir, "app-feature")}
+	for _, wt := range []git.Worktree{main, linked} {
+		if err := os.Mkdir(wt.Path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if hint := envFileHint(linked, main, nil); !strings.Contains(hint, "no .env file") || !strings.Contains(hint, "--env-file <path>") {
+		t.Errorf("no .env anywhere: hint = %q", hint)
+	}
+
+	mainEnv := filepath.Join(main.Path, ".env")
+	if err := os.WriteFile(mainEnv, []byte("A=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if hint := envFileHint(linked, main, nil); !strings.Contains(hint, "--env-file "+mainEnv) {
+		t.Errorf("main has .env: hint = %q, want it to suggest %s", hint, mainEnv)
+	}
+	if hint := envFileHint(main, main, nil); hint != "" {
+		t.Errorf("main worktree with .env: hint = %q, want none", hint)
+	}
+	if hint := envFileHint(linked, main, []string{mainEnv}); hint != "" {
+		t.Errorf("with --env-file: hint = %q, want none", hint)
 	}
 }

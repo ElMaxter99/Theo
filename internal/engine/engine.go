@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -39,7 +40,7 @@ type Git interface {
 
 // Compose reads the resolved configuration of Compose projects.
 type Compose interface {
-	Config(ctx context.Context, dir string) (*compose.Project, error)
+	Config(ctx context.Context, dir string, envFiles []string) (*compose.Project, error)
 }
 
 // Engine is the entry point to Theo's operations.
@@ -210,8 +211,9 @@ type Mount struct {
 
 // Services returns the services of a project as docker compose resolves
 // them. worktree selects the workspace by branch name, directory name or
-// path; empty means the project's main worktree.
-func (e *Engine) Services(ctx context.Context, project, worktree string) (*Services, error) {
+// path; empty means the project's main worktree. envFiles, when given,
+// replace the worktree's .env file.
+func (e *Engine) Services(ctx context.Context, project, worktree string, envFiles []string) (*Services, error) {
 	p, err := e.Project(project)
 	if err != nil {
 		return nil, err
@@ -231,8 +233,16 @@ func (e *Engine) Services(ctx context.Context, project, worktree string) (*Servi
 		return nil, fmt.Errorf("worktree %s no longer exists on disk", wt.Path)
 	}
 
-	cfg, err := e.compose.Config(ctx, wt.Path)
+	for i, f := range envFiles {
+		if envFiles[i], err = filepath.Abs(f); err != nil {
+			return nil, err
+		}
+	}
+	cfg, err := e.compose.Config(ctx, wt.Path, envFiles)
 	if err != nil {
+		if hint := envFileHint(wt, list[0], envFiles); hint != "" {
+			return nil, fmt.Errorf("%w\n\n%s", err, hint)
+		}
 		return nil, err
 	}
 
@@ -260,6 +270,24 @@ func (e *Engine) Services(ctx context.Context, project, worktree string) (*Servi
 		result.Services = append(result.Services, svc)
 	}
 	return result, nil
+}
+
+// envFileHint explains a likely cause of a Compose failure: linked
+// worktrees do not get the untracked .env file of the main worktree.
+func envFileHint(wt, main git.Worktree, envFiles []string) string {
+	if len(envFiles) > 0 || fileExists(filepath.Join(wt.Path, ".env")) {
+		return ""
+	}
+	hint := "This worktree has no .env file. Git does not copy untracked files such as .env to new worktrees."
+	if mainEnv := filepath.Join(main.Path, ".env"); !samePath(wt.Path, main.Path) && fileExists(mainEnv) {
+		return hint + "\nTo use the main worktree's one: --env-file " + mainEnv
+	}
+	return hint + "\nCreate one, or pass another with --env-file <path>."
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 func selectWorktree(list []git.Worktree, selector string) (git.Worktree, error) {

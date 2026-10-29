@@ -57,8 +57,14 @@ type Compose struct{}
 // Config returns the resolved configuration of the Compose project in dir,
 // as `docker compose config` sees it with the user's own files and
 // environment. All profiles are enabled so that every service is listed.
-func (Compose) Config(ctx context.Context, dir string) (*Project, error) {
-	out, err := execx.Run(ctx, dir, "docker", "compose", "--profile", "*", "config", "--format", "json")
+// envFiles, when given, replace the project's default .env file.
+func (Compose) Config(ctx context.Context, dir string, envFiles []string) (*Project, error) {
+	args := []string{"compose", "--profile", "*"}
+	for _, f := range envFiles {
+		args = append(args, "--env-file", f)
+	}
+	args = append(args, "config", "--format", "json")
+	out, err := execx.Run(ctx, dir, "docker", args...)
 	if err != nil {
 		return nil, err
 	}

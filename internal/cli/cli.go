@@ -35,9 +35,11 @@ Commands:
   project list [--json]                        List registered projects
   project remove <name>                        Unregister a project (files and containers are kept)
   worktrees <project> [--json]                 List the worktrees of a project
-  services <project> [--worktree <w>] [--json] List the services docker compose resolves
+  services <project> [--worktree <w>] [--env-file <f>] [--json]
+                                               List the services docker compose resolves
                                                for the main worktree, or for <w>
-                                               (a branch, directory name or path)
+                                               (a branch, directory name or path).
+                                               --env-file replaces the worktree's .env
   version                                      Print the Theo version
   help                                         Show this help
 
@@ -255,6 +257,8 @@ func runServices(e *engine.Engine, args []string, stdout io.Writer) error {
 	asJSON := fs.Bool("json", false, "print JSON")
 	worktree := fs.String("worktree", "", "branch, directory name or path of the worktree")
 	fs.StringVar(worktree, "w", "", "shorthand for --worktree")
+	var envFiles stringList
+	fs.Var(&envFiles, "env-file", "env file to use instead of the worktree's .env (repeatable)")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -262,7 +266,7 @@ func runServices(e *engine.Engine, args []string, stdout io.Writer) error {
 	if len(pos) != 1 {
 		return usageErrorf("services needs exactly one project name")
 	}
-	res, err := e.Services(context.Background(), pos[0], *worktree)
+	res, err := e.Services(context.Background(), pos[0], *worktree, envFiles)
 	if err != nil {
 		return err
 	}
@@ -297,6 +301,16 @@ func runServices(e *engine.Engine, args []string, stdout io.Writer) error {
 			return err
 		}
 	}
+	return nil
+}
+
+// stringList is a flag that can be repeated.
+type stringList []string
+
+func (l *stringList) String() string { return strings.Join(*l, ",") }
+
+func (l *stringList) Set(v string) error {
+	*l = append(*l, v)
 	return nil
 }
 

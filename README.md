@@ -42,6 +42,9 @@ theo worktrees my-api
 theo services my-api                       # main worktree
 theo services my-api --worktree feature/x  # by branch, directory name or path
 
+# Linked worktrees don't get untracked files such as .env. Use another env file:
+theo services my-api -w feature/x --env-file ~/code/my-api/.env
+
 # Unregister the project. Files, containers and volumes are not touched.
 theo project remove my-api
 ```

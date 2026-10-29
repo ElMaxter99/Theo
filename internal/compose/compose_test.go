@@ -88,7 +88,7 @@ func TestConfigAgainstRealCompose(t *testing.T) {
     profiles: [jobs]
 `)
 
-	p, err := Compose{}.Config(context.Background(), dir)
+	p, err := Compose{}.Config(context.Background(), dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,29 @@ func TestConfigAgainstRealCompose(t *testing.T) {
 		t.Errorf("volumes = %+v", web.Volumes)
 	}
 
-	if _, err := (Compose{}).Config(context.Background(), testutil.TempDir(t)); err == nil {
+	if _, err := (Compose{}).Config(context.Background(), testutil.TempDir(t), nil); err == nil {
 		t.Error("Config() in a directory without Compose files should fail")
+	}
+}
+
+func TestConfigWithEnvFile(t *testing.T) {
+	testutil.RequireCompose(t)
+	dir := testutil.TempDir(t)
+	testutil.WriteFile(t, dir, "compose.yaml", `services:
+  web:
+    image: "nginx:${TAG:?TAG is required}"
+`)
+	if _, err := (Compose{}).Config(context.Background(), dir, nil); err == nil {
+		t.Fatal("expected an error without TAG")
+	}
+
+	envFile := filepath.Join(testutil.TempDir(t), "other.env")
+	testutil.WriteFile(t, filepath.Dir(envFile), "other.env", "TAG=alpine\n")
+	p, err := Compose{}.Config(context.Background(), dir, []string{envFile})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.Services["web"].Image; got != "nginx:alpine" {
+		t.Errorf("image = %q, want nginx:alpine", got)
 	}
 }
