@@ -1,0 +1,13 @@
+# Build output
+/theo
+/theo.exe
+/dist/
+
+# Test and coverage output
+*.test
+*.out
+
+# Editors and OS files
+.idea/
+.vscode/
+.DS_Store
