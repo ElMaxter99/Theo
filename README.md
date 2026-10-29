@@ -1,6 +1,6 @@
 # Theo
 
-> **Status:** early prototype. Theo can register a project and show its worktrees and the services Docker Compose resolves for each of them. It cannot start or create environments yet.
+> **Status:** early prototype. Theo can register a project, show its worktrees and the services Docker Compose resolves for each of them, and start, stop and inspect each worktree as its own Compose project. It does not yet reassign ports, so two worktrees that publish the same fixed port cannot run at the same time.
 
 Theo is a cross-platform tool (macOS, Linux and Windows) for managing development projects and **multiple isolated environments based on Git and Docker Compose**. The goal is to let a developer, or several AI agents, work at the same time on different branches, features and fixes of the same project, each one with its own running environment, while choosing which services are isolated and which ones are deliberately shared.
 
@@ -15,7 +15,7 @@ Theo is a cross-platform tool (macOS, Linux and Windows) for managing developmen
 ## Requirements
 
 - [Go](https://go.dev/dl/) 1.24 or later, to build from source.
-- Git and Docker with the Compose plugin, in your `PATH`. Reading a project's services runs `docker compose config`, which does not need the Docker daemon to be running.
+- Git and Docker with the Compose plugin, in your `PATH`. Reading a project's services runs `docker compose config`, which does not need the Docker daemon. Starting and inspecting containers does.
 
 ## Build and run
 
@@ -48,13 +48,23 @@ theo services my-api --worktree feature/x  # by branch, directory name or path
 theo project set my-api --env-file ~/secrets/my-api.env   # or --no-env-file
 theo services my-api -w feature/x --env-file other.env    # one-off override
 
+# Run a worktree. Each worktree is its own Compose project: the main worktree
+# keeps the name Compose gives it, and linked worktrees get
+# <project>-<directory>, so their containers, networks and volumes never mix.
+theo up my-api -w feature/x [--build] [--profile worker]
+theo ps my-api                  # which worktrees have containers
+theo ps my-api -w feature/x     # containers, state and ports of one worktree
+theo logs my-api -w feature/x -f --tail 100 [service...]
+theo restart my-api -w feature/x
+theo down my-api -w feature/x   # removes containers and networks, never volumes
+
 # Unregister the project. Files, containers and volumes are not touched.
 theo project remove my-api
 ```
 
 `project list`, `worktrees` and `services` accept `--json` for scripts and agents.
 
-These commands only read your repositories and Compose files: they never change files, branches, containers or volumes.
+Theo never changes your files or branches and never deletes volumes. Only `up`, `down` and `restart` change containers.
 
 Theo keeps its registry in `theo/registry.json` inside your user configuration directory (for example `~/.config` on Linux, `~/Library/Application Support` on macOS, `%AppData%` on Windows). Set `THEO_HOME` to use another directory.
 
@@ -65,7 +75,7 @@ go vet ./...
 go test ./...
 ```
 
-Some tests use the real `git` and `docker compose` tools and are skipped when they are not installed.
+Some tests use the real `git` and `docker compose` tools, and a Docker daemon that runs Linux containers. They are skipped when those are not available. They build a tiny image `FROM scratch`, so they never pull images.
 
 ## Project layout
 

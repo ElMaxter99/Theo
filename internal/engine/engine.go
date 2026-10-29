@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -38,9 +39,15 @@ type Git interface {
 	Dirty(ctx context.Context, dir string) (bool, error)
 }
 
-// Compose reads the resolved configuration of Compose projects.
+// Compose reads and operates Compose projects.
 type Compose interface {
 	Config(ctx context.Context, dir string, envFiles []string) (*compose.Project, error)
+	Up(ctx context.Context, t compose.Target, opts compose.UpOptions, stdout, stderr io.Writer) error
+	Down(ctx context.Context, t compose.Target, stdout, stderr io.Writer) error
+	Restart(ctx context.Context, t compose.Target, stdout, stderr io.Writer) error
+	Logs(ctx context.Context, t compose.Target, opts compose.LogOptions, stdout, stderr io.Writer) error
+	PS(ctx context.Context, t compose.Target) ([]compose.Container, error)
+	Stacks(ctx context.Context) ([]compose.Stack, error)
 }
 
 // Engine is the entry point to Theo's operations.
@@ -279,38 +286,12 @@ type Mount struct {
 // worktrees, which Git creates without untracked files, share the main
 // worktree's .env unless they have their own.
 func (e *Engine) Services(ctx context.Context, project, worktree string, envFiles []string) (*Services, error) {
-	p, err := e.Project(project)
+	inst, cfg, err := e.instance(ctx, project, worktree, envFiles)
 	if err != nil {
 		return nil, err
 	}
-	list, err := e.git.Worktrees(ctx, p.Path)
-	if err != nil {
-		return nil, err
-	}
-	wt, err := selectWorktree(list, worktree)
-	if err != nil {
-		return nil, fmt.Errorf("project %q: %w", p.Name, err)
-	}
-	if wt.Bare {
-		return nil, fmt.Errorf("%s is a bare repository; choose a worktree with --worktree (see `theo worktrees %s`)", wt.Path, p.Name)
-	}
-	if wt.Prunable {
-		return nil, fmt.Errorf("worktree %s no longer exists on disk", wt.Path)
-	}
-
-	env, files, err := resolveEnvFile(p, wt, list[0], envFiles)
-	if err != nil {
-		return nil, err
-	}
-	cfg, err := e.compose.Config(ctx, wt.Path, files)
-	if err != nil {
-		if env.Source == EnvNone {
-			return nil, fmt.Errorf("%w\n\nNo .env found in this worktree or in the main worktree. Set one for the project with `theo project set %s --env-file <path>`, or pass --env-file.", err, p.Name)
-		}
-		return nil, fmt.Errorf("%w\n\n(env file: %s, from the %s)", err, env.Path, env.Source)
-	}
-
-	result := &Services{Project: p.Name, Workspace: wt.Path, Branch: wt.Branch, Compose: cfg.Name, EnvFile: env}
+	wt := inst.worktree
+	result := &Services{Project: inst.Project, Workspace: inst.Workspace, Branch: inst.Branch, Compose: inst.Compose, EnvFile: inst.EnvFile}
 	for _, name := range compose.SortedKeys(cfg.Services) {
 		s := cfg.Services[name]
 		svc := Service{

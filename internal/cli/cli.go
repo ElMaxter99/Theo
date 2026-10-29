@@ -47,11 +47,23 @@ Commands:
 
 Env file used by services, in order: --env-file; the worktree's own .env; the
 project's env file (project set); the main worktree's .env.
+
+Running a worktree (each worktree runs as its own Compose project):
+  up <project> [-w <w>] [--build] [--profile <p>]   Create and start its containers
+  down <project> [-w <w>]                           Stop and remove its containers and
+                                                    networks; volumes are always kept
+  restart <project> [-w <w>]                        Restart its containers
+  ps <project> [--json]                             Show which worktrees have containers
+  ps <project> -w <w> [--json]                      Show the containers of one worktree
+  logs <project> [-w <w>] [-f] [--tail <n>] [service...]
+                                                    Show its logs
+  These commands also accept --env-file. Without -w they use the main worktree,
+  except ps, which then shows every worktree.
+
   version                                      Print the Theo version
   help                                         Show this help
 
-Theo only reads your repositories and Compose files: these commands never
-change files, branches, containers or volumes.
+Theo never changes your files or branches, and never deletes volumes.
 `
 
 // errUsage marks errors caused by wrong arguments.
@@ -80,6 +92,10 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = withEngine(func(e *engine.Engine) error { return runWorktrees(e, args[1:], stdout) })
 	case "services":
 		err = withEngine(func(e *engine.Engine) error { return runServices(e, args[1:], stdout) })
+	case "up", "down", "restart", "logs":
+		err = withEngine(func(e *engine.Engine) error { return runInstance(e, args[0], args[1:], stdout, stderr) })
+	case "ps":
+		err = withEngine(func(e *engine.Engine) error { return runPS(e, args[1:], stdout) })
 	default:
 		err = usageErrorf("unknown command %q", args[0])
 	}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -84,4 +85,59 @@ func NewRepo(t *testing.T, files map[string]string) (main, linked string) {
 	Git(t, main, "commit", "-q", "-m", "init")
 	Git(t, main, "worktree", "add", "-q", "-b", "feature/x", linked)
 	return main, linked
+}
+
+// RequireDaemon skips the test unless a Docker daemon that runs Linux
+// containers is reachable.
+func RequireDaemon(t *testing.T) {
+	t.Helper()
+	RequireCompose(t)
+	out, err := exec.Command("docker", "info", "--format", "{{.OSType}}").Output()
+	if err != nil || strings.TrimSpace(string(out)) != "linux" {
+		t.Skip("no Docker daemon running Linux containers")
+	}
+}
+
+// serverSource is a tiny HTTP server used as a container in tests. It is
+// built into an image FROM scratch, so tests never pull images.
+const serverSource = `package main
+
+import (
+	"fmt"
+	"net/http"
+)
+
+func main() {
+	fmt.Println("server ready")
+	http.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprintln(w, "ok") })
+	http.ListenAndServe(":8080", nil)
+}
+`
+
+// WriteServerImage writes to dir a Dockerfile and a static Linux binary of a
+// tiny HTTP server listening on port 8080, so that a Compose file in dir can
+// use `build: .`.
+func WriteServerImage(t *testing.T, dir string) {
+	t.Helper()
+	src := TempDir(t)
+	WriteFile(t, src, "go.mod", "module server\n\ngo 1.24\n")
+	WriteFile(t, src, "main.go", serverSource)
+	cmd := exec.Command("go", "build", "-o", filepath.Join(dir, "server"), ".")
+	cmd.Dir = src
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("building the test server: %v\n%s", err, out)
+	}
+	WriteFile(t, dir, "Dockerfile", "FROM scratch\nCOPY server /server\nENTRYPOINT [\"/server\"]\n")
+}
+
+// Docker runs docker and returns its trimmed standard output, failing the
+// test if it fails.
+func Docker(t *testing.T, args ...string) string {
+	t.Helper()
+	out, err := exec.Command("docker", args...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("docker %v: %v\n%s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
 }
