@@ -1,0 +1,24 @@
+{
+  "name": "theo-web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Source of the interface served by `theo ui`. Builds into ../internal/ui/dist (committed).",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test test/",
+    "test:e2e": "node --test --test-concurrency=1 e2e/*.test.mjs",
+    "test:e2e:real": "node --test --test-concurrency=1 e2e/real/*.test.mjs",
+    "mock": "node mock/server.mjs"
+  },
+  "dependencies": {
+    "preact": "10.29.8"
+  },
+  "devDependencies": {
+    "axe-core": "4.14.0",
+    "esbuild": "0.28.2",
+    "typescript": "5.9.3"
+  }
+}
