@@ -25,10 +25,12 @@ type Instance struct {
 
 	worktree git.Worktree
 	envFiles []string
+	files    []string         // Compose files, when Theo adds its own; empty otherwise
+	config   *compose.Project // resolved configuration of the worktree
 }
 
 func (i *Instance) target() compose.Target {
-	return compose.Target{Dir: i.Workspace, Name: i.Compose, EnvFiles: i.envFiles}
+	return compose.Target{Dir: i.Workspace, Name: i.Compose, EnvFiles: i.envFiles, Files: i.files}
 }
 
 // instance resolves the instance of a worktree and its Compose
@@ -73,6 +75,7 @@ func (e *Engine) instance(ctx context.Context, project, worktree string, envFile
 		EnvFile:   env,
 		worktree:  wt,
 		envFiles:  files,
+		config:    cfg,
 	}
 	return inst, cfg, nil
 }

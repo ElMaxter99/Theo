@@ -43,9 +43,9 @@ func TestParseConfig(t *testing.T) {
 		t.Errorf("build = %+v", api.Build)
 	}
 	wantPorts := []Port{
-		{Target: 80, Published: "8080", Protocol: "tcp"},
-		{HostIP: "127.0.0.1", Target: 9229, Published: "9229", Protocol: "tcp"},
-		{Target: 3000, Protocol: "tcp"},
+		{Target: 80, Published: "8080", Protocol: "tcp", Mode: "ingress"},
+		{HostIP: "127.0.0.1", Target: 9229, Published: "9229", Protocol: "tcp", Mode: "ingress"},
+		{Target: 3000, Protocol: "tcp", Mode: "ingress"},
 	}
 	if !reflect.DeepEqual(api.Ports, wantPorts) {
 		t.Errorf("ports = %+v", api.Ports)

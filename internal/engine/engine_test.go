@@ -53,9 +53,11 @@ func (g *fakeGit) Dirty(_ context.Context, dir string) (bool, error) {
 }
 
 type fakeCompose struct {
-	configs map[string]*compose.Project
-	stacks  []compose.Stack
-	calls   []string // "up <name> <dir> <env files>"
+	configs    map[string]*compose.Project
+	stacks     []compose.Stack
+	calls      []string            // "up <name> <dir> <env files>"
+	resolved   *compose.Project    // returned by ConfigFor
+	containers []compose.Container // returned by PS
 }
 
 func (c *fakeCompose) record(op string, t compose.Target) {
@@ -84,7 +86,12 @@ func (c *fakeCompose) Logs(_ context.Context, t compose.Target, _ compose.LogOpt
 
 func (c *fakeCompose) PS(_ context.Context, t compose.Target) ([]compose.Container, error) {
 	c.record("ps", t)
-	return nil, nil
+	return c.containers, nil
+}
+
+func (c *fakeCompose) ConfigFor(_ context.Context, t compose.Target) (*compose.Project, error) {
+	c.record("config", t)
+	return c.resolved, nil
 }
 
 func (c *fakeCompose) Stacks(context.Context) ([]compose.Stack, error) {
