@@ -97,7 +97,7 @@ func quoteArg(a string) string {
 	for _, r := range a {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-		case strings.ContainsRune("-_./:=@%+,*", r):
+		case strings.ContainsRune("-_./:=@%+,", r):
 		default:
 			safe = false
 		}

@@ -151,7 +151,7 @@ func TestLooksMutating(t *testing.T) {
 
 func TestCommandLineQuoting(t *testing.T) {
 	got := CommandLine("docker", []string{"compose", "-p", "my app", "--env-file", "/a b/.env", "it's", "", "*", "{{json .}}"})
-	want := `docker compose -p 'my app' --env-file '/a b/.env' 'it'\''s' '' * '{{json .}}'`
+	want := `docker compose -p 'my app' --env-file '/a b/.env' 'it'\''s' '' '*' '{{json .}}'`
 	if got != want {
 		t.Errorf("CommandLine() = %s\nwant %s", got, want)
 	}
