@@ -85,3 +85,33 @@ func (Compose) RemoveVolume(ctx context.Context, volume string) error {
 	_, err := execx.Run(ctx, "", "docker", "volume", "rm", "--", volume)
 	return err
 }
+
+// LabelManaged marks the Docker networks Theo creates.
+const LabelManaged = "com.theo.managed"
+
+// EnsureNetwork creates a Docker network for sharing services between
+// instances if it does not exist, labelled as Theo's. It reports whether it
+// created it.
+func (Compose) EnsureNetwork(ctx context.Context, name string) (bool, error) {
+	if _, err := execx.Run(ctx, "", "docker", "network", "inspect", name); err == nil {
+		return false, nil
+	}
+	if _, err := execx.Run(ctx, "", "docker", "network", "create", "--label", LabelManaged+"=true", name); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// RemoveNetwork removes a network Theo created. Docker refuses one that
+// still has containers attached, and so does Theo: there is no force.
+func (Compose) RemoveNetwork(ctx context.Context, name string) error {
+	out, err := execx.Run(ctx, "", "docker", "network", "inspect", "--format", `{{index .Labels "`+LabelManaged+`"}}`, name)
+	if err != nil {
+		return nil // already gone
+	}
+	if strings.TrimSpace(string(out)) != "true" {
+		return fmt.Errorf("network %s was not created by Theo; not removing it", name)
+	}
+	_, err = execx.Run(ctx, "", "docker", "network", "rm", name)
+	return err
+}

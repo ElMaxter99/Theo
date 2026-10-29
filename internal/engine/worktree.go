@@ -290,6 +290,9 @@ func (e *Engine) RemoveWorktree(ctx context.Context, project, selector string, o
 	if samePath(wt.Path, list[0].Path) {
 		return wt, fmt.Errorf("%s is the main worktree of %q; Theo does not remove it", wt.Path, p.Name)
 	}
+	if set, ok, _ := e.SharedSet(p.Name); ok && samePath(set.From, wt.Path) {
+		return wt, fmt.Errorf("%s defines the shared services (%s) of %q; stop sharing them first with `theo shared remove %s`", wt.Path, strings.Join(set.Services, ", "), p.Name, p.Name)
+	}
 	if wt.Prunable {
 		return wt, fmt.Errorf("the directory of %s no longer exists; run `git worktree prune` in %s to forget it", wt.Path, p.Path)
 	}

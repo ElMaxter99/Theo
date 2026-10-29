@@ -80,15 +80,16 @@ func (g *fakeGit) IgnoredFiles(context.Context, string, string) ([]string, error
 }
 
 type fakeCompose struct {
-	configs    map[string]*compose.Project
-	stacks     []compose.Stack
-	calls      []string                          // "up <name> <dir> <env files>"
-	resolved   *compose.Project                  // returned by ConfigFor
-	text       string                            // returned by ConfigText
-	volumes    map[string][]compose.DockerVolume // by Compose project
-	users      map[string][]string               // containers by volume
-	removed    []string
-	containers []compose.Container // returned by PS
+	configs                   map[string]*compose.Project
+	stacks                    []compose.Stack
+	calls                     []string                          // "up <name> <dir> <env files>"
+	resolved                  *compose.Project                  // returned by ConfigFor
+	text                      string                            // returned by ConfigText
+	volumes                   map[string][]compose.DockerVolume // by Compose project
+	users                     map[string][]string               // containers by volume
+	removed                   []string
+	networks, removedNetworks []string
+	containers                []compose.Container // returned by PS
 }
 
 func (c *fakeCompose) record(op string, t compose.Target) {
@@ -140,6 +141,16 @@ func (c *fakeCompose) VolumeUsers(_ context.Context, volume string) ([]string, e
 
 func (c *fakeCompose) RemoveVolume(_ context.Context, volume string) error {
 	c.removed = append(c.removed, volume)
+	return nil
+}
+
+func (c *fakeCompose) EnsureNetwork(_ context.Context, name string) (bool, error) {
+	c.networks = append(c.networks, name)
+	return true, nil
+}
+
+func (c *fakeCompose) RemoveNetwork(_ context.Context, name string) error {
+	c.removedNetworks = append(c.removedNetworks, name)
 	return nil
 }
 

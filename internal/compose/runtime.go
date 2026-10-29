@@ -70,6 +70,7 @@ type Stack struct {
 type UpOptions struct {
 	Build    bool
 	Profiles []string
+	Services []string // only these (and what they depend on); empty means all
 }
 
 // LogOptions are the options of Logs.
@@ -85,6 +86,7 @@ func (Compose) Up(ctx context.Context, t Target, opts UpOptions, stdout, stderr 
 	if opts.Build {
 		sub = append(sub, "--build")
 	}
+	sub = append(sub, opts.Services...)
 	return execx.Stream(ctx, t.Dir, stdout, stderr, "docker", t.args(opts.Profiles, sub...)...)
 }
 

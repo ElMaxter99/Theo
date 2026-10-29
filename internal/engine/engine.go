@@ -60,6 +60,8 @@ type Compose interface {
 	Volumes(ctx context.Context, project string) ([]compose.DockerVolume, error)
 	VolumeUsers(ctx context.Context, volume string) ([]string, error)
 	RemoveVolume(ctx context.Context, volume string) error
+	EnsureNetwork(ctx context.Context, name string) (bool, error)
+	RemoveNetwork(ctx context.Context, name string) error
 }
 
 // Engine is the entry point to Theo's operations.

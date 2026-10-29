@@ -32,12 +32,13 @@ func runInstance(e *engine.Engine, cmd string, args []string, stdout, stderr io.
 	var up compose.UpOptions
 	var profiles stringList
 	var logs compose.LogOptions
-	var autoPorts bool
+	var autoPorts, startShared bool
 	switch cmd {
 	case "up":
 		fs.BoolVar(&up.Build, "build", false, "build images before starting")
 		fs.Var(&profiles, "profile", "enable a Compose profile (repeatable)")
 		fs.BoolVar(&autoPorts, "auto-ports", false, "use other host ports for the ones that are taken, and keep them")
+		fs.BoolVar(&startShared, "start-shared", false, "start the shared services this instance uses if they are stopped")
 	case "logs":
 		fs.BoolVar(&logs.Follow, "follow", false, "follow log output")
 		fs.BoolVar(&logs.Follow, "f", false, "shorthand for --follow")
@@ -61,6 +62,13 @@ func runInstance(e *engine.Engine, cmd string, args []string, stdout, stderr io.
 	switch cmd {
 	case "up":
 		up.Profiles = profiles
+		warnings, err := e.EnsureShared(ctx, inst, startShared, stdout, stderr)
+		if err != nil {
+			return err
+		}
+		for _, w := range warnings {
+			fmt.Fprintf(stderr, "theo: warning: %s\n", w)
+		}
 		if err := preparePorts(ctx, e, inst, profiles, autoPorts, stderr); err != nil {
 			return err
 		}
