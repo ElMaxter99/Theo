@@ -24,7 +24,10 @@ type Var struct {
 
 // Config is what Theo keeps about one instance.
 type Config struct {
-	Env map[string]Var `json:"env,omitempty"`
+	// Project is the Theo project the instance belongs to, so its settings can
+	// be told apart after its worktree is gone.
+	Project string         `json:"project,omitempty"`
+	Env     map[string]Var `json:"env,omitempty"`
 	// NeutralizeContainerNames removes fixed container_name settings, which
 	// would make two instances collide.
 	NeutralizeContainerNames bool `json:"neutralize_container_names,omitempty"`

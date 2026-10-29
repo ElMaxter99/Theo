@@ -69,6 +69,10 @@ Running a worktree (each worktree runs as its own Compose project):
   ps <project> -w <w> [--json]                      Show the containers of one worktree
   logs <project> [-w <w>] [-f] [--tail <n>] [service...]
                                                     Show its logs
+  reconcile [project] [--apply] [--json]            Compare what Theo recorded with Git and Docker
+                                                    and report differences: removed worktrees or
+                                                    containers, containers or volumes left behind.
+                                                    --apply only forgets Theo's own stale records
   volumes <project> [-w <w>] [--json]               Volumes of the instance: in use, or kept with
                                                     their data after down; external ones are listed
                                                     and never touched
@@ -133,6 +137,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = withEngine(func(e *engine.Engine) error { return runInstance(e, args[0], args[1:], stdout, stderr) })
 	case "ps":
 		err = withEngine(func(e *engine.Engine) error { return runPS(e, args[1:], stdout) })
+	case "reconcile":
+		err = withEngine(func(e *engine.Engine) error { return runReconcile(e, args[1:], stdout) })
 	case "volumes":
 		err = withEngine(func(e *engine.Engine) error { return runVolumes(e, args[1:], stdout) })
 	case "env":

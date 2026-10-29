@@ -62,6 +62,7 @@ func (e *Engine) updateSettings(inst *Instance, change func(*instances.Config) e
 	if err := change(&cfg); err != nil {
 		return err
 	}
+	cfg.Project = inst.Project
 	if cfg.Empty() {
 		delete(state, inst.Workspace)
 	} else {
