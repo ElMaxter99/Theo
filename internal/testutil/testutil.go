@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // RequireGit skips the test when git is not installed.
@@ -145,27 +146,30 @@ func Docker(t *testing.T, args ...string) string {
 }
 
 // FreePort returns a TCP port that is free now and whose next port is free
-// too, so a test can use one fixed port and know the next is available.
+// too, so a test can use one fixed port and know the next is available. It
+// searches a range below the ephemeral ports: on Windows, explicit binds in the
+// dynamic range often hit ranges reserved by the system.
 func FreePort(t *testing.T) int {
 	t.Helper()
-	for i := 0; i < 20; i++ {
-		l, err := net.Listen("tcp", ":0")
+	var last error
+	start := 20000 + int(time.Now().UnixNano()%15000)
+	for i := 0; i < 500; i++ {
+		port := 20000 + (start-20000+i*7)%20000
+		a, err := net.Listen("tcp", ":"+strconv.Itoa(port))
 		if err != nil {
-			t.Fatal(err)
-		}
-		port := l.Addr().(*net.TCPAddr).Port
-		l.Close()
-		if port >= 65000 {
+			last = err
 			continue
 		}
-		next, err := net.Listen("tcp", ":"+strconv.Itoa(port+1))
+		b, err := net.Listen("tcp", ":"+strconv.Itoa(port+1))
+		a.Close()
 		if err != nil {
+			last = err
 			continue
 		}
-		next.Close()
+		b.Close()
 		return port
 	}
-	t.Fatal("no free pair of consecutive ports")
+	t.Fatalf("no free pair of consecutive ports (last error: %v)", last)
 	return 0
 }
 
