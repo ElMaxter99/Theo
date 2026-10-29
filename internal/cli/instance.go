@@ -115,6 +115,12 @@ func describe(w io.Writer, inst *engine.Instance) {
 	if inst.Branch != "" {
 		where = inst.Branch + " · " + inst.Workspace
 	}
+	if inst.Kind == engine.KindClone {
+		where += " [clone]"
+	}
+	if inst.Owner != "" {
+		where += " [owner: " + inst.Owner + "]"
+	}
 	fmt.Fprintf(w, "theo: %s (compose project %q)\n", where, inst.Compose)
 }
 
@@ -148,7 +154,15 @@ func runPS(e *engine.Engine, args []string, stdout io.Writer) error {
 			return writeJSON(stdout, overview)
 		}
 		tw := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "BRANCH\tCOMPOSE PROJECT\tSTATUS\tPATH")
+		owners := false // the OWNER column only appears when someone set an owner
+		for _, o := range overview {
+			owners = owners || o.Owner != ""
+		}
+		if owners {
+			fmt.Fprintln(tw, "BRANCH\tOWNER\tCOMPOSE PROJECT\tSTATUS\tPATH")
+		} else {
+			fmt.Fprintln(tw, "BRANCH\tCOMPOSE PROJECT\tSTATUS\tPATH")
+		}
 		idle := 0
 		for _, o := range overview {
 			if len(o.Stacks) == 0 {
@@ -156,7 +170,16 @@ func runPS(e *engine.Engine, args []string, stdout io.Writer) error {
 				continue
 			}
 			for _, s := range o.Stacks {
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", worktreeRef(engine.Worktree{Worktree: o.Worktree}), s.Name, s.Status, o.Worktree.Path)
+				ref := worktreeRef(engine.Worktree{Worktree: o.Worktree})
+				if owners {
+					who := o.Owner
+					if who == "" {
+						who = "-"
+					}
+					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", ref, who, s.Name, s.Status, o.Worktree.Path)
+				} else {
+					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", ref, s.Name, s.Status, o.Worktree.Path)
+				}
 			}
 		}
 		if err := tw.Flush(); err != nil {

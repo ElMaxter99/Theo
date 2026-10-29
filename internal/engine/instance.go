@@ -22,6 +22,8 @@ type Instance struct {
 	Branch    string  `json:"branch,omitempty"`
 	Compose   string  `json:"compose_project"`
 	Main      bool    `json:"main"` // the project's main worktree
+	Kind      string  `json:"kind"` // "main", "worktree" or "clone"
+	Owner     string  `json:"owner,omitempty"`
 	EnvFile   EnvFile `json:"env_file"`
 
 	worktree git.Worktree
@@ -50,7 +52,7 @@ func (e *Engine) instance(ctx context.Context, project, worktree string, envFile
 	if err != nil {
 		return nil, nil, err
 	}
-	list, err := e.git.Worktrees(ctx, p.Path)
+	list, err := e.worktreeList(ctx, p)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -83,6 +85,8 @@ func (e *Engine) instance(ctx context.Context, project, worktree string, envFile
 		Branch:    wt.Branch,
 		Compose:   instanceName(p.Name, cfg.Name, wt, list),
 		Main:      samePath(wt.Path, list[0].Path),
+		Kind:      workspaceKind(p, list, wt.Path),
+		Owner:     workspaceOwner(p, wt.Path),
 		EnvFile:   env,
 		worktree:  wt,
 		envFiles:  files,
@@ -174,6 +178,8 @@ func (e *Engine) Containers(ctx context.Context, inst *Instance) ([]compose.Cont
 // for it, whether Theo started them or not.
 type WorktreeStacks struct {
 	Worktree git.Worktree    `json:"worktree"`
+	Kind     string          `json:"kind"` // "main", "worktree" or "clone"
+	Owner    string          `json:"owner,omitempty"`
 	Stacks   []compose.Stack `json:"stacks"`
 }
 
@@ -185,7 +191,7 @@ func (e *Engine) Overview(ctx context.Context, project string) ([]WorktreeStacks
 	if err != nil {
 		return nil, err
 	}
-	list, err := e.git.Worktrees(ctx, p.Path)
+	list, err := e.worktreeList(ctx, p)
 	if err != nil {
 		return nil, err
 	}
@@ -197,6 +203,7 @@ func (e *Engine) Overview(ctx context.Context, project string) ([]WorktreeStacks
 	result := make([]WorktreeStacks, len(list))
 	for i, wt := range list {
 		result[i].Worktree = wt
+		result[i].Kind, result[i].Owner = workspaceKind(p, list, wt.Path), workspaceOwner(p, wt.Path)
 	}
 	for _, s := range stacks {
 		first, _, _ := strings.Cut(s.ConfigFiles, ",")

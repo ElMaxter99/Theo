@@ -244,6 +244,10 @@ func (e *Engine) RemoveProject(name string) (registry.Project, error) {
 type Worktree struct {
 	git.Worktree
 	Dirty bool `json:"dirty"`
+	// Kind is "main", "worktree" (linked) or "clone" (independent clone).
+	Kind string `json:"kind"`
+	// Owner is the label set with --owner or `theo worktree owner`, if any.
+	Owner string `json:"owner,omitempty"`
 }
 
 // Worktrees lists the worktrees of a project, the main one first.
@@ -252,13 +256,14 @@ func (e *Engine) Worktrees(ctx context.Context, project string) ([]Worktree, err
 	if err != nil {
 		return nil, err
 	}
-	list, err := e.git.Worktrees(ctx, p.Path)
+	list, err := e.worktreeList(ctx, p)
 	if err != nil {
 		return nil, err
 	}
 	result := make([]Worktree, len(list))
 	for i, wt := range list {
 		result[i].Worktree = wt
+		result[i].Kind, result[i].Owner = workspaceKind(p, list, wt.Path), workspaceOwner(p, wt.Path)
 		if wt.Bare || wt.Prunable {
 			continue
 		}

@@ -108,7 +108,7 @@ func (e *Engine) Reconcile(ctx context.Context, project string) (*Report, error)
 
 	live := map[string]bool{} // worktree paths that exist, of every project in scope
 	for _, p := range projects {
-		list, err := e.git.Worktrees(ctx, p.Path)
+		list, err := e.worktreeList(ctx, p)
 		if err != nil || !dirExists(p.Path) {
 			add(Finding{Kind: FindProjectMissing, Project: p.Name, Subject: p.Path,
 				Detail: "the path no longer exists or is not a Git repository",
@@ -120,8 +120,14 @@ func (e *Engine) Reconcile(ctx context.Context, project string) (*Report, error)
 				continue
 			}
 			if wt.Prunable || !dirExists(wt.Path) {
+				if workspaceKind(p, list, wt.Path) == KindClone {
+					add(Finding{Kind: FindWorktreeMissing, Project: p.Name, Subject: wt.Path,
+						Detail: "Theo has a clone recorded here but its directory is gone" + ownerSuffix(p, wt.Path),
+						Fix:    fmt.Sprintf("`theo worktree remove %s %s` forgets the record", p.Name, wt.Path)})
+					continue
+				}
 				add(Finding{Kind: FindWorktreeMissing, Project: p.Name, Subject: wt.Path,
-					Detail: "Git still lists this worktree but its directory is gone",
+					Detail: "Git still lists this worktree but its directory is gone" + ownerSuffix(p, wt.Path),
 					Fix:    "run `git worktree prune` in " + p.Path})
 				continue
 			}
@@ -311,4 +317,12 @@ func (e *Engine) ApplyReconcile(report *Report) (int, error) {
 		return 0, err
 	}
 	return n, nil
+}
+
+// ownerSuffix is " (owner: x)" for a workspace that has an owner label.
+func ownerSuffix(p registry.Project, wsPath string) string {
+	if o := workspaceOwner(p, wsPath); o != "" {
+		return " (owner: " + o + ")"
+	}
+	return ""
 }

@@ -237,6 +237,9 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 		noEnvFile := fs.Bool("no-env-file", false, "clear the env file; use the main worktree's .env")
 		worktreeDir := fs.String("worktree-dir", "", "directory where `theo worktree add` creates worktrees")
 		defaultDir := fs.Bool("default-worktree-dir", false, "go back to Theo's own worktree directory")
+		var copyOnAdd stringList
+		fs.Var(&copyOnAdd, "copy-on-add", "root-relative file that `worktree add --copy` copies (repeatable; replaces the list)")
+		noCopyOnAdd := fs.Bool("no-copy-on-add", false, "clear the list of files `worktree add --copy` copies")
 		pos, err := parse(fs, args[1:])
 		if err != nil {
 			return err
@@ -244,10 +247,27 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 		if len(pos) != 1 {
 			return usageErrorf("project set needs exactly one project name")
 		}
+		if len(copyOnAdd) > 0 || *noCopyOnAdd {
+			if len(copyOnAdd) > 0 && *noCopyOnAdd {
+				return usageErrorf("--copy-on-add and --no-copy-on-add exclude each other")
+			}
+			p, err := e.SetCopyOnAdd(pos[0], copyOnAdd)
+			if err != nil {
+				return err
+			}
+			if len(p.CopyOnAdd) == 0 {
+				fmt.Fprintf(stdout, "Project %q: `worktree add --copy` copies nothing\n", p.Name)
+			} else {
+				fmt.Fprintf(stdout, "Project %q: `worktree add --copy` copies %s from the main worktree (only files Git does not track; existing files are never overwritten)\n", p.Name, strings.Join(p.CopyOnAdd, ", "))
+			}
+			if *envFile == "" && !*noEnvFile && *worktreeDir == "" && !*defaultDir {
+				return nil
+			}
+		}
 		setsEnv := *envFile != "" || *noEnvFile
 		setsDir := *worktreeDir != "" || *defaultDir
 		if *envFile != "" && *noEnvFile || *worktreeDir != "" && *defaultDir || !setsEnv && !setsDir {
-			return usageErrorf("project set needs --env-file <path> or --no-env-file, and/or --worktree-dir <path> or --default-worktree-dir")
+			return usageErrorf("project set needs --env-file <path> or --no-env-file, --worktree-dir <path> or --default-worktree-dir, and/or --copy-on-add <file> or --no-copy-on-add")
 		}
 		if setsDir {
 			if err := e.SetWorktreeDir(pos[0], *worktreeDir); err != nil {
@@ -329,6 +349,7 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 func runWorktrees(e *engine.Engine, args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("worktrees", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "print JSON")
+	owner := fs.String("owner", "", "only the workspaces owned by this name")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -340,13 +361,29 @@ func runWorktrees(e *engine.Engine, args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if *owner != "" {
+		var kept []engine.Worktree
+		for _, wt := range list {
+			if wt.Owner == *owner {
+				kept = append(kept, wt)
+			}
+		}
+		list = kept
+	}
 	if *asJSON {
+		if list == nil {
+			list = []engine.Worktree{}
+		}
 		return writeJSON(stdout, list)
 	}
 	tw := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "BRANCH\tCHANGES\tPATH")
+	fmt.Fprintln(tw, "BRANCH\tKIND\tOWNER\tCHANGES\tPATH")
 	for _, wt := range list {
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", worktreeRef(wt), worktreeState(wt), wt.Path)
+		who := wt.Owner
+		if who == "" {
+			who = "-"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", worktreeRef(wt), wt.Kind, who, worktreeState(wt), wt.Path)
 	}
 	return tw.Flush()
 }
