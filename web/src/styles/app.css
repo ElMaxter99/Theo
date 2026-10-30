@@ -288,3 +288,10 @@ dl.facts dd { margin: 0; }
 @media (max-width: 40rem) { dl.facts { grid-template-columns: minmax(0, 1fr); } dl.facts dd { margin-bottom: var(--space-2); } }
 
 h1:focus, h2:focus { outline: none; }
+
+/* ---------- Health indicator and view preferences (V5/V6) ---------- */
+.count-pill { margin-left: auto; min-width: 1.5rem; padding: 0 var(--space-2); border-radius: 999px; text-align: center; font-size: 0.8125rem; font-weight: 700; background: var(--surface-2); border: 1px solid var(--border); }
+:root[data-density="compact"] { --space-2: 0.375rem; --space-3: 0.5rem; --space-4: 0.75rem; --space-5: 1rem; }
+:root[data-motion="reduce"] .spin { animation: none; }
+:root[data-motion="reduce"] * { scroll-behavior: auto !important; transition: none !important; }
+.report-text { width: 100%; min-height: 9rem; font-family: var(--font-mono); }

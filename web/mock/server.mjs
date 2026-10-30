@@ -57,6 +57,8 @@ function reset() {
   sse = { global: new Set(), count: 0, max: 0 };
   stats = { requests: 0 };
   const shopMain = mkWorktree("shop", "shop", "main", { main: true, state: "running", services: { web: "running", db: "running", cache: "running" }, volumes: "in use", vars: { DATABASE_URL: { value: "postgres://shop:s3cretpass@db/shop", secret: true }, LOG_LEVEL: { value: "debug" }, FEATURE_X: { value: "on", services: ["web"] } }, history: [{ time: "2026-10-28T09:12:00Z", user: "ana", operation: "up", result: "ok" }, { time: "2026-10-27T17:40:00Z", user: "ana", operation: "down", result: "error", error: "port is already allocated" }] });
+  // 45 older events so that the history needs several pages
+  for (let i = 0; i < 45; i++) shopMain.history.push({ time: new Date(Date.UTC(2026, 9, 26, 12, 0, 0) - i * 3600e3).toISOString(), user: "ana", operation: i % 3 === 0 ? "down" : "up", result: i % 7 === 0 ? "error" : "ok", ...(i % 7 === 0 ? { error: "port is already allocated" } : {}) });
   const shopFix = mkWorktree("shop", "shop-fix-123", "fix-123", { dirty: true, state: "partial", services: { web: "running", db: "running", cache: "exited" }, ports: { web: 3001, db: 5433, cache: 6380 }, volumes: "in use" });
   const shopFeat = mkWorktree("shop", "shop-feature-x", "feature-x", { state: "stopped", services: { web: "exited", db: "exited", cache: "exited" }, risky: true, volumes: "kept" });
   const shopOld = mkWorktree("shop", "shop-old-spike", "old-spike", { dirty: true, state: "absent", env: { source: "none" } });
@@ -72,7 +74,21 @@ function reset() {
     ops: new Map(),
     idem: new Map(),
     opSeq: 0,
+    // Findings of the reconcile report; "forgettable" ones are Theo's own records.
+    findings: [
+      { kind: "worktree missing", project: "shop", subject: "shop-gone-branch", worktree: "/home/ana/code/shop-gone-branch", detail: "Git lists the worktree but its folder no longer exists", fix: "Run `git worktree prune` in the main repository, or restore the folder." },
+      { kind: "orphan containers", project: "shop", subject: "shop-old-feature-web-1", detail: "containers of an instance whose worktree no longer exists", fix: "Remove them with `docker rm -f shop-old-feature-web-1` if you do not need them." },
+      { kind: "orphan volumes", project: "shop", subject: "shop-old-feature_pgdata", detail: "volume of an instance whose worktree no longer exists", fix: "Delete it with `docker volume rm shop-old-feature_pgdata` after checking its data." },
+      { kind: "stale settings", project: "shop", subject: "/home/ana/code/shop-old-feature", worktree: "/home/ana/code/shop-old-feature", detail: "Theo's settings for a worktree that no longer exists", fix: "Forget the record.", forgettable: true },
+      { kind: "stale ports", project: "shop", subject: "/home/ana/code/shop-old-feature", worktree: "/home/ana/code/shop-old-feature", detail: "ports 3003, 5435 are reserved for a worktree that no longer exists", fix: "Forget the record to free the ports.", forgettable: true },
+      { kind: "stale ports", project: "blog", subject: "/home/ana/code/blog-old", worktree: "/home/ana/code/blog-old", detail: "port 3010 is reserved for a worktree that no longer exists", fix: "Forget the record to free the port.", forgettable: true },
+    ],
+    forgotten: [],
   };
+  // Shared services: shop has them (db, used by two instances); blog has none.
+  S.projects[0].shared = { from: shopMain.path, publish: false, services: { db: { image: "postgres:16", state: "running" } }, links: new Map([[shopMain.id, new Set(["db"])], [shopFix.id, new Set(["db"])]]) };
+  S.projects[0].fixed = { web: "shop-web" };
+  if (scenario.sharedEmpty) S.projects[0].shared = null;
   if (scenario.empty) S.projects = [];
 }
 reset();
@@ -266,8 +282,7 @@ async function api(req, res, url) {
   if (m !== "GET" && !String(req.headers["content-type"] ?? "").startsWith("application/json")) return err(res, 400, "invalid_request", "Content-Type must be application/json");
 
   if (seg[0] === "session" && m === "GET") return send(res, 200, { api_version: "1", csrf_token: csrf });
-  if (seg[0] === "meta") return send(res, 200, { theo_version: "0.0.0-mock", api_version: "v1", os: "linux", arch: "amd64", data_dir: "/home/ana/.local/share/theo", git: { available: true, version: "2.43.0" },
-    docker: scenario.docker ? { available: true, version: "27.3.1" } : { available: false, error: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock", hint: "Start Docker Desktop or the docker service, then press Refresh." } });
+  if (seg[0] === "meta") return send(res, 200, metaOf());
 
   if (seg[0] === "events" && seg[1] === "focus") { await readJson(req); return send(res, 204, ""); }
   if (seg[0] === "events" && m === "GET") {
@@ -301,6 +316,10 @@ async function api(req, res, url) {
     return send(res, 200, { path: p, parent: p === "/home/ana" ? undefined : path.posix.dirname(p), home: "/home/ana", is_repo: GIT.has(p), truncated: false, entries: FS[p].map((n) => ({ name: n, path: `${p}/${n}`, is_repo: GIT.has(`${p}/${n}`) })) });
   }
 
+  if (seg[0] === "doctor") return send(res, 200, doctor());
+  if (seg[0] === "reconcile") return reconcileRoutes(req, res, seg, q);
+  if (seg[0] === "health") return send(res, 200, healthOf());
+  if (seg[0] === "diagnostics") return send(res, 200, diagnostics());
   if (seg[0] !== "projects") return err(res, 404, "not_found", "unknown resource");
   if (seg.length === 1) {
     if (m === "GET") return send(res, 200, S.projects.map(({ wts, ...p }) => p));
@@ -325,6 +344,7 @@ async function api(req, res, url) {
     if (m === "DELETE") { S.projects = S.projects.filter((p) => p !== proj); return send(res, 200, { files_kept: true, containers_kept: true }); }
   }
   if (seg[2] === "overview") return send(res, 200, { project: proj.name, path: proj.path, docker: scenario.docker ? { available: true } : { available: false, error: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock" }, worktrees: wts.map(listItem), generated_at: now() });
+  if (seg[2] === "shared") return sharedRoutes(req, res, proj, seg);
   if (seg[2] === "branches") {
     const out = wts.filter((w) => w.branch).map((w) => ({ name: w.branch, worktree: w.path }));
     out.push({ name: "develop" }, { name: "release-2" }, { name: "origin/release-3", remote: true });
@@ -367,8 +387,15 @@ async function api(req, res, url) {
     return send(res, 200, { ports });
   }
   if (sub === "config") return send(res, 200, `name: ${w.compose_project}\nservices:\n  web:\n    image: shop/web:dev\n    environment:\n      DATABASE_URL: "••••••"\n`);
-  if (sub === "settings") { if (m === "PATCH") { Object.assign(w.settings, await readJson(req)); } return send(res, 200, w.settings); }
-  if (sub === "history") return send(res, 200, w.history.slice(0, Number(q.get("limit") || 50)).reverse().map((h) => ({ project: proj.name, workspace: w.path, compose_project: w.compose_project, ...h })));
+  if (sub === "settings") { if (m === "PATCH") { Object.assign(w.settings, await readJson(req)); } return send(res, 200, { ...w.settings, auto_ports: false, profiles: [], shared: [...(proj.shared?.links.get(w.id) ?? [])], join: [], fixed_container_names: proj.fixed ?? {} }); }
+  if (sub === "shared") return sharedLink(req, res, proj, w, seg);
+  if (sub === "history") {
+    const all = [...w.history].reverse(); // oldest first, as the engine keeps it
+    const end = q.get("before") !== null && Number(q.get("before")) < all.length ? Number(q.get("before")) : all.length;
+    const limit = Number(q.get("limit") || 0);
+    const start = limit > 0 && end - limit > 0 ? end - limit : 0;
+    return send(res, 200, all.slice(start, end).map((h) => ({ project: proj.name, workspace: w.path, compose_project: w.compose_project, ...h })), { "Theo-History-Total": String(all.length), ...(start > 0 ? { "Theo-History-Next": String(start) } : {}) });
+  }
   if (sub === "volumes" && !seg[5]) {
     if (!SERVICES.some((s) => s.name === "db")) return send(res, 200, []);
     const st = derive(w);
@@ -442,6 +469,160 @@ async function logs(req, res, w, q) {
   req.on("close", () => clearInterval(t));
 }
 
+function metaOf() {
+  return { theo_version: "0.0.0-mock", api_version: "v1", os: "linux", arch: "amd64", data_dir: "/home/ana/.local/share/theo", idle: { timeout_seconds: 900 },
+    git: { available: true, version: "2.43.0", min_version: "2.17.0" }, compose: { available: true, version: scenario.composeOld ? "2.20.0" : "2.29.7", min_version: "2.24.4" },
+    docker: scenario.docker ? { available: true, version: "27.3.1" } : { available: false, error: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock", hint: "Start Docker Desktop or the docker service, then press Refresh." } };
+}
+// ---------------------------------------------------------------- shared services, reconcile, doctor
+const sharedName = (proj) => `${proj.name}-shared`;
+function sharedStatus(proj) {
+  const sh = proj.shared;
+  return {
+    project: proj.name, compose_project: sharedName(proj), from: sh.from, network: `theo-${proj.name}-shared`, publish_ports: sh.publish,
+    services: Object.entries(sh.services).map(([name, v]) => ({ name, image: v.image, state: v.state })),
+    consumers: [...sh.links.entries()].filter(([, set]) => set.size).map(([id, set]) => {
+      const w = findWt(proj, id);
+      return { workspace: w.path, branch: w.branch || undefined, compose_project: w.compose_project, services: [...set], active: ["running", "partial", "unhealthy"].includes(derive(w)) };
+    }),
+    warnings: scenario.sharedWarning ? ["this worktree defines db with image postgres:15, but the shared one runs postgres:16"] : undefined,
+  };
+}
+const consumerList = (proj, onlyActive = false) => sharedStatus(proj).consumers.filter((c) => !onlyActive || c.active).map((c) => ({ kind: "instance", name: c.branch || base(c.workspace), detail: `${c.services.join(", ")} (${c.active ? "has running containers" : "stopped"})` }));
+const wtOf = (proj) => proj.wts.find((w) => w.main) ?? proj.wts[0];
+
+async function sharedRoutes(req, res, proj, seg) {
+  const m = req.method;
+  const sh = proj.shared;
+  const need = () => err(res, 404, "shared_not_configured", `${proj.name} has no shared services`, { hint: `Declare one with: theo shared add ${proj.name} <service>` });
+  if (seg.length === 3 && m === "GET") return sh ? send(res, 200, sharedStatus(proj)) : need();
+  if (seg.length === 3 && m === "POST") {
+    const b = await readJson(req);
+    const names = (b?.services ?? []).filter((x) => /^[a-z][a-z0-9_-]*$/i.test(x));
+    if (names.length === 0 || names.length !== (b.services ?? []).length) return err(res, 400, "invalid_request", "services must be Compose service names");
+    const unknown = names.filter((n) => !SERVICES.some((x) => x.name === n));
+    if (unknown.length) return err(res, 422, "engine_error", `the project has no service ${unknown[0]}`, { hint: "Pick one of: " + SERVICES.map((x) => x.name).join(", ") });
+    if (!proj.shared) proj.shared = { from: wtOf(proj).path, publish: false, services: {}, links: new Map() };
+    if (b.publish) proj.shared.publish = true;
+    for (const n of names) proj.shared.services[n] = proj.shared.services[n] ?? { image: SERVICES.find((x) => x.name === n).image, state: "not created" };
+    return send(res, 201, sharedStatus(proj));
+  }
+  if (!sh) return need();
+  if (seg[3] === "up" && m === "POST") return sharedOp(res, proj, "up");
+  if (seg[3] === "down" && m === "POST") {
+    const b = await readJson(req);
+    const users = consumerList(proj, true);
+    if (users.length && b?.confirm !== sharedName(proj)) {
+      return send(res, 409, { error: { code: "confirmation_required", level: 2, message: `${users.length} running instance(s) use the shared services; stopping them leaves those instances without the service. Nothing was stopped.`, confirm: { expected: sharedName(proj), prompt: `Type ${sharedName(proj)} to stop them anyway` }, affected: users, preserved: ["Volumes and data of the shared services"] } });
+    }
+    return sharedOp(res, proj, "down");
+  }
+  if (seg[3] === "services" && seg[4] && m === "DELETE") {
+    if (!sh.services[seg[4]]) return err(res, 404, "not_found", `${seg[4]} is not a shared service`);
+    const using = [...sh.links.values()].some((set) => set.has(seg[4]));
+    if (using) return send(res, 409, { error: { code: "shared_in_use", message: `${seg[4]} is used by instances; stop using it there first`, affected: consumerList(proj) } });
+    if (sh.services[seg[4]].state !== "not created") return err(res, 409, "shared_running", `${seg[4]} still has containers; stop the shared services first`);
+    delete sh.services[seg[4]];
+    if (Object.keys(sh.services).length === 0) proj.shared = null;
+    return send(res, 200, { removed: seg[4] });
+  }
+  if (seg[3] === "purge" && m === "POST") {
+    const b = await readJson(req);
+    if (sharedStatus(proj).consumers.length) return send(res, 409, { error: { code: "shared_in_use", message: "instances are linked to the shared services; nothing was deleted", affected: consumerList(proj), hint: "Stop using them in those instances first." } });
+    if (Object.values(sh.services).some((v) => v.state === "running")) return err(res, 409, "invalid_request", "the shared services are running; stop them first");
+    const exp = sharedName(proj);
+    if (b?.confirm !== exp) return send(res, 409, { error: { code: "confirmation_required", level: 3, message: `this deletes the data of the shared services of ${proj.name} for good; nothing was deleted`, confirm: { expected: exp, prompt: `Type ${exp} to delete the data` }, affected: [{ kind: "volume", name: `${exp}_pgdata`, detail: "database files" }], preserved: ["Worktrees, branches and the instances' own volumes"] } });
+    return send(res, 200, { deleted: [`${exp}_pgdata`] });
+  }
+  return err(res, 404, "not_found", "unknown resource");
+}
+
+async function sharedLink(req, res, proj, w, seg) {
+  const sh = proj.shared;
+  if (!sh) return err(res, 404, "shared_not_configured", `${proj.name} has no shared services`);
+  const set = sh.links.get(w.id) ?? new Set();
+  if (req.method === "PUT") {
+    const b = await readJson(req);
+    for (const n of b?.use ?? []) { if (!sh.services[n]) return err(res, 422, "engine_error", `${n} is not a shared service of ${proj.name}`); set.add(n); }
+    sh.links.set(w.id, set);
+    emitGlobal("state.changed", { project: proj.name, worktree: w.id });
+    return send(res, 200, { use: [...set], join: b?.join ?? [] });
+  }
+  if (req.method === "DELETE" && seg[5]) { set.delete(seg[5]); sh.links.set(w.id, set); emitGlobal("state.changed", { project: proj.name, worktree: w.id }); return send(res, 200, { use: [...set] }); }
+  return err(res, 404, "not_found", "unknown resource");
+}
+
+function sharedOp(res, proj, kind) {
+  if (!scenario.docker) return err(res, 412, "docker_unavailable", "Cannot connect to the Docker daemon", { hint: "Start Docker and try again." });
+  const act = [...S.ops.values()].find((o) => o.project === proj.name && !o.worktree && ["queued", "running", "cancelling"].includes(o.state));
+  if (act) return err(res, 409, "busy", `another operation (${act.kind}) is running on the shared services`, { operation: { id: act.id, kind: act.kind } });
+  const o = { id: "op_" + String(++S.opSeq).padStart(4, "0") + crypto.randomBytes(3).toString("hex"), kind: `shared.${kind}`, project: proj.name, state: "running", started_at: now(), cancellable: true, lines: [], subs: new Set(), dropped: 0 };
+  S.ops.set(o.id, o);
+  opState(o, "running");
+  (async () => {
+    try {
+      for (const [n, v] of Object.entries(proj.shared.services)) {
+        opLog(o, ` Container ${proj.name}-shared-${n}-1  ${kind === "up" ? "Starting" : "Stopping"}`);
+        await sleep(350 * scenario.slow);
+        v.state = kind === "up" ? "running" : "exited";
+      }
+      opState(o, "succeeded", { finished_at: now(), result: { ok: true, summary: `shared ${kind} finished` } });
+    } catch (e) { opState(o, "failed", { finished_at: now(), error: { code: "internal", message: String(e) } }); }
+    for (const r of o.subs) { ev(r, "result", { ok: o.state === "succeeded", summary: o.state }, o.lines.length + 1 + o.dropped); r.end(); }
+    o.subs.clear();
+    emitGlobal("state.changed", { project: proj.name });
+  })();
+  return send(res, 202, publicOp(o), { Location: `/api/v1/operations/${o.id}` });
+}
+
+const fid = (f) => "fd_" + crypto.createHash("sha1").update([f.kind, f.project ?? "", f.subject, f.worktree ?? ""].join("|")).digest("hex").slice(0, 12);
+const withId = (f) => ({ id: fid(f), ...f });
+function reportFor(proj) {
+  let findings = S.findings.filter((f) => !proj || f.project === proj);
+  if (!scenario.docker) return { findings: findings.filter((f) => !/^orphan|containers removed/.test(f.kind)).map(withId), docker_error: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?" };
+  if (scenario.healthy) findings = [];
+  return { findings: findings.map(withId) };
+}
+function healthOf() {
+  const r = reportFor("");
+  return { status: r.docker_error ? "docker_unavailable" : r.findings.length ? "attention" : "ok", findings: r.findings.length, forgettable: r.findings.filter((f) => f.forgettable).length, ...(r.docker_error ? { docker_error: r.docker_error } : {}) };
+}
+async function reconcileRoutes(req, res, seg, q) {
+  if (seg[1] === "apply" && req.method === "POST") {
+    const b = await readJson(req);
+    if (!b?.all && !(b?.ids ?? []).length) return err(res, 400, "invalid_request", "say which findings to forget: ids, or all: true");
+    const before = reportFor(b.project ?? "").findings;
+    const want = new Set(b.ids ?? []);
+    const hit = before.filter((f) => f.forgettable && (b.all || want.has(f.id)));
+    const applied = hit.map((f) => f.id);
+    const skipped = (b.ids ?? []).filter((id) => !applied.includes(id));
+    S.findings = S.findings.filter((f) => !applied.includes(fid(f)));
+    S.forgotten.push(...applied);
+    emitGlobal("state.changed", {});
+    return send(res, 200, { findings: hit, forgotten: hit.length, applied, skipped });
+  }
+  if (req.method !== "GET") return err(res, 404, "not_found", "unknown resource");
+  return send(res, 200, { ...reportFor(q.get("project") ?? ""), forgotten: 0 });
+}
+
+function diagnostics() {
+  const doc = doctor();
+  const report = `Theo 0.0.0-mock (API v1)\nPlatform: linux/amd64\nData directory: ${doc.data_dir}\nProjects: ${S.projects.length}\nDocker: ${scenario.docker ? "27.3.1" : "not available"}\nDocker Compose: ${scenario.composeOld ? "2.20.0" : "2.29.7"} (Theo needs 2.24.4 or later)\nGit: 2.43.0 (Theo needs 2.17.0 or later)\n\nChecks:\n` + doc.checks.map((c) => `- [${c.status}] ${c.name}${c.detail ? ": " + c.detail : ""}`).join("\n") + "\n";
+  return { meta: metaOf(), doctor: doc, projects: S.projects.length, report };
+}
+
+function doctor() {
+  const checks = [
+    { id: "git", name: "Git", status: "ok", detail: "git version 2.43.0" },
+    { id: "docker", name: "Docker CLI", status: "ok", detail: "Docker version 27.3.1" },
+    scenario.docker ? { id: "daemon", name: "Docker engine", status: "ok", detail: "27.3.1 (linux containers)" } : { id: "daemon", name: "Docker engine", status: "fail", detail: "Cannot connect to the Docker daemon", fix: "Start the Docker service (systemctl start docker) or Docker Desktop." },
+    scenario.composeOld ? { id: "compose", name: "Docker Compose", status: "fail", detail: "2.20.0 is older than the minimum 2.24.4", fix: "Upgrade the Docker Compose plugin to 2.24.4 or later." } : { id: "compose", name: "Docker Compose", status: "ok", detail: "2.29.7 (minimum 2.24.4)" },
+    { id: "datadir", name: "Theo data directory", status: "ok", detail: "writable" },
+    scenario.windows ? { id: "wsl", name: "Project location", status: "warn", detail: "projects outside WSL 2 mount slowly", fix: "Keep projects in the WSL 2 file system." } : { id: "state", name: "Theo state files", status: "ok" },
+  ];
+  return { ok: !checks.some((c) => c.status === "fail"), platform: scenario.windows ? "windows" : "linux", data_dir: "/home/ana/.local/share/theo", checks };
+}
+
 // ---------------------------------------------------------------- server
 const server = http.createServer(async (req, res) => {
   stats.requests++;
@@ -449,7 +630,7 @@ const server = http.createServer(async (req, res) => {
   const port = server.address().port;
   if (url.pathname.startsWith("/__mock/")) {
     if (url.pathname === "/__mock/reset") { reset(); return send(res, 200, { ok: true, launch: launchUrl(port) }); }
-    if (url.pathname === "/__mock/scenario") { Object.assign(scenario, await readJson(req)); if (scenario.empty) S.projects = []; return send(res, 200, scenario); }
+    if (url.pathname === "/__mock/scenario") { Object.assign(scenario, await readJson(req)); if (scenario.empty) S.projects = []; if (scenario.sharedEmpty && S.projects[0]) S.projects[0].shared = null; return send(res, 200, scenario); }
     if (url.pathname === "/__mock/stats") return send(res, 200, { sse: sse.count, maxSse: sse.max, ...stats });
     if (url.pathname === "/__mock/launch") { nonce = "mocknonce" + crypto.randomBytes(8).toString("hex"); nonceAt = Date.now(); return send(res, 200, { url: launchUrl(port) }); }
     return err(res, 404, "not_found", "unknown mock hook");

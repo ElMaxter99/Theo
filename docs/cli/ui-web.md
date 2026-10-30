@@ -63,6 +63,47 @@ Names carry a content hash so that the Go server can cache them forever; `index.
 The build is deterministic: running it twice gives the same bytes, so CI can check that the committed bundle matches the source
 (`npm ci && npm run build && git diff --exit-code internal/ui/dist`).
 
+## Shared services, health and settings (V5, V6)
+
+| Route | Screen | Source |
+|---|---|---|
+| `#/p/<project>/shared` | Shared services of a project: provider state (Compose project, network, host ports published or not, per-service state), start / stop as operations, "Stop sharing" per service, the instances that use them (each with "Stop using"), a form to make another instance use a service, a form to declare a service as shared, "Delete data…". The empty state explains exclusive vs shared. | `pages/SharedServices.tsx` |
+| `#/health` | The reconcile report grouped by kind, with what to do about each finding. Only Theo's own records (`forgettable`) have a checkbox; "Forget Theo's records" asks for confirmation and states that containers, volumes and worktrees are not touched. With `docker_error` a banner says why and which findings are missing. | `pages/Health.tsx`, `lib/health.ts` |
+| `#/settings` | The `doctor` table (status in text + icon, detail, how to fix), versions and data directory, "Copy information for a report" (versions and check results only: no paths, no variables), view preferences (theme, density, reduced motion; stored only in this browser). | `pages/Settings.tsx`, `lib/report.ts`, `lib/prefs.ts` |
+
+The sidebar has a **Health** entry whose number is the count of findings (text, never only a dot); with `docker_error` it also says
+"Docker unavailable". The count is refreshed when the page opens and, debounced, on `state.changed` and `reconcile.stale`.
+
+Confirmations follow the same rule as the rest of the app: the first request carries no `confirm`; the server answers
+`409 confirmation_required` (level 2 for stopping shared services that running instances use, level 3 for purging their data) with
+the expected text and the list to show; the dialog enables its button on an exact match and the server validates again. Purging while
+instances are linked is refused by the server (`shared_in_use`) and the interface shows the consumers instead of a confirmation.
+
+**History** is paginated: the tab asks for 20 events, and "Load older events" asks for the next page with `before=<time of the
+oldest loaded event>`. The list is de-duplicated, so a refresh during paging does not repeat rows.
+
+**Wizard, fixed container names.** When the settings of the main worktree report `fixed_container_names`, step 2 shows them and an
+unchecked checkbox "Neutralize fixed container names for this worktree". It is never ticked for the user. When ticked, after the
+worktree is created the app sends `PATCH .../settings {neutralize_container_names: true}` for the new worktree only, before starting
+it; if that fails the instance is not started and the screen says why.
+
+### API shapes the screens rely on
+
+They are the ones in `docs/api.md` (sections 9 to 11 of the backend track), checked against the real server:
+
+- `GET|POST /projects/{p}/shared`, `POST .../shared/up`, `POST .../shared/down {confirm?}` (operations of kind `shared.up` /
+  `shared.down`, without `worktree`; with running consumers and no `confirm`: `409 confirmation_required`, level 2, consumers in
+  `affected`), `DELETE .../shared/services/{s}` (`shared_in_use`, `shared_running`), `POST .../shared/purge {confirm?}`
+  (`shared_in_use` while instances are linked, then level 3), `PUT|DELETE .../worktrees/{wt}/shared[/{s}]`.
+  A project without shared services answers `404 shared_not_configured`, which the page turns into its empty state.
+- `GET /reconcile` (findings carry a stable `id`), `POST /reconcile/apply {ids}` (only forgettable findings; others come back in
+  `skipped`), `GET /health` `{status, findings, forgettable}` for the sidebar number.
+- `GET /diagnostics` `{meta, doctor, projects, report}`: the settings screen and the text of "Copy information for a report"
+  (`lib/report.ts` is only the fallback). The report contains no secrets but does include the data directory; the page says so.
+- `GET .../history?limit=&before=`: the body is the plain array (oldest first); the cursor of the older page is in the response header
+  `Theo-History-Next` (absent on the oldest page).
+- `GET .../settings` has `fixed_container_names`, used by the wizard checkbox.
+
 ## Design and accessibility decisions
 
 - **Tokens.** `styles/tokens.css` has three blocks that must stay identical in meaning: light, dark by system preference and
@@ -91,7 +132,7 @@ All Playwright tests need Chromium and `require('playwright')` (preinstalled in 
 | Command | What | Needs |
 |---|---|---|
 | `npm test` | unit tests: design-token contrast, SSE parser, status table, port clashes, log store, virtual window, routes | Node 22 |
-| `npm run test:e2e` | every screen + axe (light and dark) + CSP, flows (start/stop/cancel, wizard, destructive dialogs, secrets, SSE budget), log viewer with 50 000 lines, keyboard walk, forced colours, zoom, security behaviour | the mock server (started by the tests) |
+| `npm run test:e2e` | (includes `e2e/v56.test.mjs`: shared services, health, settings, history paging, the wizard checkbox, each screen with axe in light and dark) every screen + axe (light and dark) + CSP, flows (start/stop/cancel, wizard, destructive dialogs, secrets, SSE budget), log viewer with 50 000 lines, keyboard walk, forced colours, zoom, security behaviour | the mock server (started by the tests) |
 | `npm run test:e2e:real` | the same story against the real `theo serve`: add project with the folder picker, start with real Docker, logs, UC-02 port clash with automatic ports, remove with typed confirmation, secrets, purge, security negatives, loopback-only socket | Docker, Go, `THEO_BIN` or a tree that has `internal/api` |
 
 `e2e/real` builds `./cmd/theo` itself when `internal/api` exists; otherwise set `THEO_BIN` to a binary that embeds the current
@@ -99,6 +140,11 @@ All Playwright tests need Chromium and `require('playwright')` (preinstalled in 
 a free range, and removes its containers, volumes, networks and images at the end.
 
 Screenshots are written to `web/e2e/screenshots/` by the tests (never with real data: the data is the mock's or the test repository's).
+
+`e2e/real/v56.test.mjs` (prefix `uf5`) covers the new screens against the real server and Docker: declare, start and stop shared
+services, purge refused while an instance is linked and then the typed text, a worktree deleted by hand reported by Health and
+forgetting only Theo's stale settings (the worktree finding stays), the diagnostics screen and the history header.
+Run it with `THEO_BIN=/path/to/theo npm run test:e2e:real`.
 
 ### What is and is not verified
 
@@ -114,8 +160,8 @@ computed, not measured on screen.
 ## Mock server
 
 `node mock/server.mjs [--port N]` prints `{"url","port","pid"}` like `theo serve --print-launch-url` and implements the API with
-believable data: two projects, worktrees in every state (running, partial, failing, stopped, absent, detached, uncommitted
+believable data (including shared services with consumers, a reconcile report with Theo's own records and others, a `doctor` report, a history of 47 events): two projects, worktrees in every state (running, partial, failing, stopped, absent, detached, uncommitted
 changes), conflicting ports, slow `up` operations that stream log lines, a failing start (branch names containing `fail`), logs of
 any length, confirmation flows, secrets. It enforces the same Host, Origin, cookie, CSRF and CSP rules as the real server.
-Test hooks (mock only): `POST /__mock/reset`, `POST /__mock/scenario {docker, empty, gap, slow}`, `GET /__mock/stats`, `GET /__mock/launch`.
+Test hooks (mock only): `POST /__mock/reset`, `POST /__mock/scenario {docker, empty, gap, slow, sharedEmpty, sharedWarning, healthy, composeOld, windows}`, `GET /__mock/stats`, `GET /__mock/launch`.
 The mock is a development tool: it can drift from the real API, which is why `e2e/real` exists. `docs/api.md` is the truth.

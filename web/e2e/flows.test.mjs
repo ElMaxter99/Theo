@@ -188,6 +188,7 @@ test("remove: Escape cancels; the server rejects a wrong confirmation when calle
   const r = row(page, "old-spike");
   await r.locator("summary").click();
   await r.getByRole("button", { name: /Remove worktree/ }).click();
+  await page.locator("dialog[open]").waitFor();
   await page.keyboard.press("Escape");
   await page.locator("dialog[open]").waitFor({ state: "detached" });
   await row(page, "old-spike").waitFor();

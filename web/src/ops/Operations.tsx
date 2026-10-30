@@ -64,7 +64,7 @@ function OpList({ ops, viewing, setViewing }: { ops: Operation[]; viewing: strin
 }
 
 function OpItem({ op, viewing, toggle }: { op: Operation; viewing: boolean; toggle: () => void }) {
-  const name = nameOf(op.worktree);
+  const name = nameOf(op.worktree) || op.project || "";
   const active = isActiveOp(op);
   const err = opErrorText(op);
   const original = typeof op.error === "object" && op.error ? (op.error as { original?: string }).original : undefined;

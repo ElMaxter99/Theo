@@ -67,6 +67,7 @@ export function ProjectPanel({ project, onRefreshMeta }: { project: string; onRe
         actions={
           <>
             <button type="button" class="btn" onClick={() => { res.reload(); onRefreshMeta(); }}><Icon name="restart" /> {t.panel.refresh}</button>
+            <a class="btn" href={href.shared(project)}>{t.shared.link}</a>
             <a class="btn primary" href={href.wizard(project)}><Icon name="plus" /> {t.panel.newBranch}</a>
           </>
         }
