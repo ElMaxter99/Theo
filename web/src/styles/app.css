@@ -279,3 +279,12 @@ svg .cut-s { stroke: var(--icon-cut, var(--surface)); }
 @media (forced-colors: active) { svg .cut { fill: Canvas; } svg .cut-s { stroke: Canvas; } }
 
 .prewrap { white-space: pre-wrap; margin: var(--space-2) 0 0; }
+
+.input.auto { width: auto; min-height: 2.25rem; padding: 0.3rem 0.5rem; }
+
+dl.facts { display: grid; grid-template-columns: minmax(8rem, max-content) minmax(0, 1fr); gap: var(--space-2) var(--space-4); margin: 0; }
+dl.facts dt { font-weight: 600; color: var(--text-muted); }
+dl.facts dd { margin: 0; }
+@media (max-width: 40rem) { dl.facts { grid-template-columns: minmax(0, 1fr); } dl.facts dd { margin-bottom: var(--space-2); } }
+
+h1:focus, h2:focus { outline: none; }

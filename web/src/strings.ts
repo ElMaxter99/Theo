@@ -303,7 +303,7 @@ export const t = {
     name: "Name",
     nameHint: "Letters, digits and underscores.",
     value: "Value",
-    valueEditSecretHint: "Leave empty to keep the stored secret value.",
+    valueEditSecretHint: "Enter the new value. The stored secret is never shown.",
     isSecret: "Secret (never shown in lists or logs)",
     services: "Only for these services (optional)",
     servicesHint: "Comma-separated service names. Empty means all services.",

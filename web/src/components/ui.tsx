@@ -1,5 +1,5 @@
 // Small presentational building blocks.
-import type { ComponentChildren, JSX } from "preact";
+import type { ComponentChildren } from "preact";
 import { Icon } from "./Icon.tsx";
 import type { IconName } from "./Icon.tsx";
 import type { StatusView, Tone } from "../lib/status.ts";
@@ -94,7 +94,7 @@ export function Field({ id, label, hint, error, children }: { id: string; label:
   );
 }
 
-export function describedBy(id: string, hint?: string, error?: string): JSX.HTMLAttributes<HTMLInputElement> {
+export function describedBy(id: string, hint?: string, error?: string): { "aria-describedby": string | undefined; "aria-invalid": "true" | undefined } {
   const ids = [hint ? `${id}-hint` : "", error ? `${id}-err` : ""].filter(Boolean).join(" ");
   return { "aria-describedby": ids || undefined, "aria-invalid": error ? "true" : undefined };
 }
