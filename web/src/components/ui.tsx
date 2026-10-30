@@ -105,8 +105,9 @@ export function ExternalLink({ href, children, label }: { href: string; children
   const safe = /^https?:\/\//i.test(href) ? href : undefined;
   if (!safe) return <span>{children}</span>;
   return (
-    <a href={safe} target="_blank" rel="noopener noreferrer" aria-label={label ? `${label} ${t.ports.newTab}` : undefined}>
+    <a href={safe} target="_blank" rel="noopener noreferrer">
       {children} <Icon name="external" size={13} />
+      <span class="sr-only"> {label ? `${label} ` : ""}{t.ports.newTab}</span>
     </a>
   );
 }
