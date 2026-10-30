@@ -70,7 +70,7 @@ looks for changes made outside Theo every 5 seconds.
 - Directory browsing (`Browse...` when adding a project) lists directory names only, never files or their contents, and
   hides hidden directories by default.
 - Operations are kept in memory (the last 50); the persistent record is the history (`theo history`).
-- This round has no screens for shared services, reconciliation or `doctor` (they come later); use the CLI.
+- The server exposes shared services, reconcile, health, diagnostics and paginated history (see `docs/api.md`, sections 9 to 11). Every protection of the CLI applies: stopping shared services that running instances use needs the typed text, purging their data is refused while any instance is linked to them, and reconcile only forgets Theo's own records, never containers, volumes or worktrees.
 - macOS and Windows are covered by CI only; nothing in the server is platform specific besides opening the browser.
 
 ## Troubleshooting

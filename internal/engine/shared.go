@@ -242,7 +242,7 @@ func (e *Engine) SharedConsumers(ctx context.Context, project string) ([]SharedC
 			}
 		}
 	}
-	var out []SharedConsumer
+	out := []SharedConsumer{}
 	for ws, cfg := range settings {
 		if !strings.EqualFold(cfg.Project, p.Name) || len(cfg.Shared) == 0 {
 			continue

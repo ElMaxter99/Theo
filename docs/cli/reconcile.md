@@ -15,6 +15,8 @@ theo reconcile [my-api] [--apply] [--json]
 
 Each finding says what to do next, for example `git worktree prune` or the exact `docker compose -p ... down`.
 
+With `--json` every finding has an `id` (stable between runs: a hash of what it is about); the web interface uses it to forget exactly the records it showed.
+
 ## What it changes
 
 Nothing, unless you pass `--apply`. Even then it only forgets Theo's own stale records (settings, reserved ports, generated files). It never removes containers, volumes, worktrees or your files; for those it prints the command and you decide.

@@ -140,6 +140,9 @@ func fromEngine(err error, res *ResourceRef) *Error {
 		case engine.PurgeNeedsConfirm:
 			out.Level = 3
 			out.Confirm = &Confirm{Expected: purge.Instance, Prompt: "Type the instance name to delete its data"}
+			if res != nil && res.Kind == "shared" {
+				out.Confirm.Prompt = "Type the name of the shared Compose project to delete its data"
+			}
 			out.Preserved = []string{"external volumes", "other instances", "the branch and the worktree"}
 		case engine.PurgeHasContainers:
 			out.Hint = "stop the instance (down) first; its volumes are kept"
