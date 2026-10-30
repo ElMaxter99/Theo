@@ -167,7 +167,51 @@ func (e *Engine) Status(ctx context.Context, project string) (*StatusReport, err
 			report.Warnings = append(report.Warnings, findingWarning(f))
 		}
 	}
+	warnSharedComposeNames(report)
 	return report, nil
+}
+
+// warnSharedComposeNames flags instances of different projects that run under
+// the same Compose project name, which happens when the Compose file fixes
+// `name:`: they would share containers, networks and volumes (and their data).
+func warnSharedComposeNames(report *StatusReport) {
+	owners := map[string]map[string]bool{} // compose project -> projects
+	for _, p := range report.Projects {
+		for _, w := range p.Worktrees {
+			if w.Instance == nil || w.Instance.ComposeProject == "" {
+				continue
+			}
+			if owners[w.Instance.ComposeProject] == nil {
+				owners[w.Instance.ComposeProject] = map[string]bool{}
+			}
+			owners[w.Instance.ComposeProject][p.Name] = true
+		}
+	}
+	for pi := range report.Projects {
+		p := &report.Projects[pi]
+		for wi := range p.Worktrees {
+			w := &p.Worktrees[wi]
+			if w.Instance == nil {
+				continue
+			}
+			others := []string{}
+			for name := range owners[w.Instance.ComposeProject] {
+				if name != p.Name {
+					others = append(others, name)
+				}
+			}
+			if len(others) == 0 {
+				continue
+			}
+			sort.Strings(others)
+			w.Warnings = append(w.Warnings, StatusWarning{
+				Kind: "shared-compose-name",
+				Message: fmt.Sprintf("Compose project %q is also used by %s, so they share containers, networks and volumes",
+					w.Instance.ComposeProject, strings.Join(others, ", ")),
+				Fix: "remove `name:` from the Compose file, or register only one of these projects",
+			})
+		}
+	}
 }
 
 func (e *Engine) projectStatus(ctx context.Context, p registry.Project, drift *Report, dockerDown bool) ProjectStatus {

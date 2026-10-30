@@ -33,3 +33,24 @@ jobs:
         shell: bash
         run: |
           go test -count=1 -v ./internal/acceptance 2>&1 | grep -E '^\s*(---|[a-z_]+_test.go:[0-9]+:)'
+
+  web:
+    name: Web interface (build is up to date)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - name: internal/ui/dist matches web/ (rebuild with npm run build and commit)
+        working-directory: .
+        run: test -z "$(git status --porcelain -- internal/ui/dist)"
