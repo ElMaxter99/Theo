@@ -262,3 +262,72 @@ export interface SessionInfo {
   csrf_token: string;
   api_version?: string;
 }
+
+// ---- Shared services (V5), reconcile and doctor (V6). Shapes follow engine.SharedStatus, engine.Report, engine.DoctorReport.
+
+export interface SharedService {
+  name: string;
+  image?: string;
+  /** running, exited, ... or "not created" */
+  state: string;
+}
+
+export interface SharedConsumer {
+  workspace: string;
+  branch?: string;
+  compose_project?: string;
+  services: string[];
+  /** The instance has running containers. */
+  active: boolean;
+}
+
+export interface SharedStatus {
+  project: string;
+  compose_project: string;
+  from: string;
+  network: string;
+  publish_ports: boolean;
+  services: SharedService[];
+  consumers: SharedConsumer[];
+  warnings?: string[];
+}
+
+export interface Finding {
+  /** Stable id if the server sends one; otherwise the interface derives it (see lib/reconcile.ts). */
+  id?: string;
+  kind: string;
+  project?: string;
+  subject: string;
+  worktree?: string;
+  detail: string;
+  fix?: string;
+  forgettable?: boolean;
+}
+
+export interface ReconcileReport {
+  findings: Finding[];
+  docker_error?: string;
+}
+
+export interface DoctorCheck {
+  id: string;
+  name: string;
+  status: "ok" | "warn" | "fail" | "info" | string;
+  detail?: string;
+  fix?: string;
+}
+
+export interface DoctorReport {
+  ok: boolean;
+  platform: string;
+  data_dir: string;
+  checks: DoctorCheck[];
+}
+
+/** GET .../{wt}/settings */
+export interface WorktreeSettingsInfo extends InstanceSettings {
+  shared?: string[];
+  join?: string[];
+  /** service -> container_name for the services that set one. */
+  fixed_container_names?: Record<string, string>;
+}

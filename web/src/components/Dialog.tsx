@@ -75,6 +75,9 @@ export interface TypedConfirmProps {
   affected?: { kind?: string; name: string; detail?: string }[];
   preserved?: string[];
   confirmLabel: string;
+  /** Headings of the two lists; the defaults fit deletions ("What will be deleted"). */
+  affectedTitle?: string;
+  preservedTitle?: string;
   /** Sends the confirmation; throws ApiError when the server rejects it. */
   onConfirm: (text: string) => Promise<unknown>;
   onClose: () => void;
@@ -109,8 +112,8 @@ export function TypedConfirmDialog(p: TypedConfirmProps) {
         {p.lead ? <p>{p.lead}</p> : null}
         {p.affected && p.affected.length > 0 ? (
           <>
-            <h3>{t.confirm.willDelete}</h3>
-            <ul class="affected" aria-label={t.confirm.willDelete}>
+            <h3>{p.affectedTitle ?? t.confirm.willDelete}</h3>
+            <ul class="affected" aria-label={p.affectedTitle ?? t.confirm.willDelete}>
               {p.affected.map((a, i) => (
                 <li key={i}><strong class="mono">{a.name}</strong>{a.detail ? <span class="muted"> — {a.detail}</span> : null}</li>
               ))}
@@ -119,7 +122,7 @@ export function TypedConfirmDialog(p: TypedConfirmProps) {
         ) : null}
         {p.preserved && p.preserved.length > 0 ? (
           <>
-            <h3>{t.confirm.preserved}</h3>
+            <h3>{p.preservedTitle ?? t.confirm.preserved}</h3>
             <ul>{p.preserved.map((x, i) => <li key={i}>{x}</li>)}</ul>
           </>
         ) : null}

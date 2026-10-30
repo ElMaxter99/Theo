@@ -1,7 +1,7 @@
 // "New branch + instance" wizard (view-phase 2.4): Branch -> Location and environment -> Ports -> Summary.
 import { useEffect, useRef, useState } from "preact/hooks";
 import { api, ApiError, projectPath, qs, wtPath } from "../api/client.ts";
-import type { AddedWorktree, Branch, Overview, PortPlan, Project, Worktree } from "../api/types.ts";
+import type { AddedWorktree, Branch, Overview, PortPlan, Project, Worktree, WorktreeSettingsInfo } from "../api/types.ts";
 import { Banner, Crumbs, ErrorBanner, Field, Loading, PageHead, describedBy } from "../components/ui.tsx";
 import { Icon } from "../components/Icon.tsx";
 import { useResource } from "../lib/hooks.ts";
@@ -24,6 +24,8 @@ export function Wizard({ project }: { project: string }) {
   const [folder, setFolder] = useState("");
   const [portChoice, setPortChoice] = useState<PortChoice>("auto");
   const [startNow, setStartNow] = useState(true);
+  // Explicit, never silent: off unless the user ticks it (and only offered when the project has fixed container names).
+  const [neutralize, setNeutralize] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<ApiError | undefined>();
@@ -39,6 +41,12 @@ export function Wizard({ project }: { project: string }) {
     (signal) => (step === 3 && mainWt ? api.get<PortPlan>(`${wtPath(project, mainWt.id)}/ports${qs({ auto_ports: true })}`, { signal }) : Promise.resolve(null)),
     [step === 3, mainWt?.id],
   );
+
+  const settings = useResource<WorktreeSettingsInfo | null>(
+    (signal) => (mainWt ? api.get<WorktreeSettingsInfo>(`${wtPath(project, mainWt.id)}/settings`, { signal }) : Promise.resolve(null)),
+    [mainWt?.id],
+  );
+  const fixedNames = Object.entries(settings.data?.fixed_container_names ?? {});
 
   useEffect(() => setTitle([t.wizard.title, project]), [project]);
   useEffect(() => { heading.current?.focus(); }, [step, created]);
@@ -102,7 +110,11 @@ export function Wizard({ project }: { project: string }) {
       } catch { /* the detail link falls back to the project panel */ }
     }
     let startFailed: string | undefined;
-    if (startNow && id) {
+    if (neutralize && id) {
+      try { await api.patch(`${wtPath(project, id)}/settings`, { neutralize_container_names: true }); }
+      catch (e) { startFailed = t.wizard.neutralizeFailed(e instanceof ApiError ? e.message : String(e)); }
+    }
+    if (startNow && id && !startFailed) {
       try { await startOperation(project, id, "up", { auto_ports: portChoice === "auto" }); }
       catch (e) { startFailed = e instanceof ApiError ? e.message : String(e); }
     }
@@ -183,6 +195,17 @@ export function Wizard({ project }: { project: string }) {
           <h3>{t.wizard.envTitle}</h3>
           <p>{projInfo?.env_file ? t.wizard.envProject(projInfo.env_file) : t.wizard.envMain}</p>
           <p class="hint">{t.wizard.envNote}</p>
+          {fixedNames.length > 0 ? (
+            <div class="field">
+              <h3>{t.wizard.fixedNamesTitle}</h3>
+              <p id="wz-fixed-desc">{t.wizard.fixedNamesBody(fixedNames.map(([svc, n]) => `${svc}: ${n}`).join(", "))}</p>
+              <div class="check">
+                <input id="wz-neutralize" type="checkbox" checked={neutralize} aria-describedby="wz-fixed-desc wz-fixed-hint" onChange={(e) => setNeutralize((e.currentTarget as HTMLInputElement).checked)} />
+                <label for="wz-neutralize">{t.wizard.neutralize}</label>
+              </div>
+              <p class="hint" id="wz-fixed-hint">{t.wizard.neutralizeHint}</p>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -230,6 +253,7 @@ export function Wizard({ project }: { project: string }) {
             <li>{t.wizard.doCreate(chosen, mode === "new", from || "HEAD")}</li>
             <li>{folder.trim() ? t.wizard.doFolder(folder.trim()) : t.wizard.doFolderAuto}</li>
             {startNow ? <li>{t.wizard.doPorts.replace("automatically", portChoice === "auto" ? "automatically" : "only when needed")}</li> : null}
+            {neutralize && fixedNames.length > 0 ? <li>{t.wizard.doNeutralize}</li> : null}
             <li>{endsWithStart ? t.wizard.doStart : t.wizard.doNoStart}</li>
           </ul>
           <div class="check field">

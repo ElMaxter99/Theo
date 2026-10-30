@@ -9,6 +9,9 @@ export type Route =
   | { name: "add" }
   | { name: "project"; project: string }
   | { name: "wizard"; project: string }
+  | { name: "shared"; project: string }
+  | { name: "health" }
+  | { name: "settings" }
   | { name: "detail"; project: string; wt: string; tab: TabId }
   | { name: "notfound" };
 
@@ -19,10 +22,13 @@ export function parseHash(hash: string): Route {
     try { return decodeURIComponent(s); } catch { return s; }
   });
   if (parts[0] === "projects") return parts[1] === "new" ? { name: "add" } : { name: "projects" };
+  if (parts[0] === "health" && parts.length === 1) return { name: "health" };
+  if (parts[0] === "settings" && parts.length === 1) return { name: "settings" };
   if (parts[0] === "p" && parts[1]) {
     const project = parts[1];
     if (parts.length === 2) return { name: "project", project };
     if (parts[2] === "new" && parts.length === 3) return { name: "wizard", project };
+    if (parts[2] === "shared" && parts.length === 3) return { name: "shared", project };
     if (parts[2] === "w" && parts[3]) {
       const tab = (TABS as readonly string[]).includes(parts[4] ?? "") ? (parts[4] as TabId) : "summary";
       return { name: "detail", project, wt: parts[3], tab };
@@ -36,6 +42,9 @@ export const href = {
   projects: () => "#/projects",
   add: () => "#/projects/new",
   project: (p: string) => `#/p/${e(p)}`,
+  health: () => "#/health",
+  settings: () => "#/settings",
+  shared: (p: string) => `#/p/${e(p)}/shared`,
   wizard: (p: string) => `#/p/${e(p)}/new`,
   detail: (p: string, wt: string, tab: TabId = "summary") => `#/p/${e(p)}/w/${e(wt)}/${tab}`,
 };
