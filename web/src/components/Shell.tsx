@@ -36,8 +36,8 @@ export function Shell({ meta, onRefresh, children }: { meta: Meta | undefined; o
   };
 
   const health = useHealth();
-  const healthCount = health.report?.findings.length;
-  const healthDocker = !!health.report?.docker_error;
+  const healthCount = health.summary?.findings;
+  const healthDocker = health.summary?.status === "docker_unavailable";
 
   const dockerDown = meta && !meta.docker.available;
   const gitDown = meta && !meta.git.available;

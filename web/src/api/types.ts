@@ -8,9 +8,19 @@ export interface Meta {
   api_version: string;
   os?: string;
   arch?: string;
-  docker: { available: boolean; version?: string; error?: string; hint?: string };
-  git: { available: boolean; version?: string; error?: string };
+  docker: ToolInfo & { hint?: string };
+  compose?: ToolInfo;
+  git: ToolInfo;
   data_dir?: string;
+  idle?: { timeout_seconds: number };
+}
+
+export interface ToolInfo {
+  available: boolean;
+  version?: string;
+  /** The oldest version Theo works with (Compose, Git). */
+  min_version?: string;
+  error?: string;
 }
 
 export interface Project {
@@ -322,6 +332,30 @@ export interface DoctorReport {
   platform: string;
   data_dir: string;
   checks: DoctorCheck[];
+}
+
+/** GET /diagnostics: everything the settings screen shows. */
+export interface Diagnostics {
+  meta: Meta;
+  doctor: DoctorReport;
+  projects: number;
+  /** Plain text that is safe to paste into an issue (no secrets; it does include the data directory). */
+  report?: string;
+}
+
+/** GET /health: what the indicator of the shell shows. */
+export interface HealthSummary {
+  status: "ok" | "attention" | "docker_unavailable" | string;
+  findings: number;
+  forgettable?: number;
+  docker_error?: string;
+}
+
+/** POST /reconcile/apply */
+export interface ReconcileApplied {
+  forgotten: number;
+  applied: string[];
+  skipped: string[];
 }
 
 /** GET .../{wt}/settings */

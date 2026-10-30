@@ -2,7 +2,7 @@
 // secrets, and the view preferences (stored only in this browser).
 import { useEffect, useState } from "preact/hooks";
 import { api } from "../api/client.ts";
-import type { DoctorCheck, DoctorReport, Meta } from "../api/types.ts";
+import type { Diagnostics, Meta } from "../api/types.ts";
 import { Badge, ErrorBanner, Loading, PageHead } from "../components/ui.tsx";
 import { Icon } from "../components/Icon.tsx";
 import { useResource } from "../lib/hooks.ts";
@@ -28,17 +28,19 @@ export function checkStatusView(status: string): StatusView {
 }
 
 export function Settings({ meta }: { meta: Meta | undefined }) {
-  const doctor = useResource<DoctorReport>(() => api.get<DoctorReport>("/doctor"), []);
+  const doctor = useResource<Diagnostics>(() => api.get<Diagnostics>("/diagnostics"), []);
   const [theme, setTheme] = useState<ThemePref>(readTheme());
   const [density, setDensity] = useState<Density>(readDensity());
   const [motion, setMotion] = useState<Motion>(readMotion());
   const [shown, setShown] = useState("");
   useEffect(() => setTitle([t.settingsPage.title]), []);
   const s = t.settingsPage;
-  const d = doctor.data;
+  const diag = doctor.data;
+  const d = diag?.doctor;
+  const m = diag?.meta ?? meta;
 
   const copy = async () => {
-    const text = reportText(meta, d);
+    const text = diag?.report || reportText(m, d);
     try {
       await navigator.clipboard.writeText(text);
       announce(s.copied);
@@ -87,12 +89,14 @@ export function Settings({ meta }: { meta: Meta | undefined }) {
       <section class="card stack" aria-labelledby="st-about">
         <h2 id="st-about">{s.dataTitle}</h2>
         <dl class="facts">
-          <dt>{s.theoVersion}</dt><dd>{meta?.theo_version ?? "—"}</dd>
-          <dt>{s.apiVersion}</dt><dd>{meta?.api_version ?? "—"}</dd>
-          <dt>{s.platform}</dt><dd>{d?.platform ?? (meta?.os ? `${meta.os}/${meta.arch ?? ""}` : "—")}</dd>
-          <dt>{s.dockerVersion}</dt><dd>{meta ? (meta.docker.available ? meta.docker.version ?? "—" : s.notAvailable) : "—"}</dd>
-          <dt>{s.gitVersion}</dt><dd>{meta ? (meta.git.available ? meta.git.version ?? "—" : s.notAvailable) : "—"}</dd>
-          <dt>{s.dataDir}</dt><dd class="mono">{d?.data_dir ?? meta?.data_dir ?? "—"}</dd>
+          <dt>{s.theoVersion}</dt><dd>{m?.theo_version ?? "—"}</dd>
+          <dt>{s.apiVersion}</dt><dd>{m?.api_version ?? "—"}</dd>
+          <dt>{s.platform}</dt><dd>{d?.platform ?? (m?.os ? `${m.os}/${m.arch ?? ""}` : "—")}</dd>
+          <dt>{s.dockerVersion}</dt><dd>{m ? (m.docker.available ? m.docker.version ?? "—" : s.notAvailable) : "—"}</dd>
+          <dt>{s.composeVersion}</dt><dd>{m?.compose ? (m.compose.available ? `${m.compose.version ?? "—"}` : s.notAvailable) + (m.compose.min_version ? ` ${s.needs(m.compose.min_version)}` : "") : "—"}</dd>
+          <dt>{s.gitVersion}</dt><dd>{m ? (m.git.available ? m.git.version ?? "—" : s.notAvailable) + (m.git.min_version ? ` ${s.needs(m.git.min_version)}` : "") : "—"}</dd>
+          <dt>{s.projects}</dt><dd>{diag?.projects ?? "—"}</dd>
+          <dt>{s.dataDir}</dt><dd class="mono">{d?.data_dir ?? m?.data_dir ?? "—"}</dd>
         </dl>
       </section>
 
@@ -137,7 +141,7 @@ export function Settings({ meta }: { meta: Meta | undefined }) {
 
       <section class="card stack" aria-labelledby="st-idle">
         <h2 id="st-idle">{s.idleTitle}</h2>
-        <p>{s.idleBody}</p>
+        <p>{s.idleBody(m?.idle ? Math.round(m.idle.timeout_seconds / 60) : undefined)}</p>
       </section>
     </>
   );

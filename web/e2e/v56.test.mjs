@@ -220,8 +220,11 @@ test("health: forget removes Theo's records only, after a confirmation, and the 
   assert.deepEqual(after.map((f) => f.kind).sort(), ["orphan containers", "orphan volumes", "stale settings", "worktree missing"]);
   // The server refuses to forget anything that is not Theo's own record.
   const bad = after.find((f) => f.kind === "orphan volumes");
-  const r = await call("POST", "/reconcile/forget", { finding_ids: [[bad.kind, bad.project, bad.subject, ""].join("|")] });
-  assert.equal(r.status, 400);
+  assert.match(bad.id, /^fd_/);
+  const r = await call("POST", "/reconcile/apply", { ids: [bad.id] });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.skipped, [bad.id], "a finding that is not Theo's own record is skipped, not forgotten");
+  assert.equal(r.body.forgotten, 0);
   assert.equal((await call("GET", "/reconcile")).body.findings.length, 4);
   assert.match(await page.getByTestId("nav-health").textContent(), /Health\s*4/);
   await page.ctx.close();
@@ -262,7 +265,9 @@ test("settings: doctor checks with status text, versions, copy report without se
   const text = clip ?? (await page.locator("#st-report-text").inputValue());
   assert.match(text, /Theo 0\.0\.0-mock/);
   assert.match(text, /\[ok\] Git/);
-  assert.doesNotMatch(text, /\/home\/ana/, "no paths in the report");
+  assert.match(await page.locator("section[aria-labelledby=st-report]").textContent(), /data directory/);
+  assert.match(text, /Docker Compose: 2\.29\.7 \(Theo needs 2\.24\.4 or later\)/);
+  assert.doesNotMatch(text, /DATABASE_URL|s3cretpass/, "no secrets in the report");
   await page.ctx.close();
 });
 

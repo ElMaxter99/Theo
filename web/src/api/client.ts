@@ -103,6 +103,17 @@ async function request<T>(method: string, path: string, body?: unknown, opts: Re
   return (await res.text()) as unknown as T;
 }
 
+/** GET that also returns the response headers (history paging travels in headers). */
+export async function getWithHeaders<T>(path: string): Promise<{ data: T; headers: Headers }> {
+  const res = await fetch(BASE + path, { headers: { Accept: "application/json" }, credentials: "same-origin", cache: "no-store", referrerPolicy: "no-referrer" }).catch(() => {
+    sessionLost("server-gone");
+    throw new ApiError(0, { code: "network", message: "Theo is not reachable." });
+  });
+  if (res.status === 401) { sessionLost("no-session"); throw await parseError(res); }
+  if (!res.ok) throw await parseError(res);
+  return { data: (await res.json()) as T, headers: res.headers };
+}
+
 export const api = {
   get: <T>(path: string, opts?: RequestOptions) => request<T>("GET", path, undefined, opts),
   post: <T>(path: string, body?: unknown, opts?: RequestOptions) => request<T>("POST", path, body ?? {}, opts),

@@ -6,7 +6,8 @@ import type { Finding } from "../api/types.ts";
 import { Banner, ErrorBanner, Loading, PageHead } from "../components/ui.tsx";
 import { ConfirmDialog } from "../components/Dialog.tsx";
 import { Icon } from "../components/Icon.tsx";
-import { findingId, groupFindings, refreshHealth, useHealth } from "../lib/health.ts";
+import { events } from "../api/events.ts";
+import { findingId, groupFindings, refreshReport, useHealth } from "../lib/health.ts";
 import { announce } from "../lib/live.ts";
 import { t } from "../strings.ts";
 import { setTitle } from "./Router.tsx";
@@ -18,7 +19,12 @@ export function Health() {
   const [confirming, setConfirming] = useState(false);
   const [forgetError, setForgetError] = useState<ApiError | undefined>();
   useEffect(() => setTitle([t.reconcile.title]), []);
-  useEffect(() => { void refreshHealth(); }, []);
+  useEffect(() => {
+    void refreshReport();
+    let timer: number | undefined;
+    const off = events.on("state.changed", () => { clearTimeout(timer); timer = window.setTimeout(() => void refreshReport(), 1000); });
+    return () => { off(); clearTimeout(timer); };
+  }, []);
 
   const all = h.report?.findings ?? [];
   const projects = useMemo(() => [...new Set(all.map((f) => f.project).filter((p): p is string => !!p))].sort(), [all]);
@@ -42,10 +48,10 @@ export function Health() {
   const forget = async () => {
     setForgetError(undefined);
     try {
-      await api.post("/reconcile/forget", { finding_ids: selected });
+      await api.post("/reconcile/apply", { ids: selected });
       announce(t.reconcile.forgotten(selected.length));
       setPicked(new Set());
-      await refreshHealth();
+      await refreshReport();
     } catch (e) {
       setForgetError(e instanceof ApiError ? e : new ApiError(0, { code: "internal", message: String(e) }));
       throw e;
@@ -57,7 +63,7 @@ export function Health() {
       <PageHead
         title={t.reconcile.title}
         sub={h.report ? t.reconcile.summary(all.length) : undefined}
-        actions={<button type="button" class="btn" disabled={h.loading} onClick={() => void refreshHealth()}><Icon name="restart" /> {h.loading ? t.reconcile.checking : t.reconcile.refresh}</button>}
+        actions={<button type="button" class="btn" disabled={h.loading} onClick={() => void refreshReport()}><Icon name="restart" /> {h.loading ? t.reconcile.checking : t.reconcile.refresh}</button>}
       />
       <p>{t.reconcile.intro}</p>
       <p><strong>{t.reconcile.fixedNote}</strong></p>

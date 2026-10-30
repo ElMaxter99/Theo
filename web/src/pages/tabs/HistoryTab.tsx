@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
-import { api, ApiError, qs, wtPath } from "../../api/client.ts";
+import { ApiError, getWithHeaders, qs, wtPath } from "../../api/client.ts";
 import type { HistoryEvent, WorktreeDetail } from "../../api/types.ts";
 import { Badge, ErrorBanner, Loading } from "../../components/ui.tsx";
 import { useResource } from "../../lib/hooks.ts";
@@ -9,9 +9,12 @@ import { t } from "../../strings.ts";
 
 const PAGE = 20;
 
-/** The server answers with the events, oldest first (same as `theo history --json`); an object with `events` is accepted too. */
-function eventsOf(body: HistoryEvent[] | { events?: HistoryEvent[]; items?: HistoryEvent[] }): HistoryEvent[] {
-  return Array.isArray(body) ? body : body.events ?? body.items ?? [];
+interface Page { events: HistoryEvent[]; next: string | null }
+
+/** The body is the plain array (oldest first); the paging travels in the headers Theo-History-Next (cursor of the older page, absent on the oldest). */
+async function fetchPage(url: string): Promise<Page> {
+  const { data, headers } = await getWithHeaders<HistoryEvent[]>(url);
+  return { events: Array.isArray(data) ? data : [], next: headers.get("Theo-History-Next") };
 }
 
 const keyOf = (e: HistoryEvent) => `${e.time}|${e.operation}|${e.result}|${e.workspace ?? ""}`;
@@ -19,15 +22,16 @@ const keyOf = (e: HistoryEvent) => `${e.time}|${e.operation}|${e.result}|${e.wor
 export function HistoryTab({ project, w }: { project: string; w: WorktreeDetail }) {
   const base = `${wtPath(project, w.id)}/history`;
   // First page: the newest events. Older pages are requested with `before` = the time of the oldest event we have.
-  const res = useResource<HistoryEvent[]>(async () => eventsOf(await api.get(`${base}${qs({ limit: PAGE })}`)), [project, w.id], { project, worktree: w.id });
+  const first = useResource<Page>(() => fetchPage(`${base}${qs({ limit: PAGE })}`), [project, w.id], { project, worktree: w.id });
+  const res = { ...first, data: first.data?.events };
   const [older, setOlder] = useState<HistoryEvent[]>([]);
-  const [exhausted, setExhausted] = useState(false);
+  const [cursor, setCursor] = useState<string | null>(null);
   const [moreBusy, setMoreBusy] = useState(false);
   const [moreError, setMoreError] = useState<ApiError | undefined>();
   const [filter, setFilter] = useState("");
 
   // A new first page (the instance changed) starts the list again.
-  useEffect(() => { setOlder([]); setExhausted(false); }, [res.data]);
+  useEffect(() => { setOlder([]); setCursor(first.data?.next ?? null); }, [first.data]);
 
   const newestFirst = useMemo(() => {
     const seen = new Set<string>();
@@ -42,21 +46,19 @@ export function HistoryTab({ project, w }: { project: string; w: WorktreeDetail 
   if (res.loading && !res.data) return <Loading />;
   if (res.error && !res.data) return <ErrorBanner error={res.error} />;
 
-  const firstFull = (res.data?.length ?? 0) >= PAGE;
-  const canLoadMore = !exhausted && firstFull;
+  const canLoadMore = cursor !== null;
   const rows = newestFirst.filter((e) => !filter || e.result === filter);
 
   const loadMore = async () => {
-    const oldest = newestFirst[newestFirst.length - 1];
-    if (!oldest) return;
+    if (cursor === null) return;
     setMoreBusy(true);
     setMoreError(undefined);
     try {
-      const page = eventsOf(await api.get(`${base}${qs({ limit: PAGE, before: oldest.time })}`));
+      const page = await fetchPage(`${base}${qs({ limit: PAGE, before: cursor })}`);
       const have = new Set(newestFirst.map(keyOf));
-      const fresh = [...page].reverse().filter((e) => !have.has(keyOf(e)));
+      const fresh = [...page.events].reverse().filter((e) => !have.has(keyOf(e)));
       setOlder([...older, ...fresh]);
-      if (fresh.length === 0 || page.length < PAGE) setExhausted(true);
+      setCursor(page.next);
       announce(fresh.length > 0 ? t.history.loaded(newestFirst.length + fresh.length) : t.history.noMore);
     } catch (e) {
       setMoreError(e instanceof ApiError ? e : new ApiError(0, { code: "internal", message: String(e) }));

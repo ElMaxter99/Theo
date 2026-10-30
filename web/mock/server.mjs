@@ -282,8 +282,7 @@ async function api(req, res, url) {
   if (m !== "GET" && !String(req.headers["content-type"] ?? "").startsWith("application/json")) return err(res, 400, "invalid_request", "Content-Type must be application/json");
 
   if (seg[0] === "session" && m === "GET") return send(res, 200, { api_version: "1", csrf_token: csrf });
-  if (seg[0] === "meta") return send(res, 200, { theo_version: "0.0.0-mock", api_version: "v1", os: "linux", arch: "amd64", data_dir: "/home/ana/.local/share/theo", git: { available: true, version: "2.43.0" },
-    docker: scenario.docker ? { available: true, version: "27.3.1" } : { available: false, error: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock", hint: "Start Docker Desktop or the docker service, then press Refresh." } });
+  if (seg[0] === "meta") return send(res, 200, metaOf());
 
   if (seg[0] === "events" && seg[1] === "focus") { await readJson(req); return send(res, 204, ""); }
   if (seg[0] === "events" && m === "GET") {
@@ -319,6 +318,8 @@ async function api(req, res, url) {
 
   if (seg[0] === "doctor") return send(res, 200, doctor());
   if (seg[0] === "reconcile") return reconcileRoutes(req, res, seg, q);
+  if (seg[0] === "health") return send(res, 200, healthOf());
+  if (seg[0] === "diagnostics") return send(res, 200, diagnostics());
   if (seg[0] !== "projects") return err(res, 404, "not_found", "unknown resource");
   if (seg.length === 1) {
     if (m === "GET") return send(res, 200, S.projects.map(({ wts, ...p }) => p));
@@ -388,7 +389,13 @@ async function api(req, res, url) {
   if (sub === "config") return send(res, 200, `name: ${w.compose_project}\nservices:\n  web:\n    image: shop/web:dev\n    environment:\n      DATABASE_URL: "••••••"\n`);
   if (sub === "settings") { if (m === "PATCH") { Object.assign(w.settings, await readJson(req)); } return send(res, 200, { ...w.settings, auto_ports: false, profiles: [], shared: [...(proj.shared?.links.get(w.id) ?? [])], join: [], fixed_container_names: proj.fixed ?? {} }); }
   if (sub === "shared") return sharedLink(req, res, proj, w, seg);
-  if (sub === "history") return send(res, 200, w.history.filter((h) => !q.get("before") || h.time < q.get("before")).slice(0, Number(q.get("limit") || 50)).reverse().map((h) => ({ project: proj.name, workspace: w.path, compose_project: w.compose_project, ...h })));
+  if (sub === "history") {
+    const all = [...w.history].reverse(); // oldest first, as the engine keeps it
+    const end = q.get("before") !== null && Number(q.get("before")) < all.length ? Number(q.get("before")) : all.length;
+    const limit = Number(q.get("limit") || 0);
+    const start = limit > 0 && end - limit > 0 ? end - limit : 0;
+    return send(res, 200, all.slice(start, end).map((h) => ({ project: proj.name, workspace: w.path, compose_project: w.compose_project, ...h })), { "Theo-History-Total": String(all.length), ...(start > 0 ? { "Theo-History-Next": String(start) } : {}) });
+  }
   if (sub === "volumes" && !seg[5]) {
     if (!SERVICES.some((s) => s.name === "db")) return send(res, 200, []);
     const st = derive(w);
@@ -462,6 +469,11 @@ async function logs(req, res, w, q) {
   req.on("close", () => clearInterval(t));
 }
 
+function metaOf() {
+  return { theo_version: "0.0.0-mock", api_version: "v1", os: "linux", arch: "amd64", data_dir: "/home/ana/.local/share/theo", idle: { timeout_seconds: 900 },
+    git: { available: true, version: "2.43.0", min_version: "2.17.0" }, compose: { available: true, version: scenario.composeOld ? "2.20.0" : "2.29.7", min_version: "2.24.4" },
+    docker: scenario.docker ? { available: true, version: "27.3.1" } : { available: false, error: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock", hint: "Start Docker Desktop or the docker service, then press Refresh." } };
+}
 // ---------------------------------------------------------------- shared services, reconcile, doctor
 const sharedName = (proj) => `${proj.name}-shared`;
 function sharedStatus(proj) {
@@ -509,7 +521,7 @@ async function sharedRoutes(req, res, proj, seg) {
     if (!sh.services[seg[4]]) return err(res, 404, "not_found", `${seg[4]} is not a shared service`);
     const using = [...sh.links.values()].some((set) => set.has(seg[4]));
     if (using) return send(res, 409, { error: { code: "shared_in_use", message: `${seg[4]} is used by instances; stop using it there first`, affected: consumerList(proj) } });
-    if (sh.services[seg[4]].state !== "not created") return err(res, 409, "invalid_request", `${seg[4]} still has containers; stop the shared services first`);
+    if (sh.services[seg[4]].state !== "not created") return err(res, 409, "shared_running", `${seg[4]} still has containers; stop the shared services first`);
     delete sh.services[seg[4]];
     if (Object.keys(sh.services).length === 0) proj.shared = null;
     return send(res, 200, { removed: seg[4] });
@@ -544,7 +556,7 @@ function sharedOp(res, proj, kind) {
   if (!scenario.docker) return err(res, 412, "docker_unavailable", "Cannot connect to the Docker daemon", { hint: "Start Docker and try again." });
   const act = [...S.ops.values()].find((o) => o.project === proj.name && !o.worktree && ["queued", "running", "cancelling"].includes(o.state));
   if (act) return err(res, 409, "busy", `another operation (${act.kind}) is running on the shared services`, { operation: { id: act.id, kind: act.kind } });
-  const o = { id: "op_" + String(++S.opSeq).padStart(4, "0") + crypto.randomBytes(3).toString("hex"), kind: `shared-${kind}`, project: proj.name, state: "running", started_at: now(), cancellable: true, lines: [], subs: new Set(), dropped: 0 };
+  const o = { id: "op_" + String(++S.opSeq).padStart(4, "0") + crypto.randomBytes(3).toString("hex"), kind: `shared.${kind}`, project: proj.name, state: "running", started_at: now(), cancellable: true, lines: [], subs: new Set(), dropped: 0 };
   S.ops.set(o.id, o);
   opState(o, "running");
   (async () => {
@@ -563,24 +575,40 @@ function sharedOp(res, proj, kind) {
   return send(res, 202, publicOp(o), { Location: `/api/v1/operations/${o.id}` });
 }
 
-const fid = (f) => [f.kind, f.project ?? "", f.subject, f.worktree ?? ""].join("|");
+const fid = (f) => "fd_" + crypto.createHash("sha1").update([f.kind, f.project ?? "", f.subject, f.worktree ?? ""].join("|")).digest("hex").slice(0, 12);
+const withId = (f) => ({ id: fid(f), ...f });
+function reportFor(proj) {
+  let findings = S.findings.filter((f) => !proj || f.project === proj);
+  if (!scenario.docker) return { findings: findings.filter((f) => !/^orphan|containers removed/.test(f.kind)).map(withId), docker_error: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?" };
+  if (scenario.healthy) findings = [];
+  return { findings: findings.map(withId) };
+}
+function healthOf() {
+  const r = reportFor("");
+  return { status: r.docker_error ? "docker_unavailable" : r.findings.length ? "attention" : "ok", findings: r.findings.length, forgettable: r.findings.filter((f) => f.forgettable).length, ...(r.docker_error ? { docker_error: r.docker_error } : {}) };
+}
 async function reconcileRoutes(req, res, seg, q) {
-  if (seg[1] === "forget" && req.method === "POST") {
+  if (seg[1] === "apply" && req.method === "POST") {
     const b = await readJson(req);
-    const ids = new Set(b?.finding_ids ?? []);
-    const hit = S.findings.filter((f) => ids.has(fid(f)));
-    if (hit.some((f) => !f.forgettable)) return err(res, 400, "invalid_request", "only Theo's own records can be forgotten; containers, volumes and worktrees are never touched");
-    S.findings = S.findings.filter((f) => !ids.has(fid(f)));
-    S.forgotten.push(...hit.map(fid));
+    if (!b?.all && !(b?.ids ?? []).length) return err(res, 400, "invalid_request", "say which findings to forget: ids, or all: true");
+    const before = reportFor(b.project ?? "").findings;
+    const want = new Set(b.ids ?? []);
+    const hit = before.filter((f) => f.forgettable && (b.all || want.has(f.id)));
+    const applied = hit.map((f) => f.id);
+    const skipped = (b.ids ?? []).filter((id) => !applied.includes(id));
+    S.findings = S.findings.filter((f) => !applied.includes(fid(f)));
+    S.forgotten.push(...applied);
     emitGlobal("state.changed", {});
-    return send(res, 200, { forgotten: hit.length });
+    return send(res, 200, { findings: hit, forgotten: hit.length, applied, skipped });
   }
   if (req.method !== "GET") return err(res, 404, "not_found", "unknown resource");
-  const proj = q.get("project");
-  let findings = S.findings.filter((f) => !proj || f.project === proj);
-  if (!scenario.docker) return send(res, 200, { findings: findings.filter((f) => !/^orphan|containers removed/.test(f.kind)), docker_error: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?" });
-  if (scenario.healthy) findings = [];
-  return send(res, 200, { findings });
+  return send(res, 200, { ...reportFor(q.get("project") ?? ""), forgotten: 0 });
+}
+
+function diagnostics() {
+  const doc = doctor();
+  const report = `Theo 0.0.0-mock (API v1)\nPlatform: linux/amd64\nData directory: ${doc.data_dir}\nProjects: ${S.projects.length}\nDocker: ${scenario.docker ? "27.3.1" : "not available"}\nDocker Compose: ${scenario.composeOld ? "2.20.0" : "2.29.7"} (Theo needs 2.24.4 or later)\nGit: 2.43.0 (Theo needs 2.17.0 or later)\n\nChecks:\n` + doc.checks.map((c) => `- [${c.status}] ${c.name}${c.detail ? ": " + c.detail : ""}`).join("\n") + "\n";
+  return { meta: metaOf(), doctor: doc, projects: S.projects.length, report };
 }
 
 function doctor() {
