@@ -33,6 +33,22 @@ export interface Busy {
   kind: string;
 }
 
+/** A host port of a worktree as the overview reports it (engine.PortStatus). */
+export interface WtPort {
+  service: string;
+  container_port: number;
+  protocol?: string;
+  host_port?: number;
+  url?: string;
+  status: string;
+}
+
+export interface WtWarning {
+  kind: string;
+  message: string;
+  fix?: string;
+}
+
 export interface UrlInfo {
   service: string;
   url: string;
@@ -61,16 +77,18 @@ export interface Worktree {
   state: InstanceState;
   /** List responses carry counts; the detail response carries the containers themselves. */
   containers?: { running: number; total: number } | Container[];
-  services?: { name: string; state: string }[];
-  urls?: UrlInfo[];
-  conflicts?: PortConflict[];
+  ports?: WtPort[];
+  warnings?: WtWarning[];
+  error?: string;
   busy?: Busy | null;
 }
 
 export interface Overview {
-  project: Project;
+  project: string;
+  path: string;
+  docker: { available: boolean; error?: string };
   worktrees: Worktree[];
-  docker_error?: string;
+  generated_at?: string;
 }
 
 export interface Branch {
@@ -201,12 +219,15 @@ export interface AddedWorktree {
 export interface BrowseEntry {
   name: string;
   path: string;
-  git?: boolean;
+  is_repo?: boolean;
 }
 
 export interface Browse {
   path: string;
   parent?: string;
+  home?: string;
+  is_repo?: boolean;
+  truncated?: boolean;
   entries: BrowseEntry[];
 }
 
@@ -224,5 +245,6 @@ export interface ApiErrorBody {
 }
 
 export interface SessionInfo {
-  csrf: string;
+  csrf_token: string;
+  api_version?: string;
 }

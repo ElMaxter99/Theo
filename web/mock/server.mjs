@@ -66,8 +66,8 @@ function reset() {
   blogMain.compose_project = "blog"; blogDraft.compose_project = "blog-draft";
   S = {
     projects: [
-      { name: "shop", path: "/home/ana/code/shop", env_file: "", worktree_dir: "", worktree_dir_effective: "/home/ana/code", added_at: "2026-09-01T10:00:00Z", wts: [shopMain, shopFix, shopFeat, shopOld, shopDetached] },
-      { name: "blog", path: "/home/ana/code/blog", env_file: "/home/ana/code/blog.env", added_at: "2026-09-12T10:00:00Z", worktree_dir_effective: "/home/ana/code", wts: [blogMain, blogDraft] },
+      { name: "shop", path: "/home/ana/code/shop", env_file: "", added_at: "2026-09-01T10:00:00Z", wts: [shopMain, shopFix, shopFeat, shopOld, shopDetached] },
+      { name: "blog", path: "/home/ana/code/blog", env_file: "/home/ana/code/blog.env", added_at: "2026-09-12T10:00:00Z", wts: [blogMain, blogDraft] },
     ],
     ops: new Map(),
     idem: new Map(),
@@ -119,14 +119,28 @@ function conflictsOf(w) {
   return out;
 }
 
+function portStatuses(w) {
+  const held = heldPorts(w);
+  return portsOf(w).map((p) => {
+    const mine = w.rt.services[p.svc] === "running" || w.rt.services[p.svc] === "unhealthy";
+    const hp = mine ? w.rt.hostPorts[p.svc] : p.configured;
+    const status = !scenario.docker ? "free" : mine ? "running" : held.has(p.configured) ? "in use" : "free";
+    return { service: p.svc, container_port: p.target, protocol: "tcp", host_port: hp, url: p.svc === "web" ? `http://localhost:${hp}` : undefined, status };
+  });
+}
+function warningsOf(w) {
+  const out = [];
+  if (w.env_file?.source === "none") out.push({ kind: "missing-env-file", message: "no .env file was found for this worktree", fix: "Create a .env file in the worktree or set a shared one with `theo project set`." });
+  return out;
+}
 function listItem(w) {
   const op = activeOp(w);
   const total = Object.keys(w.rt.services).length;
   const running = Object.values(w.rt.services).filter((v) => v === "running").length;
   return {
-    id: w.id, path: w.path, branch: w.branch || undefined, head: w.head, detached: w.detached, locked: false, prunable: false, main: w.main, kind: w.kind, dirty: w.dirty,
+    id: w.id, path: w.path, branch: w.branch || undefined, head: w.head + "0123456789abcdef0123456789abcdef0123", detached: w.detached, locked: false, prunable: false, bare: false, main: w.main, kind: w.kind, dirty: w.dirty,
     compose_project: w.compose_project, env_file: w.env_file, state: derive(w), containers: { running, total },
-    services: Object.entries(w.rt.services).map(([name, state]) => ({ name, state })), urls: urlsOf(w), conflicts: conflictsOf(w),
+    ports: portStatuses(w), warnings: warningsOf(w),
     busy: op ? { operation_id: op.id, kind: op.kind } : null,
   };
 }
@@ -163,7 +177,7 @@ const ev = (res, event, data, id) => res.write(`${id !== undefined ? `id: ${id}\
 // ---------------------------------------------------------------- operations
 function publicOp(o) { const { lines, subs, timer, ...rest } = o; return rest; }
 function emitGlobal(event, data) { for (const r of sse.global) ev(r, event, data); }
-function opUpdate(o) { emitGlobal("operation.updated", { operation: publicOp(o) }); }
+function opUpdate(o) { emitGlobal("operation.updated", publicOp(o)); }
 function opLog(o, line, stream = "stdout") {
   const id = o.lines.length + 1 + o.dropped;
   const e = { id, event: "log", data: { stream, line, at: now() } };
@@ -241,7 +255,7 @@ async function api(req, res, url) {
     nonce = ""; // single use
     const sid = crypto.randomBytes(16).toString("hex"); const csrf = crypto.randomBytes(16).toString("hex");
     sessions.set(sid, csrf);
-    return send(res, 200, { csrf }, { "Set-Cookie": `theo_session=${sid}; HttpOnly; SameSite=Strict; Path=/` });
+    return send(res, 200, { api_version: "1", csrf_token: csrf }, { "Set-Cookie": `theo_session=${sid}; HttpOnly; SameSite=Strict; Path=/` });
   }
   const cookie = /theo_session=([a-f0-9]+)/.exec(req.headers.cookie ?? "")?.[1];
   const csrf = cookie ? sessions.get(cookie) : undefined;
@@ -249,7 +263,7 @@ async function api(req, res, url) {
   if (m !== "GET" && req.headers["x-theo-csrf"] !== csrf) return err(res, 403, "csrf", "missing or wrong CSRF token");
   if (m !== "GET" && !String(req.headers["content-type"] ?? "").startsWith("application/json")) return err(res, 400, "invalid_request", "Content-Type must be application/json");
 
-  if (seg[0] === "session" && m === "GET") return send(res, 200, { csrf });
+  if (seg[0] === "session" && m === "GET") return send(res, 200, { api_version: "1", csrf_token: csrf });
   if (seg[0] === "meta") return send(res, 200, { theo_version: "0.0.0-mock", api_version: "v1", os: "linux", arch: "amd64", data_dir: "/home/ana/.local/share/theo", git: { available: true, version: "2.43.0" },
     docker: scenario.docker ? { available: true, version: "27.3.1" } : { available: false, error: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock", hint: "Start Docker Desktop or the docker service, then press Refresh." } });
 
@@ -282,7 +296,7 @@ async function api(req, res, url) {
   if (seg[0] === "fs" && seg[1] === "browse") {
     const p = (q.get("path") || "/home/ana").replace(/\/+$/, "") || "/";
     if (!(p in FS)) return err(res, 404, "invalid_request", `no such folder: ${p}`);
-    return send(res, 200, { path: p, parent: p === "/home/ana" ? undefined : path.posix.dirname(p), entries: FS[p].map((n) => ({ name: n, path: `${p}/${n}`, git: GIT.has(`${p}/${n}`) })) });
+    return send(res, 200, { path: p, parent: p === "/home/ana" ? undefined : path.posix.dirname(p), home: "/home/ana", is_repo: GIT.has(p), truncated: false, entries: FS[p].map((n) => ({ name: n, path: `${p}/${n}`, is_repo: GIT.has(`${p}/${n}`) })) });
   }
 
   if (seg[0] !== "projects") return err(res, 404, "not_found", "unknown resource");
@@ -294,7 +308,7 @@ async function api(req, res, url) {
       if (!GIT.has(b.path)) return err(res, 422, "engine_error", `${b.path} is not a Git repository`, { hint: "Choose the folder that contains the .git directory." });
       const name = b.name || base(b.path);
       if (findProject(name)) return err(res, 409, "invalid_request", `a project named ${name} already exists`);
-      const p = { name, path: b.path, env_file: b.env_file ?? "", added_at: now(), worktree_dir_effective: path.posix.dirname(b.path), wts: [mkWorktree(name, base(b.path), "main", { main: true })] };
+      const p = { name, path: b.path, env_file: b.env_file ?? "", added_at: now(), wts: [mkWorktree(name, base(b.path), "main", { main: true })] };
       S.projects.push(p);
       const { wts, ...pub } = p;
       return send(res, 201, pub);
@@ -308,7 +322,7 @@ async function api(req, res, url) {
     if (m === "PATCH") { const b = await readJson(req); for (const k of ["env_file", "worktree_dir"]) if (k in b) proj[k] = b[k] ?? ""; return send(res, 200, pub); }
     if (m === "DELETE") { S.projects = S.projects.filter((p) => p !== proj); return send(res, 200, { files_kept: true, containers_kept: true }); }
   }
-  if (seg[2] === "overview") return send(res, 200, { project: pub, worktrees: wts.map(listItem), docker_error: scenario.docker ? undefined : "Cannot connect to the Docker daemon" });
+  if (seg[2] === "overview") return send(res, 200, { project: proj.name, path: proj.path, docker: scenario.docker ? { available: true } : { available: false, error: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock" }, worktrees: wts.map(listItem), generated_at: now() });
   if (seg[2] === "branches") {
     const out = wts.filter((w) => w.branch).map((w) => ({ name: w.branch, worktree: w.path }));
     out.push({ name: "develop" }, { name: "release-2" }, { name: "origin/release-3", remote: true });
@@ -333,7 +347,7 @@ async function api(req, res, url) {
   const w = findWt(proj, seg[3]);
   if (!w) return err(res, 404, "worktree_not_found", `worktree ${seg[3]} does not exist`);
   const sub = seg[4];
-  if (!sub && m === "GET") return send(res, 200, { ...listItem(w), containers: containersOf(w), settings: w.settings });
+  if (!sub && m === "GET") return send(res, 200, { ...listItem(w), containers: containersOf(w), settings: w.settings, expected_services: SERVICES.map((x) => x.name) });
   if (sub === "services") return send(res, 200, { env_file: w.env_file, services: SERVICES.map((s) => (s.name === "web" && w.rt.risky ? { ...s, mounts: [...s.mounts, { type: "bind", source: "/var/run/docker.sock", target: "/var/run/docker.sock" }, { type: "bind", source: "../shared-data", target: "/data", outside_workspace: true }] } : s)) });
   if (sub === "ports") {
     const auto = q.get("auto_ports") === "1";

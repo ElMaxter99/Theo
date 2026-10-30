@@ -91,9 +91,9 @@ function BrowseDialog({ start, onClose, onPick }: { start: string; onClose: () =
             {res.data.entries.map((e) => (
               <li key={e.path}>
                 <button type="button" class="btn quiet sm" aria-label={t.addProject.browseOpen(e.name)} onClick={() => setDir(e.path)}>
-                  <Icon name={e.git ? "git" : "folder"} /> {e.name}
+                  <Icon name={e.is_repo ? "git" : "folder"} /> {e.name}
                 </button>
-                {e.git ? <span class="tag">{t.addProject.browseRepo}</span> : null}
+                {e.is_repo ? <span class="tag">{t.addProject.browseRepo}</span> : null}
               </li>
             ))}
           </ul>

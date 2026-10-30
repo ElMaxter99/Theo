@@ -1,7 +1,7 @@
 // "New branch + instance" wizard (view-phase 2.4): Branch -> Location and environment -> Ports -> Summary.
 import { useEffect, useRef, useState } from "preact/hooks";
 import { api, ApiError, projectPath, qs, wtPath } from "../api/client.ts";
-import type { AddedWorktree, Branch, Overview, PortPlan, Worktree } from "../api/types.ts";
+import type { AddedWorktree, Branch, Overview, PortPlan, Project, Worktree } from "../api/types.ts";
 import { Banner, Crumbs, ErrorBanner, Field, Loading, PageHead, describedBy } from "../components/ui.tsx";
 import { Icon } from "../components/Icon.tsx";
 import { useResource } from "../lib/hooks.ts";
@@ -32,6 +32,8 @@ export function Wizard({ project }: { project: string }) {
 
   const branches = useResource<Branch[]>(() => api.get<Branch[]>(`${projectPath(project)}/branches`), [project]);
   const overview = useResource<Overview>(() => api.get<Overview>(`${projectPath(project)}/overview`), [project]);
+  const projects = useResource<Project[]>(() => api.get<Project[]>("/projects"), []);
+  const projInfo = projects.data?.find((p) => p.name === project);
   const mainWt: Worktree | undefined = overview.data?.worktrees.find((w) => w.main) ?? overview.data?.worktrees[0];
   const plan = useResource<PortPlan | null>(
     (signal) => (step === 3 && mainWt ? api.get<PortPlan>(`${wtPath(project, mainWt.id)}/ports${qs({ auto_ports: true })}`, { signal }) : Promise.resolve(null)),
@@ -45,7 +47,7 @@ export function Wizard({ project }: { project: string }) {
   const list = branches.data ?? [];
   const chosen = mode === "new" ? newName.trim() : branch;
   const clashes = clashesForNewInstance(plan.data ?? undefined);
-  const proposal = overview.data?.project.worktree_dir_effective ? `${overview.data.project.worktree_dir_effective}/${folderForBranch(chosen || "branch")}` : "";
+  const proposal = projInfo?.worktree_dir_effective ? `${projInfo.worktree_dir_effective}/${folderForBranch(chosen || "branch")}` : "";
 
   const validate1 = (): string => {
     if (mode === "existing") {
@@ -172,7 +174,7 @@ export function Wizard({ project }: { project: string }) {
             <input id="wz-folder" class="input mono" value={folder} placeholder={proposal} autocomplete="off" spellcheck={false} onInput={(e) => setFolder((e.currentTarget as HTMLInputElement).value)} {...describedBy("wz-folder", t.wizard.folderHint(proposal))} />
           </Field>
           <h3>{t.wizard.envTitle}</h3>
-          <p>{overview.data?.project.env_file ? t.wizard.envProject(overview.data.project.env_file) : t.wizard.envMain}</p>
+          <p>{projInfo?.env_file ? t.wizard.envProject(projInfo.env_file) : t.wizard.envMain}</p>
           <p class="hint">{t.wizard.envNote}</p>
         </div>
       ) : null}

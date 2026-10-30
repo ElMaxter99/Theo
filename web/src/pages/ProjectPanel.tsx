@@ -7,6 +7,7 @@ import { RemoveFlow } from "../components/RemoveFlow.tsx";
 import { useResource } from "../lib/hooks.ts";
 import { href } from "../lib/router.ts";
 import { announce } from "../lib/live.ts";
+import { conflictsOf, urlsOf } from "../lib/overview.ts";
 import { containerCounts, isActiveOp, worktreeStatus } from "../lib/status.ts";
 import { rememberWorktrees, startOperation, useOps } from "../ops/store.ts";
 import type { LifecycleKind } from "../ops/store.ts";
@@ -57,13 +58,12 @@ export function ProjectPanel({ project, onRefreshMeta }: { project: string; onRe
     }
   };
 
-  const proj = res.data?.project;
   return (
     <>
       <Crumbs items={[{ label: t.projects.title, href: href.projects() }, { label: project }]} />
       <PageHead
         title={project}
-        sub={proj ? <span class="mono">{proj.path}</span> : undefined}
+        sub={res.data ? <span class="mono">{res.data.path}</span> : undefined}
         actions={
           <>
             <button type="button" class="btn" onClick={() => { res.reload(); onRefreshMeta(); }}><Icon name="restart" /> {t.panel.refresh}</button>
@@ -71,7 +71,7 @@ export function ProjectPanel({ project, onRefreshMeta }: { project: string; onRe
           </>
         }
       />
-      {res.data?.docker_error ? <Banner tone="warn" title={t.banner.dockerTitle} role="status"><p>{res.data.docker_error}</p><p>{t.panel.unknownStateNote}</p></Banner> : null}
+      {res.data && !res.data.docker.available ? <Banner tone="warn" title={t.banner.dockerTitle} role="status"><p>{res.data.docker.error ?? t.banner.dockerBody}</p><p>{t.panel.unknownStateNote}</p></Banner> : null}
       <ErrorBanner error={actionError} />
       {res.loading && !res.data ? <Loading /> : null}
       {res.data ? (
@@ -94,7 +94,7 @@ export function ProjectPanel({ project, onRefreshMeta }: { project: string; onRe
                   </tr>
                 </thead>
                 <tbody>
-                  {shown.map((w) => <Row key={w.id} project={project} w={w} act={act} onRemove={() => setRemoving(w)} dockerDown={!!res.data?.docker_error} />)}
+                  {shown.map((w) => <Row key={w.id} project={project} w={w} act={act} onRemove={() => setRemoving(w)} dockerDown={res.data?.docker.available === false} />)}
                 </tbody>
               </table>
             </div>
@@ -116,6 +116,8 @@ function Row({ project, w, act, onRemove, dockerDown }: { project: string; w: Wo
   const view = worktreeStatus(w, busyKind);
   const st = w.state;
   const lock = busy || dockerDown;
+  const urls = urlsOf(w);
+  const conflicts = conflictsOf(w);
   return (
     <tr aria-busy={busy || undefined}>
       <th scope="row">
@@ -133,12 +135,12 @@ function Row({ project, w, act, onRemove, dockerDown }: { project: string; w: Wo
       </td>
       <td class="nowrap">{counts ? t.panel.servicesCount(counts.running, counts.total) : t.panel.servicesNone}</td>
       <td class="url-list">
-        {w.conflicts && w.conflicts.length > 0 ? (
-          <ul class="plain">{w.conflicts.map((c, i) => <li key={i}><span class="badge error"><Icon name="portbusy" /> <span>{t.panel.portBusy(c.port)}</span></span> <span class="small">{c.service}</span></li>)}</ul>
+        {conflicts.length > 0 ? (
+          <ul class="plain">{conflicts.map((c, i) => <li key={i}><span class="badge error"><Icon name="portbusy" /> <span>{t.panel.portBusy(c.port)}</span></span> <span class="small">{c.service}</span></li>)}</ul>
         ) : null}
-        {w.urls && w.urls.length > 0 ? (
-          <ul class="plain">{w.urls.map((u, i) => <li key={i}><ExternalLink href={u.url} label={u.service}>{u.url.replace(/^https?:\/\//, "")}</ExternalLink> <span class="small muted">{u.service}</span></li>)}</ul>
-        ) : (!w.conflicts || w.conflicts.length === 0) ? <span class="muted">{t.panel.noUrls}</span> : null}
+        {urls.length > 0 ? (
+          <ul class="plain">{urls.map((u, i) => <li key={i}><ExternalLink href={u.url} label={u.service}>{u.url.replace(/^https?:\/\//, "")}</ExternalLink> <span class="small muted">{u.service}</span></li>)}</ul>
+        ) : conflicts.length === 0 ? <span class="muted">{t.panel.noUrls}</span> : null}
       </td>
       <td class="actions">
         <div class="row">

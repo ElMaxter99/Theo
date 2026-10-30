@@ -61,6 +61,11 @@ export function useLogStream(opts: UseLogStreamOptions) {
           const n = (data as { dropped?: number } | undefined)?.dropped;
           store.push({ text: n ? t.logs.gap(n) : t.logs.gapUnknown, gap: true });
           dirty.current = true;
+        } else if (ev.event === "end" || ev.event === "result") {
+          // The server finished this stream: stop here instead of reconnecting (a reconnect would replay the tail).
+          onOther.current?.(ev, data);
+          stream.close();
+          setStatus("ended");
         } else onOther.current?.(ev, data);
       },
       onState: (s: StreamState, detail) => {

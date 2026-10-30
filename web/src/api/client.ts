@@ -50,7 +50,7 @@ export function uuid(): string {
 function pickCsrf(body: unknown): string {
   if (body && typeof body === "object") {
     const b = body as Record<string, unknown>;
-    for (const k of ["csrf", "csrf_token", "csrfToken", "token"]) if (typeof b[k] === "string") return b[k] as string;
+    for (const k of ["csrf_token", "csrf"]) if (typeof b[k] === "string") return b[k] as string;
   }
   return "";
 }

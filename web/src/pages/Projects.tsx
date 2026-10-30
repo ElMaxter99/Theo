@@ -52,7 +52,7 @@ function ProjectCard({ project, onRemove }: { project: Project; onRemove: () => 
   useEffect(() => { if (ov.data) rememberWorktrees(ov.data.worktrees); }, [ov.data]);
   const wts = ov.data?.worktrees ?? [];
   const running = wts.filter((w) => w.state === "running").length;
-  const unknown = ov.data ? ov.data.docker_error !== undefined || wts.some((w) => w.state === "unknown") : false;
+  const unknown = ov.data ? !ov.data.docker.available || wts.some((w) => w.state === "unknown") : false;
   return (
     <li class="card">
       <h2><a href={href.project(project.name)}>{project.name}</a></h2>

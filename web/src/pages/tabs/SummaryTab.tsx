@@ -4,6 +4,7 @@ import { Banner, ErrorBanner, Loading } from "../../components/ui.tsx";
 import { useAction, useResource } from "../../lib/hooks.ts";
 import { announce } from "../../lib/live.ts";
 import { containerCounts } from "../../lib/status.ts";
+import { shortSha } from "../../lib/overview.ts";
 import { t } from "../../strings.ts";
 
 export interface Warning { text: string }
@@ -37,7 +38,7 @@ export function SummaryTab({ project, w }: { project: string; w: WorktreeDetail 
     <div class="stack">
       <dl class="facts">
         <dt>{t.summary.branch}</dt><dd>{w.branch ?? "—"}{w.detached ? " (detached)" : ""}</dd>
-        <dt>{t.summary.commit}</dt><dd class="mono">{w.head ?? "—"}</dd>
+        <dt>{t.summary.commit}</dt><dd class="mono">{shortSha(w.head) || "—"}</dd>
         <dt>{t.summary.path}</dt><dd class="mono">{w.path}</dd>
         <dt>{t.summary.compose}</dt><dd class="mono">{w.compose_project ?? "—"}</dd>
         <dt>{t.summary.envFile}</dt><dd>{t.summary.envSource[src] ?? src}{w.env_file?.path ? <> — <span class="mono">{w.env_file.path}</span></> : null}</dd>
@@ -47,8 +48,9 @@ export function SummaryTab({ project, w }: { project: string; w: WorktreeDetail 
       <section aria-labelledby="sum-warn">
         <h2 id="sum-warn">{t.summary.warnings}</h2>
         {svc.loading && !svc.data ? <Loading /> : null}
-        {svc.data && warnings.length === 0 ? <p class="muted">{t.summary.noWarnings}</p> : null}
-        {warnings.map((x, i) => <Banner key={i} tone="warn">{<p>{x}</p>}</Banner>)}
+        {svc.data && warnings.length === 0 && (w.warnings ?? []).length === 0 ? <p class="muted">{t.summary.noWarnings}</p> : null}
+        {warnings.map((x, i) => <Banner key={i} tone="warn"><p>{x}</p></Banner>)}
+        {(w.warnings ?? []).map((x, i) => <Banner key={"w" + i} tone="warn"><p>{x.message}</p>{x.fix ? <p>{x.fix}</p> : null}</Banner>)}
       </section>
 
       <section aria-labelledby="sum-set">
