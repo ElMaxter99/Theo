@@ -187,7 +187,7 @@ func statusSettings(wt engine.WorktreeStatus) string {
 		parts = append(parts, "container names neutralized")
 	}
 	if len(s.Profiles) > 0 {
-		parts = append(parts, "profiles: "+strings.Join(s.Profiles, ","))
+		parts = append(parts, "declares profiles: "+strings.Join(s.Profiles, ","))
 	}
 	if len(parts) == 0 {
 		return "-"
