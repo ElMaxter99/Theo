@@ -8,7 +8,6 @@ import { ConfirmDialog } from "../components/Dialog.tsx";
 import { Icon } from "../components/Icon.tsx";
 import { findingId, groupFindings, refreshHealth, useHealth } from "../lib/health.ts";
 import { announce } from "../lib/live.ts";
-import { href } from "../lib/router.ts";
 import { t } from "../strings.ts";
 import { setTitle } from "./Router.tsx";
 
@@ -137,7 +136,6 @@ export function Health() {
         </div>
       ) : null}
       <ErrorBanner error={forgetError} />
-      <p class="small muted"><a href={href.settings()}>{t.nav.settings}</a></p>
       {confirming ? (
         <ConfirmDialog
           title={t.reconcile.forgetTitle(selected.length)}

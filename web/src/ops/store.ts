@@ -7,6 +7,7 @@ import type { Operation, Worktree } from "../api/types.ts";
 import { isActiveOp } from "../lib/status.ts";
 import { announce } from "../lib/live.ts";
 import { t } from "../strings.ts";
+import { normKind } from "./kind.ts";
 
 let ops: Operation[] = [];
 const subs = new Set<() => void>();
@@ -22,9 +23,6 @@ export function rememberWorktrees(list: Pick<Worktree, "id" | "branch" | "path" 
   for (const w of list) names.set(w.id, w.branch || w.path.split(/[\\/]/).filter(Boolean).pop() || w.id);
 }
 export const nameOf = (id: string | undefined): string => (id && names.get(id)) || id || "";
-
-/** The server may spell a kind "shared-up", "shared_up" or "shared.up". */
-export const normKind = (kind: string): string => kind.replace(/[_.]/g, "-");
 
 export function kindLabel(kind: string): string {
   return t.ops.kind[normKind(kind)] ?? kind;

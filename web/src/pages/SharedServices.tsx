@@ -13,6 +13,7 @@ import { isActiveOp } from "../lib/status.ts";
 import type { StatusView } from "../lib/status.ts";
 import { basename } from "../lib/format.ts";
 import { startSharedOperation, useOps } from "../ops/store.ts";
+import { normKind } from "../ops/kind.ts";
 import { t } from "../strings.ts";
 import { setTitle } from "./Router.tsx";
 
@@ -49,8 +50,8 @@ export function SharedServices({ project }: { project: string }) {
   useEffect(() => setTitle([t.shared.title, project]), [project]);
 
   // The provider's own operations (start / stop) refresh the page when they end.
-  const activeShared = ops.filter((o) => o.project === project && /^shared/.test(o.kind.replace(/[_.]/g, "-")) && isActiveOp(o));
-  const activeKey = ops.filter((o) => o.project === project && /^shared/.test(o.kind.replace(/[_.]/g, "-"))).map((o) => o.id + o.state).join(",");
+  const activeShared = ops.filter((o) => o.project === project && /^shared/.test(normKind(o.kind)) && isActiveOp(o));
+  const activeKey = ops.filter((o) => o.project === project && /^shared/.test(normKind(o.kind))).map((o) => o.id + o.state).join(",");
   useEffect(() => { if (res.data !== undefined) res.reload(); /* eslint-disable-next-line */ }, [activeKey]);
 
   const crumbs = <Crumbs items={[{ label: t.projects.title, href: href.projects() }, { label: project, href: href.project(project) }, { label: t.shared.crumb }]} />;
@@ -103,7 +104,7 @@ export function SharedServices({ project }: { project: string }) {
             <Banner tone="warn" title={t.shared.warnings}><ul>{st.warnings!.map((w, i) => <li key={i}>{w}</li>)}</ul></Banner>
           ) : null}
           <Provider
-            project={project} st={st} busy={activeShared.length > 0 || startStop.busy}
+            project={project} st={st} busy={activeShared.length > 0}
             onStart={() => void startStop.run("up")} onStop={() => void startStop.run("down")}
             onPurge={() => void purge.run()} onRemove={(service) => setDialog({ kind: "remove", service })}
           />

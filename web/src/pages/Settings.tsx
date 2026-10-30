@@ -7,6 +7,7 @@ import { Badge, ErrorBanner, Loading, PageHead } from "../components/ui.tsx";
 import { Icon } from "../components/Icon.tsx";
 import { useResource } from "../lib/hooks.ts";
 import { announce } from "../lib/live.ts";
+import { reportText } from "../lib/report.ts";
 import { readDensity, readMotion, saveDensity, saveMotion } from "../lib/prefs.ts";
 import type { Density, Motion } from "../lib/prefs.ts";
 import { readTheme, saveTheme } from "../lib/theme.ts";
@@ -24,20 +25,6 @@ export function checkStatusView(status: string): StatusView {
     case "info": return { label, icon: "info", tone: "info" };
     default: return { label, icon: "unknown", tone: "neutral" };
   }
-}
-
-/** The text of "Copy information for a report": versions and check results. No paths, no variables, no secrets. */
-export function reportText(meta: Meta | undefined, doctor: DoctorReport | undefined): string {
-  const lines = [
-    `Theo ${meta?.theo_version ?? "unknown"} (API ${meta?.api_version ?? "unknown"})`,
-    `Platform: ${doctor?.platform ?? meta?.os ?? "unknown"}${meta?.arch ? "/" + meta.arch : ""}`,
-    `Docker: ${meta?.docker.available ? meta.docker.version ?? "available" : "not available"}`,
-    `Git: ${meta?.git.available ? meta.git.version ?? "available" : "not available"}`,
-    "",
-    "Checks:",
-    ...(doctor?.checks ?? []).map((c: DoctorCheck) => `- [${c.status}] ${c.name}${c.detail ? ": " + c.detail : ""}`),
-  ];
-  return lines.join("\n");
 }
 
 export function Settings({ meta }: { meta: Meta | undefined }) {

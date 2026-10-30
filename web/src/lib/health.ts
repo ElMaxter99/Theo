@@ -3,7 +3,9 @@
 import { useEffect, useState } from "preact/hooks";
 import { api, ApiError } from "../api/client.ts";
 import { events } from "../api/events.ts";
-import type { Finding, ReconcileReport } from "../api/types.ts";
+import type { ReconcileReport } from "../api/types.ts";
+
+export { findingId, groupFindings } from "./findings.ts";
 
 export interface HealthState {
   report?: ReconcileReport;
@@ -22,11 +24,6 @@ function set(next: HealthState) {
 }
 
 export const getHealth = (): HealthState => state;
-
-/** Id used to send a finding back to the server: the server's own `id` when it sends one, else a stable derived key. */
-export function findingId(f: Finding): string {
-  return f.id ?? [f.kind, f.project ?? "", f.subject, f.worktree ?? ""].join("|");
-}
 
 export function refreshHealth(): Promise<void> {
   if (inflight) return inflight;
@@ -59,15 +56,3 @@ export function useHealth(): HealthState {
   }, []);
   return state;
 }
-
-/** Findings grouped by kind, in the order the server sent them. */
-export function groupFindings(list: Finding[]): { kind: string; items: Finding[] }[] {
-  const out: { kind: string; items: Finding[] }[] = [];
-  for (const f of list) {
-    let g = out.find((x) => x.kind === f.kind);
-    if (!g) out.push((g = { kind: f.kind, items: [] }));
-    g.items.push(f);
-  }
-  return out;
-}
-
