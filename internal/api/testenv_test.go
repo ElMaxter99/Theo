@@ -30,6 +30,7 @@ type fakeCompose struct {
 	volumes    map[string][]compose.DockerVolume
 	users      map[string][]string
 	psErr      error
+	files      map[string]string // config file of a stack, by Compose project
 	// upHook runs inside Up; it can block until ctx is cancelled.
 	upHook func(ctx context.Context, t compose.Target, stdout, stderr io.Writer) error
 	// logsHook runs inside Logs.
@@ -101,7 +102,7 @@ func (f *fakeCompose) Stacks(context.Context) ([]compose.Stack, error) {
 	var out []compose.Stack
 	for name, cs := range f.containers {
 		if len(cs) > 0 {
-			out = append(out, compose.Stack{Name: name, Status: "running(1)", ConfigFiles: ""})
+			out = append(out, compose.Stack{Name: name, Status: "running(1)", ConfigFiles: f.files[name]})
 		}
 	}
 	return out, f.psErr

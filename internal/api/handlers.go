@@ -313,6 +313,7 @@ func (s *Server) handleWorktree(w http.ResponseWriter, r *http.Request, _ *sessi
 		Settings   *SettingsView       `json:"settings,omitempty"`
 		Containers []compose.Container `json:"containers"`
 		Services   []string            `json:"expected_services,omitempty"`
+		Counts     ContainerCount      `json:"container_counts"`
 	}{WorktreeView: v, Containers: []compose.Container{}}
 	if !wt.Bare && !wt.Prunable {
 		s.fillInstance(r.Context(), project, wt, &out.WorktreeView, func(error) {})
@@ -324,6 +325,7 @@ func (s *Server) handleWorktree(w http.ResponseWriter, r *http.Request, _ *sessi
 			out.Services = s.eng.ExpectedServices(inst)
 		}
 	}
+	out.Counts = out.WorktreeView.Containers
 	out.Busy = s.busyRef(project, out.ID)
 	return writeJSON(w, http.StatusOK, out)
 }
