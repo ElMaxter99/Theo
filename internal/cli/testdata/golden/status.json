@@ -1,0 +1,104 @@
+{
+  "projects": [
+    {
+      "name": "ubgold",
+      "path": "<TMP>/app",
+      "warnings": [],
+      "worktrees": [
+        {
+          "branch": "main",
+          "dirty": true,
+          "env_file": {
+            "source": "none"
+          },
+          "head": "<SHA>",
+          "instance": {
+            "compose_project": "ubgold",
+            "counts": {
+              "completed": 0,
+              "not_created": 1,
+              "running": 0,
+              "stopped": 0,
+              "total": 1
+            },
+            "instance_state": "absent",
+            "ports": [
+              {
+                "container_port": 8080,
+                "protocol": "tcp",
+                "service": "web",
+                "status": "random"
+              }
+            ],
+            "services": [
+              {
+                "containers": 0,
+                "name": "web",
+                "running": 0,
+                "state": "not created"
+              }
+            ],
+            "state": "not created"
+          },
+          "kind": "main",
+          "path": "<TMP>/app",
+          "settings": {
+            "env_vars": 0,
+            "neutralize_container_names": false,
+            "profiles": [],
+            "secret_env_vars": 0
+          },
+          "warnings": []
+        },
+        {
+          "branch": "feature/x",
+          "dirty": true,
+          "env_file": {
+            "source": "none"
+          },
+          "head": "<SHA>",
+          "instance": {
+            "compose_project": "ubgold-app-feature",
+            "counts": {
+              "completed": 0,
+              "not_created": 0,
+              "running": 1,
+              "stopped": 0,
+              "total": 1
+            },
+            "instance_state": "running",
+            "ports": [
+              {
+                "container_port": 8080,
+                "host_port": "<PORT>",
+                "protocol": "tcp",
+                "service": "web",
+                "status": "random",
+                "url": "http://localhost:<PORT>"
+              }
+            ],
+            "services": [
+              {
+                "containers": 1,
+                "name": "web",
+                "running": 1,
+                "state": "running"
+              }
+            ],
+            "state": "running"
+          },
+          "kind": "worktree",
+          "path": "<TMP>/app-feature",
+          "settings": {
+            "env_vars": 2,
+            "neutralize_container_names": false,
+            "profiles": [],
+            "secret_env_vars": 1
+          },
+          "warnings": []
+        }
+      ]
+    }
+  ],
+  "warnings": []
+}

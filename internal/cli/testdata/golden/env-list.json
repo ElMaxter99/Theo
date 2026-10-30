@@ -1,0 +1,9 @@
+{
+  "UB_PLAIN": {
+    "value": "1"
+  },
+  "UB_SECRET": {
+    "secret": true,
+    "value": "********"
+  }
+}

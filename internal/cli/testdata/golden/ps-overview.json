@@ -1,0 +1,26 @@
+[
+  {
+    "kind": "main",
+    "stacks": [],
+    "worktree": {
+      "branch": "main",
+      "head": "<SHA>",
+      "path": "<TMP>/app"
+    }
+  },
+  {
+    "kind": "worktree",
+    "stacks": [
+      {
+        "ConfigFiles": "<TMP>/app-feature/compose.yaml,<HOME>/overlays/ubgold-app-feature-<HASH>.yaml",
+        "Name": "ubgold-app-feature",
+        "Status": "running(1)"
+      }
+    ],
+    "worktree": {
+      "branch": "feature/x",
+      "head": "<SHA>",
+      "path": "<TMP>/app-feature"
+    }
+  }
+]

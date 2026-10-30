@@ -414,6 +414,33 @@ func TestSecondUpOnSameInstanceIsBusy(t *testing.T) {
 	e.waitOp(other.ID)
 }
 
+func TestGlobalLimitQueuesOperations(t *testing.T) {
+	e := newEnv(t, func(c *api.Config) { c.MaxOperations = 1 })
+	release := make(chan struct{})
+	e.fc.upHook = func(ctx context.Context, _ compose.Target, _, _ io.Writer) error {
+		select {
+		case <-release:
+		case <-ctx.Done():
+		}
+		return nil
+	}
+	var a, b opState
+	e.c.call("POST", "/api/v1/projects/ubapp/worktrees/"+e.wtID(e.main)+"/up", nil, &a)
+	time.Sleep(100 * time.Millisecond)
+	e.c.call("POST", "/api/v1/projects/ubapp/worktrees/"+e.wtID(e.linked)+"/up", nil, &b)
+	time.Sleep(200 * time.Millisecond)
+	var got opState
+	e.c.call("GET", "/api/v1/operations/"+b.ID, nil, &got)
+	if got.State != "queued" {
+		t.Errorf("second operation is %q while the limit is reached, want queued", got.State)
+	}
+	close(release)
+	if f := e.waitOp(b.ID); f.State != "succeeded" {
+		t.Errorf("queued operation ended %+v", f)
+	}
+	e.waitOp(a.ID)
+}
+
 func TestIdempotencyKeyReturnsTheSameOperation(t *testing.T) {
 	e := newEnv(t)
 	id := e.wtID(e.main)

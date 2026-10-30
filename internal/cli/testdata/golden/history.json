@@ -1,0 +1,11 @@
+[
+  {
+    "compose_project": "ubgold-app-feature",
+    "operation": "up",
+    "project": "ubgold",
+    "result": "ok",
+    "time": "<TIME>",
+    "user": "ubuser",
+    "workspace": "<TMP>/app-feature"
+  }
+]
