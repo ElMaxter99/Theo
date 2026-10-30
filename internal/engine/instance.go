@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -111,6 +112,10 @@ func (e *Engine) resolveInstance(ctx context.Context, project, worktree string, 
 	if err != nil {
 		if len(sel.files) > 0 {
 			err = fmt.Errorf("%w\n\n(compose files, from %s: %s)", err, sel.source, strings.Join(sel.files, ", "))
+		}
+		if rel := missingWorktreeEnvFile(err.Error(), wt.Path); rel != "" && !samePath(wt.Path, list[0].Path) && fileExists(filepath.Join(list[0].Path, rel)) {
+			return nil, nil, fmt.Errorf("%w\n\nA service declares `env_file: %s`, which Git does not track, so this worktree does not have it (the main worktree does). "+
+				"Copy it into the worktree, or let Theo copy it from now on: `theo project set %s --copy-on-add %s`, then add the worktree with `--copy`.", err, rel, p.Name, rel)
 		}
 		if env.Source == EnvNone {
 			return nil, nil, fmt.Errorf("%w\n\nNo .env found in this worktree or in the main worktree. Set one for the project with `theo project set %s --env-file <path>`, or pass --env-file.", err, p.Name)
@@ -288,3 +293,20 @@ func (e *Engine) Overview(ctx context.Context, project string) ([]WorktreeStacks
 // Neutralized reports whether the instance removes fixed container names,
 // after ApplyInstance.
 func (i *Instance) Neutralized() bool { return i.neutralized }
+
+// missingWorktreeEnvFile returns the path, relative to the worktree, of the
+// file a Compose error says is missing ("env file <path> not found") when
+// that file is supposed to live inside the worktree; "" otherwise.
+func missingWorktreeEnvFile(msg, worktree string) string {
+	m := missingEnvFileRe.FindStringSubmatch(msg)
+	if m == nil {
+		return ""
+	}
+	rel, err := filepath.Rel(worktree, filepath.Clean(m[1]))
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return ""
+	}
+	return filepath.ToSlash(rel)
+}
+
+var missingEnvFileRe = regexp.MustCompile(`env file (\S+) not found`)

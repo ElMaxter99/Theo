@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -290,4 +291,23 @@ func (dockerDown) Stacks(context.Context) ([]compose.Stack, error) {
 
 func (dockerDown) PS(context.Context, compose.Target) ([]compose.Container, error) {
 	return nil, context.DeadlineExceeded
+}
+
+func TestMissingWorktreeEnvFile(t *testing.T) {
+	wt := filepath.Join(string(filepath.Separator), "w", "feature")
+	msg := func(p string) string {
+		return "docker compose config: env file " + p + " not found: stat " + p + ": no such file"
+	}
+	if got := missingWorktreeEnvFile(msg(filepath.Join(wt, ".env")), wt); got != ".env" {
+		t.Errorf("got %q", got)
+	}
+	if got := missingWorktreeEnvFile(msg(filepath.Join(wt, "config", "api.env")), wt); got != "config/api.env" {
+		t.Errorf("got %q", got)
+	}
+	if got := missingWorktreeEnvFile(msg(filepath.Join(string(filepath.Separator), "elsewhere", ".env")), wt); got != "" {
+		t.Errorf("a file outside the worktree is not ours to copy: %q", got)
+	}
+	if got := missingWorktreeEnvFile("some other error", wt); got != "" {
+		t.Errorf("got %q", got)
+	}
 }
