@@ -66,8 +66,9 @@ test("port, volume and operation states map to text and icons", () => {
 
 test("containerCounts accepts counts and container lists", () => {
   assert.deepEqual(containerCounts({ containers: { running: 1, total: 2 } }), { running: 1, total: 2 });
-  assert.deepEqual(containerCounts({ containers: [{ state: "running" }, { state: "exited" }, { state: "running" }] }), { running: 2, total: 3 });
+  assert.deepEqual(containerCounts({ containers: [{ State: "running" }, { State: "exited" }, { State: "running" }] }), { running: 2, total: 3 });
   assert.equal(containerCounts({}), null);
+  assert.deepEqual(containerCounts({ containers: [], container_counts: { running: 1, total: 4 } }), { running: 1, total: 4 }, "detail counts win");
 });
 
 test("port clashes for a new instance come from fixed host ports that are taken", () => {

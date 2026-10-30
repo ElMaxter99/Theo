@@ -145,9 +145,11 @@ function listItem(w) {
   };
 }
 function containersOf(w) {
+  // Same shape as the real server: raw `docker compose ps` records (capitalised keys).
   return Object.entries(w.rt.services).map(([service, state]) => ({
-    name: `${w.compose_project}-${service}-1`, service, state: state === "unhealthy" ? "running" : state, health: state === "unhealthy" ? "unhealthy" : state === "running" ? "healthy" : "", status: state === "running" ? "Up 2 hours" : "Exited (" + (state === "exited" ? 1 : 0) + ") 3 hours ago",
-    exit_code: state === "exited" ? 1 : 0, publishers: SERVICES.find((s) => s.name === service).ports.map((p) => ({ target_port: p.target, published_port: w.rt.hostPorts[service], protocol: "tcp", url: service === "web" ? `http://127.0.0.1:${w.rt.hostPorts[service]}` : undefined })),
+    Name: `${w.compose_project}-${service}-1`, Service: service, State: state === "unhealthy" ? "running" : state, Health: state === "unhealthy" ? "unhealthy" : state === "running" ? "healthy" : "",
+    Status: state === "running" ? "Up 2 hours" : "Exited (" + (state === "exited" ? 1 : 0) + ") 3 hours ago", ExitCode: state === "exited" ? 1 : 0,
+    Publishers: SERVICES.find((x) => x.name === service).ports.map((p) => ({ URL: "0.0.0.0", TargetPort: p.target, PublishedPort: w.rt.hostPorts[service], Protocol: "tcp" })),
   }));
 }
 
@@ -236,7 +238,7 @@ async function runOp(o, project, w, body) {
   } catch (e) {
     const cancelled = e.message === "cancelled";
     w.history.unshift({ time: now(), user: "ana", operation: o.kind, result: "error", error: cancelled ? "cancelled" : e.message });
-    opState(o, cancelled ? "cancelled" : "failed", { finished_at: now(), error: cancelled ? undefined : { code: "engine_error", message: e.message }, result: { ok: false } });
+    opState(o, cancelled ? "cancelled" : "failed", { finished_at: now(), error: cancelled ? undefined : { code: "port_conflict", message: e.message, original: "Error response from daemon: " + e.message }, result: { ok: false } });
   }
   for (const r of o.subs) { ev(r, "result", { ok: o.state === "succeeded", summary: o.state, error: o.error?.message }, o.lines.length + 1 + o.dropped); r.end(); }
   o.subs.clear();
@@ -347,7 +349,7 @@ async function api(req, res, url) {
   const w = findWt(proj, seg[3]);
   if (!w) return err(res, 404, "worktree_not_found", `worktree ${seg[3]} does not exist`);
   const sub = seg[4];
-  if (!sub && m === "GET") return send(res, 200, { ...listItem(w), containers: containersOf(w), settings: w.settings, expected_services: SERVICES.map((x) => x.name) });
+  if (!sub && m === "GET") { const li = listItem(w); return send(res, 200, { ...li, containers: containersOf(w), container_counts: li.containers, settings: w.settings, expected_services: SERVICES.map((x) => x.name) }); }
   if (sub === "services") return send(res, 200, { env_file: w.env_file, services: SERVICES.map((s) => (s.name === "web" && w.rt.risky ? { ...s, mounts: [...s.mounts, { type: "bind", source: "/var/run/docker.sock", target: "/var/run/docker.sock" }, { type: "bind", source: "../shared-data", target: "/data", outside_workspace: true }] } : s)) });
   if (sub === "ports") {
     const auto = q.get("auto_ports") === "1";
@@ -366,7 +368,7 @@ async function api(req, res, url) {
   }
   if (sub === "config") return send(res, 200, `name: ${w.compose_project}\nservices:\n  web:\n    image: shop/web:dev\n    environment:\n      DATABASE_URL: "••••••"\n`);
   if (sub === "settings") { if (m === "PATCH") { Object.assign(w.settings, await readJson(req)); } return send(res, 200, w.settings); }
-  if (sub === "history") return send(res, 200, w.history.slice(0, Number(q.get("limit") || 50)).map((h) => ({ project: proj.name, workspace: w.path, compose_project: w.compose_project, ...h })));
+  if (sub === "history") return send(res, 200, w.history.slice(0, Number(q.get("limit") || 50)).reverse().map((h) => ({ project: proj.name, workspace: w.path, compose_project: w.compose_project, ...h })));
   if (sub === "volumes" && !seg[5]) {
     if (!SERVICES.some((s) => s.name === "db")) return send(res, 200, []);
     const st = derive(w);
@@ -396,8 +398,8 @@ async function api(req, res, url) {
   }
   if (sub === "env") {
     const name = seg[5];
-    if (!name && m === "GET") return send(res, 200, Object.entries(w.env).map(([n, v]) => ({ name: n, value: v.secret ? "••••••" : v.value, secret: !!v.secret, services: v.services ?? [] })));
-    if (name && seg[6] === "reveal" && m === "POST") { const v = w.env[name]; if (!v) return err(res, 404, "invalid_request", "no such variable"); return send(res, 200, { value: v.value }); }
+    if (!name && m === "GET") return send(res, 200, Object.entries(w.env).map(([n, v]) => ({ name: n, value: v.secret ? "********" : v.value, secret: !!v.secret, services: v.services ?? [] })));
+    if (name && seg[6] === "reveal" && m === "POST") { const v = w.env[name]; if (!v) return err(res, 404, "invalid_request", "no such variable"); return send(res, 200, { name, secret: !!v.secret, value: v.value }); }
     if (name && m === "PUT") { const b = await readJson(req); w.env[name] = { value: b.value, secret: !!b.secret, services: b.services ?? [] }; return send(res, 200, { applies_on: "next_up" }); }
     if (name && m === "DELETE") { delete w.env[name]; return send(res, 200, { applies_on: "next_up" }); }
   }

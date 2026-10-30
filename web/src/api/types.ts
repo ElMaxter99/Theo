@@ -76,7 +76,9 @@ export interface Worktree {
   env_file?: EnvFileInfo;
   state: InstanceState;
   /** List responses carry counts; the detail response carries the containers themselves. */
-  containers?: { running: number; total: number } | Container[];
+  containers?: { running: number; total: number } | RawContainer[];
+  /** Detail responses carry the counts here. */
+  container_counts?: { running: number; total: number };
   ports?: WtPort[];
   warnings?: WtWarning[];
   error?: string;
@@ -104,6 +106,18 @@ export interface Publisher {
   protocol?: string;
 }
 
+/** A container as the detail endpoint returns it: the raw `docker compose ps` record (capitalised keys). */
+export interface RawContainer {
+  Name?: string;
+  Service?: string;
+  State?: string;
+  Health?: string;
+  Status?: string;
+  ExitCode?: number;
+  Publishers?: { URL?: string; TargetPort?: number; PublishedPort?: number; Protocol?: string }[];
+}
+
+/** The same container with the names the interface uses. */
 export interface Container {
   name: string;
   service: string;

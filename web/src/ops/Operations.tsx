@@ -67,6 +67,7 @@ function OpItem({ op, viewing, toggle }: { op: Operation; viewing: boolean; togg
   const name = nameOf(op.worktree);
   const active = isActiveOp(op);
   const err = opErrorText(op);
+  const original = typeof op.error === "object" && op.error ? (op.error as { original?: string }).original : undefined;
   const [cancelling, setCancelling] = useState(false);
   return (
     <li>
@@ -76,6 +77,7 @@ function OpItem({ op, viewing, toggle }: { op: Operation; viewing: boolean; togg
       </div>
       <p class="small muted">{op.project ? `${op.project} · ` : ""}{t.ops.started} {formatTime(op.started_at)}{op.finished_at ? ` · ${t.ops.finished} ${formatTime(op.finished_at)}` : ""}</p>
       {err ? <p class="field-error"><Icon name="error" /> <span>{err}</span></p> : null}
+      {original ? <details><summary>{t.banner.detailsOriginal}</summary><pre class="mono small prewrap">{original}</pre></details> : null}
       {op.state === "failed" || op.state === "cancelled" ? <p class="small muted">{op.kind === "up" || op.kind === "restart" ? t.ops.partialNote : ""}</p> : null}
       <div class="row">
         <button type="button" class="btn sm" aria-expanded={viewing} onClick={toggle}>{viewing ? t.ops.hideOutput : t.ops.output}</button>

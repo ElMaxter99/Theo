@@ -1,7 +1,7 @@
 // Single table that maps every state enum of the API to text + icon shape + tone.
 // A state is never conveyed by colour alone (view-phase.md section 4).
 import { t } from "../strings.ts";
-import type { InstanceState, Worktree, Container, Operation } from "../api/types.ts";
+import type { InstanceState, Worktree, Operation } from "../api/types.ts";
 import type { IconName } from "../components/Icon.tsx";
 
 export type Tone = "ok" | "warn" | "error" | "info" | "neutral";
@@ -13,10 +13,11 @@ export interface StatusView {
   spin?: boolean;
 }
 
-export function containerCounts(w: Pick<Worktree, "containers">): { running: number; total: number } | null {
+export function containerCounts(w: Pick<Worktree, "containers" | "container_counts">): { running: number; total: number } | null {
+  if (w.container_counts) return w.container_counts;
   const c = w.containers;
   if (!c) return null;
-  if (Array.isArray(c)) return { running: c.filter((x: Container) => x.state === "running").length, total: c.length };
+  if (Array.isArray(c)) return { running: c.filter((x) => (x.State ?? "").toLowerCase() === "running").length, total: c.length };
   return c;
 }
 

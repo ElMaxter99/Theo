@@ -3,6 +3,7 @@ import type { Container, Services, WorktreeDetail } from "../../api/types.ts";
 import { Badge, ErrorBanner, Loading } from "../../components/ui.tsx";
 import { Icon } from "../../components/Icon.tsx";
 import { useResource } from "../../lib/hooks.ts";
+import { containersOf } from "../../lib/overview.ts";
 import { t } from "../../strings.ts";
 
 function containerView(c: Container | undefined) {
@@ -15,7 +16,7 @@ function containerView(c: Container | undefined) {
 
 export function ServicesTab({ project, w }: { project: string; w: WorktreeDetail }) {
   const res = useResource<Services>(() => api.get<Services>(`${wtPath(project, w.id)}/services`), [project, w.id], { project, worktree: w.id });
-  const containers = Array.isArray(w.containers) ? w.containers : [];
+  const containers = containersOf(w);
   if (res.loading && !res.data) return <Loading />;
   if (res.error) return <ErrorBanner error={res.error} />;
   const list = res.data?.services ?? [];

@@ -14,7 +14,7 @@ export function HistoryTab({ project, w }: { project: string; w: WorktreeDetail 
   const [count, setCount] = useState(PAGE);
   if (res.loading && !res.data) return <Loading />;
   if (res.error) return <ErrorBanner error={res.error} />;
-  const all = (res.data ?? []).filter((e) => !filter || e.result === filter);
+  const all = [...(res.data ?? [])].reverse().filter((e) => !filter || e.result === filter); // the server sends oldest first
   const rows = all.slice(0, count);
   return (
     <div class="stack">
