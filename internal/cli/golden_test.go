@@ -38,6 +38,18 @@ func normalizeJSON(v any, tmp string, key string) any {
 		}
 		return x
 	case []any:
+		if key == "Publishers" {
+			// Docker lists a port twice (0.0.0.0 and ::) when IPv6 is enabled,
+			// which depends on the machine, so only the IPv4 entry is compared.
+			kept := x[:0]
+			for _, e := range x {
+				if m, ok := e.(map[string]any); ok && m["URL"] == "::" {
+					continue
+				}
+				kept = append(kept, e)
+			}
+			x = kept
+		}
 		for i, e := range x {
 			x[i] = normalizeJSON(e, tmp, key)
 		}
