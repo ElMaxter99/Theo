@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ElMaxter99/Theo/internal/compose"
@@ -99,9 +100,14 @@ func New(store Store, g Git, c Compose) *Engine {
 
 // memPorts keeps port assignments in memory, for engines that are not given
 // a place to persist them.
-type memPorts struct{ state ports.State }
+type memPorts struct {
+	mu    sync.Mutex
+	state ports.State
+}
 
 func (m *memPorts) Load() (ports.State, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	out := ports.State{}
 	for k, v := range m.state {
 		out[k] = v
@@ -109,7 +115,12 @@ func (m *memPorts) Load() (ports.State, error) {
 	return out, nil
 }
 
-func (m *memPorts) Save(s ports.State) error { m.state = s; return nil }
+func (m *memPorts) Save(s ports.State) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.state = s
+	return nil
+}
 
 // Open returns an engine that uses the registry in Theo's default data
 // directory and the real git and docker compose tools.

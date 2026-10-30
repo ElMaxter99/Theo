@@ -407,7 +407,13 @@ func TestContractAPIEqualsCLIJSON(t *testing.T) {
 	// ps -w --json: the containers and the state.
 	cliPS := cliJSON(t, "ps", p, "-w", linked, "--json").(map[string]any)
 	apiD := apiJSON(t, d.c, base).(map[string]any)
-	if !reflect.DeepEqual(cliPS["containers"], apiD["containers"]) {
+	dropStatus := func(v any) any { // "Up 2 seconds" changes with the clock
+		for _, c := range v.([]any) {
+			delete(c.(map[string]any), "Status")
+		}
+		return v
+	}
+	if !reflect.DeepEqual(dropStatus(cliPS["containers"]), dropStatus(apiD["containers"])) {
 		t.Errorf("containers differ:\napi %v\ncli %v", apiD["containers"], cliPS["containers"])
 	}
 	if cliPS["state"] != apiD["state"] || cliPS["state"] != "running" {

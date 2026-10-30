@@ -29,7 +29,10 @@ func TestServePrintLaunchURL(t *testing.T) {
 	pr, pw := io.Pipe()
 	done := make(chan int, 1)
 	var errb bytes.Buffer
-	go func() { done <- Run([]string{"serve", "--print-launch-url", "--idle-timeout", "3s"}, pw, &errb); pw.Close() }()
+	go func() {
+		done <- Run([]string{"serve", "--print-launch-url", "--idle-timeout", "3s"}, pw, &errb)
+		pw.Close()
+	}()
 	line, err := bufio.NewReader(pr).ReadString('\n')
 	if err != nil {
 		t.Fatalf("no launch line: %v (%s)", err, errb.String())
