@@ -583,10 +583,28 @@ func TestPollingDetectsChangesMadeOutsideTheo(t *testing.T) {
 	if st := e.c.call("POST", "/api/v1/events/focus", map[string]bool{"visible": true}, nil); st != 204 {
 		t.Fatal(st)
 	}
-	time.Sleep(300 * time.Millisecond) // first poll records the baseline
 	cfg, _ := e.fc.Config(context.Background(), e.main, nil)
-	e.fc.set(cfg.Name, running("web", cfg.Name))
-	s.until(t, "state.changed", 5*time.Second)
+	// A slow machine may take the baseline poll after a single change, so keep
+	// changing the state from outside until the server notices one.
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		tick := time.NewTicker(300 * time.Millisecond)
+		defer tick.Stop()
+		for up := true; ; up = !up {
+			select {
+			case <-done:
+				return
+			case <-tick.C:
+				if up {
+					e.fc.set(cfg.Name, running("web", cfg.Name))
+				} else {
+					e.fc.set(cfg.Name)
+				}
+			}
+		}
+	}()
+	s.until(t, "state.changed", 10*time.Second)
 }
 
 func TestNoPollingWithoutVisibleTab(t *testing.T) {
