@@ -293,17 +293,18 @@ func (s *SharedInUseError) Error() string {
 	return msg
 }
 
-// SharedDown stops and removes the containers and networks of the shared
-// services; their volumes are kept. While running instances use them it
-// refuses, unless confirm equals the shared Compose project name.
-func (e *Engine) SharedDown(ctx context.Context, project, confirm string, stdout, stderr io.Writer) error {
+// CheckSharedDown is the protection of SharedDown without the stop: it
+// returns a *SharedInUseError listing the running consumers unless confirm is
+// the shared Compose project name. Interfaces that run the stop later (as an
+// operation) call it first, so the refusal comes before anything starts.
+func (e *Engine) CheckSharedDown(ctx context.Context, project, confirm string) (*Instance, error) {
 	inst, _, err := e.sharedInstance(ctx, project)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	consumers, err := e.SharedConsumers(ctx, project)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var active []SharedConsumer
 	for _, c := range consumers {
@@ -312,7 +313,32 @@ func (e *Engine) SharedDown(ctx context.Context, project, confirm string, stdout
 		}
 	}
 	if len(active) > 0 && confirm != inst.Compose {
-		return &SharedInUseError{Project: inst.Project, Action: "stop them", Consumers: active, Confirm: inst.Compose}
+		return nil, &SharedInUseError{Project: inst.Project, Action: "stop them", Consumers: active, Confirm: inst.Compose}
+	}
+	return inst, nil
+}
+
+// SharedRunningError is returned when shared services cannot be removed
+// because their containers still exist. Nothing was changed.
+type SharedRunningError struct {
+	Project    string
+	Containers int
+}
+
+// Code is the stable code of the error, for interfaces that translate it.
+func (s *SharedRunningError) Code() string { return "shared_running" }
+
+func (s *SharedRunningError) Error() string {
+	return fmt.Sprintf("the shared services still have %d container(s); stop them first with `theo shared down %s`", s.Containers, s.Project)
+}
+
+// SharedDown stops and removes the containers and networks of the shared
+// services; their volumes are kept. While running instances use them it
+// refuses, unless confirm equals the shared Compose project name.
+func (e *Engine) SharedDown(ctx context.Context, project, confirm string, stdout, stderr io.Writer) error {
+	inst, err := e.CheckSharedDown(ctx, project, confirm)
+	if err != nil {
+		return err
 	}
 	err = e.compose.Down(ctx, inst.target(), stdout, stderr)
 	e.record(inst, "shared down", err)
@@ -354,7 +380,7 @@ func (e *Engine) SharedRemove(ctx context.Context, project string, services []st
 		return &SharedInUseError{Project: inst.Project, Action: "remove them", Consumers: linked}
 	}
 	if cs, err := e.compose.PS(ctx, inst.target()); err == nil && len(cs) > 0 {
-		return fmt.Errorf("the shared services still have %d container(s); stop them first with `theo shared down %s`", len(cs), project)
+		return &SharedRunningError{Project: project, Containers: len(cs)}
 	}
 
 	var rest []string

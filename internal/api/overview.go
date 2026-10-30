@@ -141,6 +141,12 @@ func (c *overviewCache) put(p string, ov *Overview) {
 	c.mu.Unlock()
 }
 
+func (c *overviewCache) invalidateAll() {
+	c.mu.Lock()
+	c.m = map[string]cached{}
+	c.mu.Unlock()
+}
+
 func (c *overviewCache) invalidate(p string) {
 	c.mu.Lock()
 	delete(c.m, strings.ToLower(p))
@@ -289,7 +295,9 @@ type Meta struct {
 type ToolInfo struct {
 	Available bool   `json:"available"`
 	Version   string `json:"version,omitempty"`
-	Error     string `json:"error,omitempty"`
+	// MinVersion is the oldest version Theo works with (Compose and Git).
+	MinVersion string `json:"min_version,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 // IdleInfo says when the server stops by itself.

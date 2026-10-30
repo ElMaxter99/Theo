@@ -144,7 +144,7 @@ func newEnv(t *testing.T, opts ...func(*api.Config)) *env {
 	main, linked := testutil.NewRepo(t, map[string]string{"compose.yaml": "services:\n  web:\n    image: scratch-ub\n"})
 	dir := testutil.TempDir(t)
 	fc := &fakeCompose{}
-	eng := engine.New(registry.Open(dir), git.Git{}, fc)
+	eng := engine.New(registry.Open(dir), git.Git{}, fc).WithDataDir(dir)
 	if _, err := eng.AddProject(context.Background(), main, "ubapp", ""); err != nil {
 		t.Fatal(err)
 	}

@@ -89,12 +89,13 @@ func trim(s string) string {
 // when the engine gains one that is not listed here, so that the mapping in
 // fromEngine is never forgotten.
 var engineErrorTypes = map[string]bool{
-	"ChangesError":     true,
-	"InstanceError":    true,
-	"PurgeError":       true,
-	"ConfirmError":     true,
-	"SharedInUseError": true,
-	"ContainersError":  true,
+	"ChangesError":       true,
+	"InstanceError":      true,
+	"PurgeError":         true,
+	"ConfirmError":       true,
+	"SharedInUseError":   true,
+	"ContainersError":    true,
+	"SharedRunningError": true,
 }
 
 // fromEngine translates an error of the engine, Git or Docker into an API
@@ -112,6 +113,7 @@ func fromEngine(err error, res *ResourceRef) *Error {
 	var conf *engine.ConfirmError
 	var shared *engine.SharedInUseError
 	var cont *engine.ContainersError
+	var sharedRun *engine.SharedRunningError
 	switch {
 	case errors.As(err, &changes):
 		out := &Error{Status: http.StatusConflict, Code: "confirmation_required", Level: 3, Message: err.Error(), Resource: res,
@@ -154,8 +156,13 @@ func fromEngine(err error, res *ResourceRef) *Error {
 		if shared.Confirm != "" {
 			out.Level = 2
 			out.Confirm = &Confirm{Expected: shared.Confirm, Prompt: "Type the text shown to confirm"}
+		} else {
+			out.Hint = "stop using the shared services in those instances first"
 		}
 		return out
+	case errors.As(err, &sharedRun):
+		return &Error{Status: http.StatusConflict, Code: sharedRun.Code(), Message: err.Error(), Resource: res,
+			Hint: "stop the shared services first; their volumes are kept"}
 	case errors.As(err, &cont):
 		out := &Error{Status: http.StatusConflict, Code: "project_has_containers", Message: err.Error(), Resource: res,
 			Hint: "stop the instances first"}

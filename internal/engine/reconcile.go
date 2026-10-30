@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,6 +33,9 @@ const (
 
 // Finding is a difference between what Theo recorded and what exists.
 type Finding struct {
+	// ID identifies the finding across calls (a hash of what it is about),
+	// so that an interface can ask to forget exactly the records it showed.
+	ID      string `json:"id"`
 	Kind    string `json:"kind"`
 	Project string `json:"project,omitempty"`
 	Subject string `json:"subject"`
@@ -45,6 +50,11 @@ type Finding struct {
 
 	workspace string // for stale records: the worktree path
 	path      string // for stale files: the file
+}
+
+func findingID(f Finding) string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{f.Kind, f.Project, f.Subject, f.Worktree}, "\x00")))
+	return "fd_" + hex.EncodeToString(sum[:6])
 }
 
 // Report is the result of Reconcile.
@@ -100,7 +110,10 @@ func (e *Engine) Reconcile(ctx context.Context, project string) (*Report, error)
 	}
 
 	report := &Report{Findings: []Finding{}}
-	add := func(f Finding) { report.Findings = append(report.Findings, f) }
+	add := func(f Finding) {
+		f.ID = findingID(f)
+		report.Findings = append(report.Findings, f)
+	}
 
 	stacks, stacksErr := e.compose.Stacks(ctx)
 	if stacksErr != nil {

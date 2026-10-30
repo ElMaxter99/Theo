@@ -93,8 +93,9 @@ type Server struct {
 	log    *log.Logger
 	assets fs.FS
 
-	cache *overviewCache
-	meta  *metaCache
+	cache  *overviewCache
+	meta   *metaCache
+	health *healthCache
 
 	started time.Time
 	// sse counts open SSE streams; lastBusy is when there last was one, or
@@ -135,6 +136,7 @@ func New(cfg Config) (*Server, error) {
 	s.ops = newOperations(s)
 	s.cache = newOverviewCache(2 * time.Second)
 	s.meta = &metaCache{}
+	s.health = &healthCache{}
 	s.touch()
 	s.routesTable()
 	s.srv = &http.Server{Handler: s.mux, ReadHeaderTimeout: 10 * time.Second, ErrorLog: log.New(io.Discard, "", 0)}
