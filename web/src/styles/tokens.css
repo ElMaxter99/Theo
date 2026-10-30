@@ -1,0 +1,146 @@
+/*
+ * Design tokens: the ONLY place with colour values (APP_UI_GUIDELINES 6.3).
+ * Brand palette from DESIGN_TOKENS.md (plum, teal, coral, cream) is used for brand and interaction.
+ * Semantic colours (ok / warn / error / info) are independent of the brand palette on purpose:
+ * the brand coral is NOT the error red.
+ *
+ * Three blocks, identical in meaning:
+ *   1. light (default)
+ *   2. dark by system preference, unless the user forced light
+ *   3. dark forced by the user (data-theme="dark")
+ * test/tokens.test.mjs checks that 2 and 3 are identical and that every text pair meets WCAG AA contrast.
+ */
+:root {
+  color-scheme: light;
+  --theo-plum-950: #27132f;
+  --theo-plum-800: #452342;
+  --theo-teal-600: #168783;
+  --theo-coral-500: #f45b50;
+  --theo-cream-50: #faf5eb;
+
+  --bg: #ffffff;
+  --bg-subtle: #faf5eb;
+  --surface: #ffffff;
+  --surface-2: #f4eee3;
+  --border: #8d7f93;
+  --border-soft: #ddd3dd;
+  --text: #27132f;
+  --text-muted: #5a4a60;
+  --link: #0b6561;
+  --accent: #0e6b67;
+  --accent-hover: #0a5754;
+  --on-accent: #ffffff;
+  --focus: #1b5fd1;
+  --danger: #b3261e;
+  --danger-hover: #8c1c16;
+  --on-danger: #ffffff;
+  --selected: #e4f3f1;
+
+  --ok-fg: #14602a;
+  --ok-bg: #e3f4e8;
+  --warn-fg: #7a4a00;
+  --warn-bg: #fdf0d2;
+  --error-fg: #9f1d16;
+  --error-bg: #fde8e6;
+  --info-fg: #17509e;
+  --info-bg: #e6eefb;
+  --neutral-fg: #4c3d52;
+  --neutral-bg: #efe9ef;
+
+  --log-bg: #17101b;
+  --log-text: #f1ebf3;
+  --log-muted: #b9aebf;
+  --log-err: #ff9d95;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #1b0e21;
+    --bg-subtle: #231229;
+    --surface: #27132f;
+    --surface-2: #331a3b;
+    --border: #8f7d97;
+    --border-soft: #4a3452;
+    --text: #f4eef6;
+    --text-muted: #c4b5cb;
+    --link: #55d6cd;
+    --accent: #3cc4ba;
+    --accent-hover: #6fdcd4;
+    --on-accent: #0f1a1a;
+    --focus: #8ab4ff;
+    --danger: #ff6b60;
+    --danger-hover: #ff8f86;
+    --on-danger: #1d0605;
+    --selected: #1f3a3d;
+
+    --ok-fg: #7fe3a0;
+    --ok-bg: #12331d;
+    --warn-fg: #ffd37a;
+    --warn-bg: #3d2d08;
+    --error-fg: #ffa59e;
+    --error-bg: #430f0c;
+    --info-fg: #9fc2ff;
+    --info-bg: #14264a;
+    --neutral-fg: #d6c9db;
+    --neutral-bg: #3a2542;
+
+    --log-bg: #120a16;
+    --log-text: #f1ebf3;
+    --log-muted: #b9aebf;
+    --log-err: #ff9d95;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1b0e21;
+  --bg-subtle: #231229;
+  --surface: #27132f;
+  --surface-2: #331a3b;
+  --border: #8f7d97;
+  --border-soft: #4a3452;
+  --text: #f4eef6;
+  --text-muted: #c4b5cb;
+  --link: #55d6cd;
+  --accent: #3cc4ba;
+  --accent-hover: #6fdcd4;
+  --on-accent: #0f1a1a;
+  --focus: #8ab4ff;
+  --danger: #ff6b60;
+  --danger-hover: #ff8f86;
+  --on-danger: #1d0605;
+  --selected: #1f3a3d;
+
+  --ok-fg: #7fe3a0;
+  --ok-bg: #12331d;
+  --warn-fg: #ffd37a;
+  --warn-bg: #3d2d08;
+  --error-fg: #ffa59e;
+  --error-bg: #430f0c;
+  --info-fg: #9fc2ff;
+  --info-bg: #14264a;
+  --neutral-fg: #d6c9db;
+  --neutral-bg: #3a2542;
+
+  --log-bg: #120a16;
+  --log-text: #f1ebf3;
+  --log-muted: #b9aebf;
+  --log-err: #ff9d95;
+}
+
+:root {
+  /* System font stack: no web fonts, no external requests (typography is still open, BRAND-008). */
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 0.5rem;
+  --radius-sm: 0.3125rem;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --shadow: 0 1px 2px rgb(39 19 47 / 0.12), 0 2px 8px rgb(39 19 47 / 0.08);
+  --nav-width: 13.5rem;
+}
