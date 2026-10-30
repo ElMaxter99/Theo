@@ -12,9 +12,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ElMaxter99/Theo/internal/compose"
+	"github.com/ElMaxter99/Theo/internal/filelock"
 	"github.com/ElMaxter99/Theo/internal/git"
 	"github.com/ElMaxter99/Theo/internal/instances"
 	"github.com/ElMaxter99/Theo/internal/ports"
@@ -76,7 +78,19 @@ type Engine struct {
 	portFree  func(hostIP string, port int, proto string) bool
 	dataDir   string // where generated files are kept; empty if none
 	baseFiles func(dir string) []string
-	renamers  []ProjectRenamer // extra stores to migrate on `project rename`
+	renamers  []ProjectRenamer       // extra stores to migrate on `project rename`
+	lock      func() (func(), error) // makes read-modify-write of the state files exclusive across processes; nil: no lock
+}
+
+// locked takes the lock that serialises writers of Theo's state files (the
+// registry, settings and ports of every process using the same data
+// directory) and returns the function that releases it. Take it around a
+// whole load-modify-save cycle, never around slow work; it is not reentrant.
+func (e *Engine) locked() (func(), error) {
+	if e.lock == nil {
+		return func() {}, nil
+	}
+	return e.lock()
 }
 
 // New returns an engine that uses the given store and adapters.
@@ -86,9 +100,14 @@ func New(store Store, g Git, c Compose) *Engine {
 
 // memPorts keeps port assignments in memory, for engines that are not given
 // a place to persist them.
-type memPorts struct{ state ports.State }
+type memPorts struct {
+	mu    sync.Mutex
+	state ports.State
+}
 
 func (m *memPorts) Load() (ports.State, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	out := ports.State{}
 	for k, v := range m.state {
 		out[k] = v
@@ -96,7 +115,12 @@ func (m *memPorts) Load() (ports.State, error) {
 	return out, nil
 }
 
-func (m *memPorts) Save(s ports.State) error { m.state = s; return nil }
+func (m *memPorts) Save(s ports.State) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.state = s
+	return nil
+}
 
 // Open returns an engine that uses the registry in Theo's default data
 // directory and the real git and docker compose tools.
@@ -109,6 +133,7 @@ func Open() (*Engine, error) {
 	e.portStore = ports.Open(dir)
 	e.settings = instances.Open(dir)
 	e.dataDir = dir
+	e.lock = func() (func(), error) { return filelock.Lock(filepath.Join(dir, "state.lock")) }
 	return e, nil
 }
 
@@ -143,6 +168,11 @@ func (e *Engine) AddProject(ctx context.Context, path, name, envFile string) (re
 		return registry.Project{}, err
 	}
 
+	unlock, err := e.locked()
+	if err != nil {
+		return registry.Project{}, err
+	}
+	defer unlock()
 	projects, err := e.store.Load()
 	if err != nil {
 		return registry.Project{}, err
@@ -192,6 +222,11 @@ func (e *Engine) SetEnvFile(name, envFile string) (registry.Project, error) {
 	if err != nil {
 		return registry.Project{}, err
 	}
+	unlock, err := e.locked()
+	if err != nil {
+		return registry.Project{}, err
+	}
+	defer unlock()
 	projects, err := e.store.Load()
 	if err != nil {
 		return registry.Project{}, err
@@ -227,6 +262,11 @@ func checkEnvFile(path string) (string, error) {
 // RemoveProject removes a project from the registry. Its files, containers
 // and volumes are left untouched.
 func (e *Engine) RemoveProject(name string) (registry.Project, error) {
+	unlock, err := e.locked()
+	if err != nil {
+		return registry.Project{}, err
+	}
+	defer unlock()
 	projects, err := e.store.Load()
 	if err != nil {
 		return registry.Project{}, err

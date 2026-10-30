@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ElMaxter99/Theo/internal/filelock"
 	"os"
 	"path/filepath"
 	"strings"
@@ -128,11 +129,7 @@ func (s *Store) SaveShared(st SharedState) error {
 		return err
 	}
 	path := filepath.Join(s.dir, sharedFile)
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return filelock.WriteFile(path, append(data, '\n'), 0o644)
 }
 
 // Open returns a store backed by files in dir, created on first write.
@@ -173,11 +170,7 @@ func (s *Store) Save(st State) error {
 		return err
 	}
 	path := filepath.Join(s.dir, configFile)
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return filelock.WriteFile(path, append(data, '\n'), 0o600)
 }
 
 // Append adds an event to the history.
@@ -298,9 +291,5 @@ func (s *Store) renameEvents(oldName, newName string) (int, error) {
 	if n == 0 {
 		return 0, nil
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, out.Bytes(), 0o644); err != nil {
-		return 0, err
-	}
-	return n, os.Rename(tmp, path)
+	return n, filelock.WriteFile(path, out.Bytes(), 0o644)
 }

@@ -1,0 +1,30 @@
+{
+  "branch": "feature/x",
+  "compose_project": "ubgold-app-feature",
+  "containers": [
+    {
+      "ExitCode": 0,
+      "Health": "",
+      "Name": "ubgold-app-feature-web-1",
+      "Publishers": [
+        {
+          "Protocol": "tcp",
+          "PublishedPort": "<PORT>",
+          "TargetPort": 8080,
+          "URL": "0.0.0.0"
+        }
+      ],
+      "Service": "web",
+      "State": "running",
+      "Status": "<STATUS>"
+    }
+  ],
+  "env_file": {
+    "source": "none"
+  },
+  "kind": "worktree",
+  "main": false,
+  "project": "ubgold",
+  "state": "running",
+  "workspace": "<TMP>/app-feature"
+}

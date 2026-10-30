@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/ElMaxter99/Theo/internal/compose"
 	"github.com/ElMaxter99/Theo/internal/execx"
@@ -30,30 +31,56 @@ type SettingsStore interface {
 // memSettings keeps settings and history in memory, for engines that are not
 // given a place to persist them.
 type memSettings struct {
+	mu     sync.Mutex // the API runs engine calls from several goroutines
 	state  instances.State
 	events []instances.Event
 	shared instances.SharedState
 }
 
 func (m *memSettings) LoadShared() (instances.SharedState, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	out := instances.SharedState{}
 	for k, v := range m.shared {
 		out[k] = v
 	}
 	return out, nil
 }
-func (m *memSettings) SaveShared(s instances.SharedState) error { m.shared = s; return nil }
+func (m *memSettings) SaveShared(s instances.SharedState) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.shared = s
+	return nil
+}
 
 func (m *memSettings) Load() (instances.State, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	out := instances.State{}
 	for k, v := range m.state {
 		out[k] = v
 	}
 	return out, nil
 }
-func (m *memSettings) Save(s instances.State) error       { m.state = s; return nil }
-func (m *memSettings) Append(ev instances.Event) error    { m.events = append(m.events, ev); return nil }
-func (m *memSettings) Events() ([]instances.Event, error) { return m.events, nil }
+func (m *memSettings) Save(s instances.State) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.state = s
+	return nil
+}
+
+func (m *memSettings) Append(ev instances.Event) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.events = append(m.events, ev)
+	return nil
+}
+
+func (m *memSettings) Events() ([]instances.Event, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]instances.Event(nil), m.events...), nil
+}
 
 var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
@@ -67,6 +94,11 @@ func (e *Engine) Settings(inst *Instance) (instances.Config, error) {
 }
 
 func (e *Engine) updateSettings(inst *Instance, change func(*instances.Config) error) error {
+	unlock, err := e.locked()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	state, err := e.settings.Load()
 	if err != nil {
 		return err
@@ -215,7 +247,7 @@ func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []s
 	overlayPath, envPath := e.instanceFile(inst, ".yaml"), e.instanceFile(inst, ".env")
 	if overlay.Empty() && len(env) == 0 {
 		if auto {
-			if err := e.portStore.Save(state); err != nil {
+			if err := e.savePorts(inst.Workspace, state); err != nil {
 				return nil, err
 			}
 		}
@@ -236,7 +268,7 @@ func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []s
 		}
 	}
 	if auto {
-		if err := e.portStore.Save(state); err != nil {
+		if err := e.savePorts(inst.Workspace, state); err != nil {
 			return nil, err
 		}
 	}

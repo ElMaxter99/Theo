@@ -1,0 +1,32 @@
+{
+  "branch": "feature/x",
+  "compose_project": "ubgold-app-feature",
+  "env_file": {
+    "source": "none"
+  },
+  "project": "ubgold",
+  "services": [
+    {
+      "build": "<TMP>/app-feature",
+      "mounts": [
+        {
+          "source": "data",
+          "target": "/data",
+          "type": "volume"
+        }
+      ],
+      "name": "web",
+      "networks": [
+        "default"
+      ],
+      "ports": [
+        {
+          "mode": "ingress",
+          "protocol": "tcp",
+          "target": 8080
+        }
+      ]
+    }
+  ],
+  "workspace": "<TMP>/app-feature"
+}

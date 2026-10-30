@@ -105,6 +105,11 @@ func (e *Engine) SetWorktreeDir(name, dir string) error {
 		}
 		dir = abs
 	}
+	unlock, err := e.locked()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	projects, err := e.store.Load()
 	if err != nil {
 		return err
@@ -340,6 +345,9 @@ func (c *ChangesError) Error() string {
 	return fmt.Sprintf("worktree %s has %d uncommitted or untracked file(s); nothing was removed", c.Path, len(c.Changes))
 }
 
+// Code is the stable code of the error, for interfaces that translate it.
+func (c *ChangesError) Code() string { return "confirmation_required" }
+
 // InstanceError is returned when a worktree cannot be removed because it
 // still has containers.
 type InstanceError struct {
@@ -350,6 +358,9 @@ type InstanceError struct {
 func (i *InstanceError) Error() string {
 	return fmt.Sprintf("worktree %s still has Compose project(s) %s; stop and remove them first with `theo down`", i.Path, strings.Join(i.Stacks, ", "))
 }
+
+// Code is the stable code of the error, for interfaces that translate it.
+func (i *InstanceError) Code() string { return "instance_has_containers" }
 
 // RemovedWorkspace is the result of RemoveWorkspace.
 type RemovedWorkspace struct {

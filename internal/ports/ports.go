@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ElMaxter99/Theo/internal/filelock"
 	"net"
 	"os"
 	"path/filepath"
@@ -111,9 +112,5 @@ func (s *Store) Save(st State) error {
 	if err != nil {
 		return err
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, s.path)
+	return filelock.WriteFile(s.path, append(data, '\n'), 0o644)
 }

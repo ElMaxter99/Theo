@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Theo: branches and nodes">
+<path d="M84.0,66.0 C84.0,74.7 80.7,104.0 84.0,118.0 C87.3,132.0 90.0,136.7 104.0,150.0 C118.0,163.3 157.3,190.0 168.0,198.0" fill="none" stroke="#361A3D" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M98.0,140.0 C103.7,137.3 119.7,127.7 132.0,124.0 C144.3,120.3 165.3,119.0 172.0,118.0" fill="none" stroke="#361A3D" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="84" cy="66" r="22" fill="#FC483F"/>
+<circle cx="172" cy="118" r="22" fill="#298F90"/>
+<circle cx="168" cy="198" r="22" fill="#FC483F"/>
+</svg>

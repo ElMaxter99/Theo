@@ -1,0 +1,10 @@
+[
+  {
+    "name": "feature/x",
+    "worktree": "<TMP>/app-feature"
+  },
+  {
+    "name": "main",
+    "worktree": "<TMP>/app"
+  }
+]

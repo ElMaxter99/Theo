@@ -63,9 +63,26 @@ type PurgeError struct {
 	Instance string
 	Reason   string
 	Volumes  []VolumeInfo // what would be deleted
+	// Kind says why: PurgeHasContainers, PurgeInUse or PurgeNeedsConfirm.
+	Kind string
 }
 
+// Reasons of a PurgeError.
+const (
+	PurgeHasContainers = "instance_has_containers" // the instance still has containers
+	PurgeInUse         = "volume_in_use"           // a container still mounts a volume
+	PurgeNeedsConfirm  = "confirmation_required"   // nothing wrong, the confirmation is missing or wrong
+)
+
 func (p *PurgeError) Error() string { return p.Reason }
+
+// Code is the stable code of the error, for interfaces that translate it.
+func (p *PurgeError) Code() string {
+	if p.Kind == "" {
+		return PurgeNeedsConfirm
+	}
+	return p.Kind
+}
 
 // PurgeVolumes deletes the data of an instance: the named volumes Compose
 // created for its project. It is a separate operation from `down`, and it
@@ -102,17 +119,17 @@ func (e *Engine) purgePlan(ctx context.Context, inst *Instance, confirm string) 
 		return nil, err
 	}
 	if len(containers) > 0 {
-		return nil, &PurgeError{Instance: inst.Compose, Volumes: doomed,
+		return nil, &PurgeError{Instance: inst.Compose, Volumes: doomed, Kind: PurgeHasContainers,
 			Reason: fmt.Sprintf("%s still has %d container(s); remove them first with `theo down` (its volumes are kept)", inst.Compose, len(containers))}
 	}
 	for _, v := range doomed {
 		if v.Status == VolumeInUse {
-			return nil, &PurgeError{Instance: inst.Compose, Volumes: doomed,
+			return nil, &PurgeError{Instance: inst.Compose, Volumes: doomed, Kind: PurgeInUse,
 				Reason: fmt.Sprintf("volume %s is still used by %s; nothing was deleted", v.Name, strings.Join(v.Users, ", "))}
 		}
 	}
 	if confirm != inst.Compose {
-		return nil, &PurgeError{Instance: inst.Compose, Volumes: doomed,
+		return nil, &PurgeError{Instance: inst.Compose, Volumes: doomed, Kind: PurgeNeedsConfirm,
 			Reason: fmt.Sprintf("this deletes the data of %d volume(s) of %s for good; nothing was deleted", len(doomed), inst.Compose)}
 	}
 	return doomed, nil

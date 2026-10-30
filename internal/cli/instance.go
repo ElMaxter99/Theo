@@ -248,10 +248,12 @@ func runPS(e *engine.Engine, args []string, stdout io.Writer) error {
 	if *asJSON {
 		return writeJSON(stdout, struct {
 			*engine.Instance
+			State      string              `json:"state"`
 			Containers []compose.Container `json:"containers"`
-		}{inst, containers})
+		}{inst, engine.InstanceState(containers, e.ExpectedServices(inst), true), containers})
 	}
 	describe(stdout, inst)
+	fmt.Fprintf(stdout, "theo: state: %s\n", engine.InstanceState(containers, e.ExpectedServices(inst), true))
 	if len(containers) == 0 {
 		fmt.Fprintf(stdout, "No containers. Start them with `theo up %s -w %s`.\n", inst.Project, worktreeArg(inst))
 		return nil

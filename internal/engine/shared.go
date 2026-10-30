@@ -44,6 +44,11 @@ func (e *Engine) SharedSet(project string) (instances.SharedSet, bool, error) {
 }
 
 func (e *Engine) saveSharedSet(project string, set *instances.SharedSet) error {
+	unlock, err := e.locked()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	all, err := e.settings.LoadShared()
 	if err != nil {
 		return err
@@ -256,6 +261,14 @@ type SharedInUseError struct {
 	Action    string
 	Consumers []SharedConsumer
 	Confirm   string // what --confirm must say, when a confirmation can override
+}
+
+// Code is the stable code of the error, for interfaces that translate it.
+func (s *SharedInUseError) Code() string {
+	if s.Confirm != "" {
+		return "confirmation_required"
+	}
+	return "shared_in_use"
 }
 
 func (s *SharedInUseError) Error() string {

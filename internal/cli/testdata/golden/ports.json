@@ -1,0 +1,20 @@
+{
+  "branch": "feature/x",
+  "compose_project": "ubgold-app-feature",
+  "env_file": {
+    "source": "none"
+  },
+  "kind": "worktree",
+  "main": false,
+  "ports": [
+    {
+      "protocol": "tcp",
+      "running": "<PORT>",
+      "service": "web",
+      "status": "random",
+      "target": 8080
+    }
+  ],
+  "project": "ubgold",
+  "workspace": "<TMP>/app-feature"
+}

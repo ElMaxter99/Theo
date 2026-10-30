@@ -1,0 +1,16 @@
+[
+  {
+    "branch": "main",
+    "dirty": true,
+    "head": "<SHA>",
+    "kind": "main",
+    "path": "<TMP>/app"
+  },
+  {
+    "branch": "feature/x",
+    "dirty": true,
+    "head": "<SHA>",
+    "kind": "worktree",
+    "path": "<TMP>/app-feature"
+  }
+]

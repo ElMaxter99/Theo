@@ -202,6 +202,14 @@ func (e *Engine) RenameProject(ctx context.Context, oldName, newName string, opt
 		}
 	}
 
+	unlock, err := e.locked()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	if projects, err = e.store.Load(); err != nil {
+		return nil, err
+	}
 	for _, r := range e.projectRenamers() {
 		n, err := r.RenameProject(p.Name, newName)
 		if err != nil {
@@ -422,6 +430,9 @@ type ContainersError struct {
 	Stacks  []ProjectStack
 }
 
+// Code is the stable code of the error, for interfaces that translate it.
+func (c *ContainersError) Code() string { return "project_has_containers" }
+
 func (c *ContainersError) Error() string {
 	names := make([]string, len(c.Stacks))
 	for i, s := range c.Stacks {
@@ -456,6 +467,11 @@ func (e *Engine) RemoveProjectChecked(ctx context.Context, name string, opts Rem
 // forgetRecords drops Theo's own records about a project: settings and
 // reserved ports of its worktrees, and the files generated for them.
 func (e *Engine) forgetRecords(res *ProjectResources) error {
+	unlock, err := e.locked()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	settings, err := e.settings.Load()
 	if err != nil {
 		return err
