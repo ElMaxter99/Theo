@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import net from "node:net";
 import http from "node:http";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, existsSync, readdirSync, readlinkSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -114,7 +114,7 @@ test("start from the interface: containers exist, state Running, link works, log
   // Leaving the view ends the docker compose logs process (the backend tests this too; here we check it from the UI side).
   await page.getByRole("tab", { name: "Summary" }).click();
   await page.waitForTimeout(1500);
-  const logsProcs = execFileSync("sh", ["-c", `pgrep -fa "compose.*${prefix}.*logs" || true`], { encoding: "utf8" }).trim();
+  const logsProcs = execFileSync("sh", ["-c", `pgrep -fa "[c]ompose.*${prefix}.*logs" | grep -v pgrep || true`], { encoding: "utf8" }).trim();
   assert.equal(logsProcs, "", "no orphan `docker compose logs` process: " + logsProcs);
   assert.deepEqual(page.problems, []);
   await page.ctx.close();
@@ -155,7 +155,10 @@ test("UC-02: a new branch with the same fixed port: the wizard shows the clash, 
   for (;;) {
     ov = (await call("GET", `/projects/${project}/overview`)).body;
     if (ov.worktrees.length === 2 && ov.worktrees.every((w) => w.state === "running")) break;
-    assert.ok(Date.now() < deadline, "both instances did not reach running: " + JSON.stringify(ov.worktrees.map((w) => w.state)));
+    if (Date.now() >= deadline) {
+      const ops = (await call("GET", "/operations")).body;
+      assert.fail("both instances did not reach running: " + JSON.stringify(ov.worktrees.map((w) => w.state)) + " operations: " + JSON.stringify(ops).slice(0, 1500));
+    }
     await new Promise((r) => setTimeout(r, 1000));
   }
   const urls = ov.worktrees.flatMap((w) => w.ports.filter((p) => p.status === "running").map((p) => p.url));
@@ -233,8 +236,9 @@ test("purge: after Stop, data is deleted only with the exact Compose project nam
   const page = await openApp(browser, adapter, { route: `#/p/${project}`, wait: "table.data" });
   await row(page, "main").getByRole("button", { name: /Stop main/ }).click();
   await row(page, "main").locator(".badge:has-text('No containers')").waitFor({ timeout: 60000 });
-  const vols = () => docker("volume", "ls", "-q", "--filter", `name=${prefix}`).split("\n").filter(Boolean);
-  assert.ok(vols().length >= 1, "volume kept after down");
+  // Only the volumes of main: the second instance's volume is kept after its worktree was removed, by design.
+  const vols = () => docker("volume", "ls", "-q", "--filter", `name=${prefix}app_`).split("\n").filter(Boolean);
+  assert.ok(vols().length >= 1, "volume kept after down; all volumes: " + docker("volume", "ls", "-q").split("\n").filter((v) => v.startsWith("uf")).join(","));
   await page.goto(server.origin + `/#/p/${project}/w/${main.id}/volumes`);
   await page.waitForSelector("table.data");
   await page.locator(".badge:has-text('Kept after down')").waitFor();
@@ -281,10 +285,33 @@ test("security against the real server: Host, Origin, cookie, CSRF, single-use n
   const index = await raw({ path: "/", headers: { Host: host } });
   assert.match(index.headers["content-security-policy"], /^default-src 'none'; script-src 'self'; style-src 'self'/);
   // Nothing listens outside 127.0.0.1 for this process.
-  const ss = execFileSync("sh", ["-c", `ss -ltnp 2>/dev/null | grep "pid=${server.pid}," || true`], { encoding: "utf8" }).trim();
+  const ss = listeningAddresses(server.pid);
   assert.ok(ss.length > 0, "found the listening socket");
   for (const line of ss.split("\n")) assert.match(line, /127\.0\.0\.1:\d+/, line);
 });
+
+/** The addresses the process listens on, read from /proc (no ss needed). Linux only, like the rest of this suite. */
+function listeningAddresses(pid) {
+  const inodes = new Set();
+  for (const fd of readdirSync(`/proc/${pid}/fd`)) {
+    try {
+      const m = /^socket:\[(\d+)\]$/.exec(readlinkSync(`/proc/${pid}/fd/${fd}`));
+      if (m) inodes.add(m[1]);
+    } catch { /* closed meanwhile */ }
+  }
+  const out = [];
+  for (const file of ["/proc/net/tcp", "/proc/net/tcp6"]) {
+    if (!existsSync(file)) continue;
+    for (const line of readFileSync(file, "utf8").split("\n").slice(1)) {
+      const f = line.trim().split(/\s+/);
+      if (f.length < 10 || f[3] !== "0A" || !inodes.has(f[9])) continue;
+      const [hex, port] = f[1].split(":");
+      const ip = hex.length === 8 ? hex.match(/../g).reverse().map((h) => parseInt(h, 16)).join(".") : "[" + hex + "]";
+      out.push(`${ip}:${parseInt(port, 16)}`);
+    }
+  }
+  return out.join("\n");
+}
 
 test("a page on another origin cannot read the real API", { skip }, async () => {
   const evil = http.createServer((req, res) => {
