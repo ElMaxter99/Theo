@@ -159,6 +159,7 @@ test("shared services: link an instance to a shared service, and stop sharing is
 test("shared services: keyboard only, the stop dialog returns the focus to its button", async () => {
   const page = await openApp(browser, mock, { route: "#/p/shop/shared", wait: "#sh-provider" });
   await page.locator("section[aria-labelledby=sh-consumers] tbody tr").first().waitFor();
+  await page.waitForTimeout(500); // let the first refreshes (state events, health) settle
   const stop = page.getByRole("button", { name: "Stop shared services" });
   await stop.focus();
   await page.keyboard.press("Enter");

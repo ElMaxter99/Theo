@@ -89,18 +89,20 @@ it; if that fails the instance is not started and the screen says why.
 
 ### API shapes the screens rely on
 
-The shapes are the Go structs the CLI already serialises (`engine.SharedStatus`, `engine.Report`, `engine.DoctorReport`), see
-`api/types.ts`. Where the backend track's `docs/api.md` does not say otherwise the app assumes:
+They are the ones in `docs/api.md` (sections 9 to 11 of the backend track), checked against the real server:
 
-- `GET /projects/{p}/shared` -> `SharedStatus`, or 404 `shared_not_configured`; `POST /projects/{p}/shared {services, from?, publish?}`;
-  `POST .../shared/up` and `.../shared/down {confirm?}` -> 202 operations of kind `shared-up` / `shared-down` without `worktree`;
-  `DELETE .../shared/services/{s}`; `POST .../shared/purge {confirm?}`; `PUT .../worktrees/{wt}/shared {use, join}`;
-  `DELETE .../worktrees/{wt}/shared/{s}`.
-- `GET /reconcile` -> `{findings:[{kind, project?, subject, worktree?, detail, fix?, forgettable?}], docker_error?}`;
-  `POST /reconcile/forget {finding_ids}`. Finding ids are the server's `id` when it sends one, else `kind|project|subject|worktree`
-  (`lib/findings.ts`).
-- `GET /doctor` -> `{ok, platform, data_dir, checks:[{id, name, status, detail?, fix?}]}`.
-- `GET .../history?limit=&before=` -> an array, oldest first.
+- `GET|POST /projects/{p}/shared`, `POST .../shared/up`, `POST .../shared/down {confirm?}` (operations of kind `shared.up` /
+  `shared.down`, without `worktree`; with running consumers and no `confirm`: `409 confirmation_required`, level 2, consumers in
+  `affected`), `DELETE .../shared/services/{s}` (`shared_in_use`, `shared_running`), `POST .../shared/purge {confirm?}`
+  (`shared_in_use` while instances are linked, then level 3), `PUT|DELETE .../worktrees/{wt}/shared[/{s}]`.
+  A project without shared services answers `404 shared_not_configured`, which the page turns into its empty state.
+- `GET /reconcile` (findings carry a stable `id`), `POST /reconcile/apply {ids}` (only forgettable findings; others come back in
+  `skipped`), `GET /health` `{status, findings, forgettable}` for the sidebar number.
+- `GET /diagnostics` `{meta, doctor, projects, report}`: the settings screen and the text of "Copy information for a report"
+  (`lib/report.ts` is only the fallback). The report contains no secrets but does include the data directory; the page says so.
+- `GET .../history?limit=&before=`: the body is the plain array (oldest first); the cursor of the older page is in the response header
+  `Theo-History-Next` (absent on the oldest page).
+- `GET .../settings` has `fixed_container_names`, used by the wizard checkbox.
 
 ## Design and accessibility decisions
 
@@ -138,6 +140,11 @@ All Playwright tests need Chromium and `require('playwright')` (preinstalled in 
 a free range, and removes its containers, volumes, networks and images at the end.
 
 Screenshots are written to `web/e2e/screenshots/` by the tests (never with real data: the data is the mock's or the test repository's).
+
+`e2e/real/v56.test.mjs` (prefix `uf5`) covers the new screens against the real server and Docker: declare, start and stop shared
+services, purge refused while an instance is linked and then the typed text, a worktree deleted by hand reported by Health and
+forgetting only Theo's stale settings (the worktree finding stays), the diagnostics screen and the history header.
+Run it with `THEO_BIN=/path/to/theo npm run test:e2e:real`.
 
 ### What is and is not verified
 
