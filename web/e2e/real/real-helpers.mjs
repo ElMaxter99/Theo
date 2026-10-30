@@ -4,7 +4,7 @@
 // Binary: set THEO_BIN to a theo built with the interface embedded, or let this file build ../../../cmd/theo
 // (which only works on a tree that contains internal/api, that is, after the backend track is integrated).
 import { spawn, execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, readFileSync, readdirSync, readlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -64,7 +64,6 @@ func main() {
   execFileSync("go", ["build", "-o", path.join(dir, "server"), "."], { cwd: src, env: { ...process.env, CGO_ENABLED: "0", GOOS: "linux" } });
   writeFileSync(path.join(dir, "Dockerfile"), 'FROM scratch\nCOPY server /server\nENTRYPOINT ["/server"]\n');
   writeFileSync(path.join(dir, "compose.yaml"), `services:\n  web:\n    build: .\n    ports:\n      - "${port}:8080"\n    volumes:\n      - data:/data\nvolumes:\n  data:\n`);
-  writeFileSync(path.join(dir, ".gitignore"), "server\n");
   sh("git", ["init", "-q", "-b", "main"], { cwd: dir });
   sh("git", ["config", "user.email", "uf@example.com"], { cwd: dir });
   sh("git", ["config", "user.name", "uf"], { cwd: dir });
@@ -124,3 +123,33 @@ export function dockerCleanup(prefix) {
 
 export const docker = (...args) => sh("docker", args);
 export const rmrf = (p) => rmSync(p, { recursive: true, force: true });
+
+/**
+ * Listening TCP sockets of a process on Linux, from /proc: [{ addr, port }]. Returns null where /proc is not available.
+ * (`ss` is not installed everywhere; this needs no tool.)
+ */
+export function listeningSockets(pid) {
+  if (!existsSync("/proc/net/tcp")) return null;
+  const inodes = new Set();
+  for (const fd of readdirSync(`/proc/${pid}/fd`)) {
+    try { const l = readlinkSync(`/proc/${pid}/fd/${fd}`); const m = /^socket:\[(\d+)\]$/.exec(l); if (m) inodes.add(m[1]); } catch { /* fd closed meanwhile */ }
+  }
+  const out = [];
+  for (const f of ["/proc/net/tcp", "/proc/net/tcp6"]) {
+    if (!existsSync(f)) continue;
+    for (const line of readFileSync(f, "utf8").split("\n").slice(1)) {
+      const c = line.trim().split(/\s+/);
+      if (c.length < 10 || c[3] !== "0A" || !inodes.has(c[9])) continue;
+      const [hex, port] = c[1].split(":");
+      const addr = hex.length === 8 ? hex.match(/../g).reverse().map((x) => parseInt(x, 16)).join(".") : hex;
+      out.push({ addr, port: parseInt(port, 16) });
+    }
+  }
+  return out;
+}
+
+/** Processes whose command line mentions `docker compose ... logs` for this prefix (to prove none are left behind). */
+export function composeLogsProcesses(prefix) {
+  const r = spawnSync("ps", ["-eo", "pid,args"], { encoding: "utf8" });
+  return r.stdout.split("\n").filter((l) => l.includes(prefix) && /compose/.test(l) && /\blogs\b/.test(l) && !/\bps -eo\b/.test(l));
+}

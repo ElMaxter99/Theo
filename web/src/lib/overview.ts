@@ -1,9 +1,15 @@
 // Derived views of a worktree as the overview reports it.
 import type { Container, PortConflict, RawContainer, UrlInfo, Worktree, WtPort } from "../api/types.ts";
 
-/** Links of the ports a running instance publishes (only the URLs the server gives). */
-export function urlsOf(w: Pick<Worktree, "ports">): UrlInfo[] {
-  return (w.ports ?? []).filter((p: WtPort) => p.url && p.status === "running").map((p) => ({ service: p.service, url: p.url!, port: p.host_port }));
+/**
+ * Links of the ports an instance publishes (only the URLs the server gives).
+ * A fully running instance that was started with automatic ports reports its remembered ports as "kept" (or
+ * "reassigned"), not "running", so those count as live too; for a partial or failing instance only the ports the
+ * server calls "running" are links (the others may point at services that are down).
+ */
+export function urlsOf(w: Pick<Worktree, "ports" | "state">): UrlInfo[] {
+  const live = (p: WtPort) => p.status === "running" || (w.state === "running" && (p.status === "kept" || p.status === "reassigned"));
+  return (w.ports ?? []).filter((p: WtPort) => p.url && live(p)).map((p) => ({ service: p.service, url: p.url!, port: p.host_port }));
 }
 
 /** Fixed host ports that this instance wants but something else is using. */

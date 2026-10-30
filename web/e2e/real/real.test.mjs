@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   chromium, openApp, axeViolations, seriousOnly, cspViolations, shot,
-  theoBinary, dockerAvailable, newPrefix, makeRepo, startServer, dockerCleanup, docker, rmrf,
+  theoBinary, dockerAvailable, newPrefix, makeRepo, startServer, dockerCleanup, docker, rmrf, listeningSockets, composeLogsProcesses,
 } from "./real-helpers.mjs";
 
 const bin = theoBinary();
@@ -114,8 +114,8 @@ test("start from the interface: containers exist, state Running, link works, log
   // Leaving the view ends the docker compose logs process (the backend tests this too; here we check it from the UI side).
   await page.getByRole("tab", { name: "Summary" }).click();
   await page.waitForTimeout(1500);
-  const logsProcs = execFileSync("sh", ["-c", `pgrep -fa "compose.*${prefix}.*logs" || true`], { encoding: "utf8" }).trim();
-  assert.equal(logsProcs, "", "no orphan `docker compose logs` process: " + logsProcs);
+  const logsProcs = composeLogsProcesses(prefix);
+  assert.deepEqual(logsProcs, [], "no orphan `docker compose logs` process");
   assert.deepEqual(page.problems, []);
   await page.ctx.close();
 });
@@ -158,10 +158,16 @@ test("UC-02: a new branch with the same fixed port: the wizard shows the clash, 
     assert.ok(Date.now() < deadline, "both instances did not reach running: " + JSON.stringify(ov.worktrees.map((w) => w.state)));
     await new Promise((r) => setTimeout(r, 1000));
   }
-  const urls = ov.worktrees.flatMap((w) => w.ports.filter((p) => p.status === "running").map((p) => p.url));
+  const urls = ov.worktrees.flatMap((w) => w.ports.filter((p) => p.url && p.status !== "in use").map((p) => p.url));
   assert.equal(new Set(urls).size, 2, "distinct URLs: " + urls);
   for (const u of urls) assert.equal((await (await fetch(u.replace("localhost", "127.0.0.1"))).text()).trim(), "ok");
-  await page.goto(server.origin + `/#/p/${project}`).catch(() => undefined);
+  // The panel shows both instances as running, each with its own link.
+  await page.evaluate((p) => { location.hash = `#/p/${p}`; }, project);
+  await page.waitForSelector("table.data");
+  await page.waitForFunction(() => document.querySelectorAll("tbody .badge").length >= 2 && [...document.querySelectorAll("tbody .badge")].every((b) => b.textContent.includes("Running")));
+  const hrefs = await page.locator("tbody a[rel='noopener noreferrer']").evaluateAll((as) => as.map((a) => a.href));
+  assert.equal(new Set(hrefs).size, 2, "two distinct links in the panel: " + hrefs);
+  await shot(page, "40-real-two-instances");
   await page.ctx.close();
 });
 
@@ -233,7 +239,8 @@ test("purge: after Stop, data is deleted only with the exact Compose project nam
   const page = await openApp(browser, adapter, { route: `#/p/${project}`, wait: "table.data" });
   await row(page, "main").getByRole("button", { name: /Stop main/ }).click();
   await row(page, "main").locator(".badge:has-text('No containers')").waitFor({ timeout: 60000 });
-  const vols = () => docker("volume", "ls", "-q", "--filter", `name=${prefix}`).split("\n").filter(Boolean);
+  // Only this instance's volumes: the one of the removed worktree (feat-two) is kept on purpose by `worktree remove`.
+  const vols = () => docker("volume", "ls", "-q", "--filter", `name=${main.compose_project}_`).split("\n").filter(Boolean);
   assert.ok(vols().length >= 1, "volume kept after down");
   await page.goto(server.origin + `/#/p/${project}/w/${main.id}/volumes`);
   await page.waitForSelector("table.data");
@@ -281,9 +288,12 @@ test("security against the real server: Host, Origin, cookie, CSRF, single-use n
   const index = await raw({ path: "/", headers: { Host: host } });
   assert.match(index.headers["content-security-policy"], /^default-src 'none'; script-src 'self'; style-src 'self'/);
   // Nothing listens outside 127.0.0.1 for this process.
-  const ss = execFileSync("sh", ["-c", `ss -ltnp 2>/dev/null | grep "pid=${server.pid}," || true`], { encoding: "utf8" }).trim();
-  assert.ok(ss.length > 0, "found the listening socket");
-  for (const line of ss.split("\n")) assert.match(line, /127\.0\.0\.1:\d+/, line);
+  const socks = listeningSockets(server.pid);
+  if (socks === null) { console.log("# /proc not available: loopback-only check skipped on this platform"); }
+  else {
+    assert.ok(socks.some((x) => x.port === server.port), "found the listening socket: " + JSON.stringify(socks));
+    for (const x of socks) assert.equal(x.addr, "127.0.0.1", `listening on ${x.addr}:${x.port}`);
+  }
 });
 
 test("a page on another origin cannot read the real API", { skip }, async () => {

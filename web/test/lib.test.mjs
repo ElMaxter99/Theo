@@ -95,6 +95,11 @@ test("urls and conflicts are derived from the overview ports", () => {
     { service: "x", container_port: 1, host_port: 9, url: "http://localhost:9", status: "free" },
   ] };
   assert.deepEqual(urlsOf(w), [{ service: "web", url: "http://localhost:3001", port: 3001 }]);
+  // A running instance started with automatic ports reports "kept": still a live link. A partial one does not.
+  const auto = { state: "running", ports: [{ service: "web", container_port: 80, host_port: 3003, url: "http://localhost:3003", status: "kept" }] };
+  assert.equal(urlsOf(auto).length, 1);
+  assert.equal(urlsOf({ ...auto, state: "partial" }).length, 0);
+  assert.equal(urlsOf({ ...auto, state: "stopped" }).length, 0);
   assert.deepEqual(conflictsOf(w), [{ service: "db", port: 5432 }]);
   assert.deepEqual(conflictsOf({ ...w, state: "running" }), []);
   assert.equal(shortSha("0123456789abcdef"), "0123456");
