@@ -71,7 +71,7 @@ export function ProjectPanel({ project, onRefreshMeta }: { project: string; onRe
           </>
         }
       />
-      {res.data && !res.data.docker.available ? <Banner tone="warn" title={t.banner.dockerTitle} role="status"><p>{res.data.docker.error ?? t.banner.dockerBody}</p><p>{t.panel.unknownStateNote}</p></Banner> : null}
+      {res.data && !res.data.docker.available ? <Banner tone="warn" title={t.banner.dockerTitle}><p>{res.data.docker.error ?? t.banner.dockerBody}</p><p>{t.panel.unknownStateNote}</p></Banner> : null}
       <ErrorBanner error={actionError} />
       {res.loading && !res.data ? <Loading /> : null}
       {res.data ? (

@@ -168,7 +168,7 @@ fieldset { border: 1px solid var(--border-soft); border-radius: var(--radius); p
 }
 
 /* ---------- Tables ---------- */
-.table-wrap { overflow-x: auto; border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--surface); }
+.table-wrap { position: relative; overflow-x: auto; border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--surface); }
 .table-wrap:focus-visible { outline-offset: -0.1875rem; }
 table.data { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
 table.data caption { text-align: left; padding: var(--space-3) var(--space-3) 0; font-weight: 700; }

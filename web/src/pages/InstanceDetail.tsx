@@ -82,7 +82,7 @@ export function InstanceDetail({ project, wt, tab }: { project: string; wt: stri
       />
       <ErrorBanner error={actionError} />
       {lastFailed && lastFailed.state === "failed" ? (
-        <Banner tone="error" title={t.detail.lastFailed} role="status">
+        <Banner tone="error" title={t.detail.lastFailed}>
           {opErrorText(lastFailed) ? <p>{opErrorText(lastFailed)}</p> : null}
           <p>{t.detail.keptNote}</p>
         </Banner>

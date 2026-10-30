@@ -51,7 +51,7 @@ export function ErrorBanner({ error, title }: { error: ApiError | { message: str
 
 export function Loading({ label = t.app.loading }: { label?: string }) {
   return (
-    <p class="muted" role="status">
+    <p class="muted">
       <Icon name="busy" spin /> {label}
     </p>
   );

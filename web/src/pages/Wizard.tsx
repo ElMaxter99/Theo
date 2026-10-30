@@ -49,6 +49,13 @@ export function Wizard({ project }: { project: string }) {
   const clashes = clashesForNewInstance(plan.data ?? undefined);
   const proposal = projInfo?.worktree_dir_effective ? `${projInfo.worktree_dir_effective}/${folderForBranch(chosen || "branch")}` : "";
 
+  // The one polite live region tells screen-reader users the outcome of the port check.
+  useEffect(() => {
+    if (step !== 3 || plan.loading) return;
+    announce(plan.error ? t.wizard.previewError : clashes.length > 0 ? t.wizard.s3Conflict(clashes.length) : hasFixedPorts(plan.data ?? undefined) ? t.wizard.s3NoConflict : t.wizard.s3NoPorts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, plan.loading, plan.error, clashes.length]);
+
   const validate1 = (): string => {
     if (mode === "existing") {
       if (!branch) return t.wizard.branchRequired;
@@ -182,13 +189,13 @@ export function Wizard({ project }: { project: string }) {
       {step === 3 ? (
         <div>
           {plan.loading || overview.loading ? <Loading label={t.wizard.s3Loading} /> : null}
-          {plan.error ? <Banner tone="warn" role="status"><p>{t.wizard.previewError}</p></Banner> : null}
+          {plan.error ? <Banner tone="warn"><p>{t.wizard.previewError}</p></Banner> : null}
           {!plan.loading && !plan.error ? (
             clashes.length === 0 ? (
-              <Banner tone="ok" role="status"><p>{hasFixedPorts(plan.data ?? undefined) ? t.wizard.s3NoConflict : t.wizard.s3NoPorts}</p></Banner>
+              <Banner tone="ok"><p>{hasFixedPorts(plan.data ?? undefined) ? t.wizard.s3NoConflict : t.wizard.s3NoPorts}</p></Banner>
             ) : (
               <>
-                <Banner tone="warn" role="status"><p>{t.wizard.s3Conflict(clashes.length)}</p></Banner>
+                <Banner tone="warn"><p>{t.wizard.s3Conflict(clashes.length)}</p></Banner>
                 <div class="table-wrap" tabIndex={0} role="region" aria-label={t.wizard.s3Title}>
                   <table class="data">
                     <caption class="sr-only">{t.wizard.s3Title}</caption>

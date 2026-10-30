@@ -61,16 +61,16 @@ export function Shell({ meta, onRefresh, children }: { meta: Meta | undefined; o
       </nav>
       <main id="main" class="app-main" tabIndex={-1}>
         {dockerDown ? (
-          <Banner tone="warn" title={t.banner.dockerTitle} role="status" actions={<button type="button" class="btn sm" onClick={onRefresh}>{t.app.refresh}</button>}>
+          <Banner tone="warn" title={t.banner.dockerTitle} actions={<button type="button" class="btn sm" onClick={onRefresh}>{t.app.refresh}</button>}>
             <p>{t.banner.dockerBody}</p>
             <p>{meta?.docker.hint ?? t.banner.dockerFix}</p>
             {meta?.docker.error ? <p class="small mono">{meta.docker.error}</p> : null}
           </Banner>
         ) : null}
-        {gitDown ? <Banner tone="warn" title={t.banner.gitTitle} role="status"><p>{t.banner.gitBody}</p></Banner> : null}
+        {gitDown ? <Banner tone="warn" title={t.banner.gitTitle}><p>{t.banner.gitBody}</p></Banner> : null}
         {children}
       </main>
-      <div id="live-region" class="sr-only" role="status" aria-live="polite" aria-atomic="true" />
+      <div id="live-region" class="sr-only" aria-live="polite" aria-atomic="true" />
     </div>
   );
 }
