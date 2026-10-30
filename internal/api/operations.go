@@ -57,7 +57,7 @@ type Operation struct {
 	firstID    int // id of events[0]
 	nextID     int
 	wake       chan struct{}
-	errTail    []string // the last lines of stderr, kept to explain a failure
+	errTail    []string // the last lines of output, kept to explain a failure
 }
 
 // tailedError adds the last lines the tool printed to its error: Docker says
@@ -224,7 +224,7 @@ func (w *lineWriter) Flush() {
 		data["truncated"] = true
 	}
 	w.op.append("log", data)
-	if w.stream == "stderr" && strings.TrimSpace(line) != "" {
+	if strings.TrimSpace(line) != "" { // docker compose reports some errors on stdout
 		w.op.mu.Lock()
 		w.op.errTail = append(w.op.errTail, line)
 		if len(w.op.errTail) > 20 {
