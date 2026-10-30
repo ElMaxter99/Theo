@@ -430,6 +430,9 @@ type ContainersError struct {
 	Stacks  []ProjectStack
 }
 
+// Code is the stable code of the error, for interfaces that translate it.
+func (c *ContainersError) Code() string { return "project_has_containers" }
+
 func (c *ContainersError) Error() string {
 	names := make([]string, len(c.Stacks))
 	for i, s := range c.Stacks {

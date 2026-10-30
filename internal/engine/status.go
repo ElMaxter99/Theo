@@ -68,6 +68,10 @@ type WorktreeStatus struct {
 type InstanceStatus struct {
 	ComposeProject string `json:"compose_project,omitempty"` // empty when the configuration cannot be read
 	State          string `json:"state"`
+	// InstanceState is State under the rules of InstanceState (running,
+	// partial, unhealthy, stopped, absent or unknown), which `theo ps` and
+	// the graphical interface share.
+	InstanceState string `json:"instance_state"`
 	// Counts are services by state.
 	Counts   ServiceCounts   `json:"counts"`
 	Services []ServiceStatus `json:"services"`
@@ -212,7 +216,7 @@ func (e *Engine) instanceStatus(ctx context.Context, p registry.Project, ws *Wor
 	warn := func(kind, msg, fix string) {
 		ws.Warnings = append(ws.Warnings, StatusWarning{Kind: kind, Message: msg, Fix: fix})
 	}
-	ws.Instance = &InstanceStatus{State: StateUnknown, Services: []ServiceStatus{}, Ports: []PortStatus{}}
+	ws.Instance = &InstanceStatus{State: StateUnknown, InstanceState: InstUnknown, Services: []ServiceStatus{}, Ports: []PortStatus{}}
 
 	// A project env file that vanished is the one problem worth naming apart
 	// from the Compose error it causes.
@@ -268,6 +272,7 @@ func (e *Engine) instanceStatus(ctx context.Context, p registry.Project, ws *Wor
 		return
 	}
 	ws.Instance.State, ws.Instance.Counts, ws.Instance.Services = summarize(cfg, containers)
+	ws.Instance.InstanceState = InstanceState(containers, expectedServices(cfg), true)
 
 	plan, err := e.PlanPorts(ctx, inst, nil, false)
 	if err != nil {

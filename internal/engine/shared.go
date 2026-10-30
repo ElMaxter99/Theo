@@ -263,6 +263,14 @@ type SharedInUseError struct {
 	Confirm   string // what --confirm must say, when a confirmation can override
 }
 
+// Code is the stable code of the error, for interfaces that translate it.
+func (s *SharedInUseError) Code() string {
+	if s.Confirm != "" {
+		return "confirmation_required"
+	}
+	return "shared_in_use"
+}
+
 func (s *SharedInUseError) Error() string {
 	var lines []string
 	for _, c := range s.Consumers {

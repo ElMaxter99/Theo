@@ -65,6 +65,9 @@ type ConfirmError struct {
 
 func (c *ConfirmError) Error() string { return c.Reason }
 
+// Code is the stable code of the error, for interfaces that translate it.
+func (c *ConfirmError) Code() string { return "confirmation_required" }
+
 // dataVolume is a volume of an instance that data operations may touch.
 type dataVolume struct {
 	Key    string   // name in the Compose file
