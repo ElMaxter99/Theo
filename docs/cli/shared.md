@@ -36,7 +36,7 @@ theo shared status my-api                 # state, image, who uses it
 | `shared status <p> [--json]` | State and consumers. |
 | `shared down <p> [--confirm <p>-shared]` | Stop them; volumes are kept. Refused while running instances use them, listing those instances; `--confirm` overrides. |
 | `shared remove <p> [<service>...]` | Stop sharing. Refused while instances are linked or the shared containers exist. Removes the network when the last service goes. |
-| `shared purge <p> --confirm <p>-shared` | Delete the shared services' data. Needs them stopped. Lists the instances linked to them. |
+| `shared purge <p> --confirm <p>-shared` | Delete the shared services' data. Needs them stopped and no instance linked to them (`shared unuse` first); otherwise it lists the linked instances and changes nothing. |
 | `up --start-shared` | Start the shared services if they are stopped. Without it, `up` refuses and says how to start them: Theo never starts them in silence. |
 
 ## Protections

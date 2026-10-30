@@ -408,6 +408,15 @@ func (e *Engine) SharedPurge(ctx context.Context, project, confirm string) ([]Vo
 	if err != nil {
 		return nil, err
 	}
+	// Linked instances would lose the data they depend on, whatever the
+	// confirmation says: unlink them first.
+	consumers, err := e.SharedConsumers(ctx, project)
+	if err != nil {
+		return nil, err
+	}
+	if len(consumers) > 0 {
+		return nil, &SharedInUseError{Project: project, Action: "purge their data", Consumers: consumers}
+	}
 	return e.PurgeVolumes(ctx, inst, confirm)
 }
 
