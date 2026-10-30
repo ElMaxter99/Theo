@@ -213,8 +213,7 @@ func (e *Engine) planPorts(ctx context.Context, inst *Instance, profiles []strin
 					m.Status = PortFree
 					if _, ours := own[portID(desired, proto)]; ours {
 						m.Status = PortRunning
-					}
-					if desired != configured {
+					} else if desired != configured {
 						m.Status = PortKept
 					}
 				case auto:

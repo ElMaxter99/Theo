@@ -141,6 +141,21 @@ func TestApplyPortsReassignsAndKeepsThePortBetweenRuns(t *testing.T) {
 	}
 }
 
+func TestPlanPortsKeptPortOfARunningInstanceIsRunning(t *testing.T) {
+	e, c, inst := portsFixture(t, apiPorts(), 3303)
+	c.resolved = &compose.Project{Services: map[string]compose.Service{
+		"api": {Ports: []compose.Port{{Target: 3000, Published: "3304", Protocol: "tcp"}}},
+	}}
+	if _, err := e.ApplyInstance(context.Background(), inst, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	c.containers = []compose.Container{{Service: "api", Publishers: []compose.Publisher{{TargetPort: 3000, PublishedPort: 3304, Protocol: "tcp"}}}}
+	plan, _ := e.PlanPorts(context.Background(), inst, nil, true)
+	if m := mapping(t, plan, "api"); m.Status != PortRunning || m.Effective != 3304 {
+		t.Errorf("a running instance on its kept port should be %q: %+v", PortRunning, m)
+	}
+}
+
 func TestApplyPortsRejectsAResultThatDoesNotPublishThePlan(t *testing.T) {
 	e, c, inst := portsFixture(t, apiPorts(), 3303)
 	c.resolved = &compose.Project{Services: map[string]compose.Service{
