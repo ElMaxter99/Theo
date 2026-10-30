@@ -311,7 +311,7 @@ type opState struct {
 	ID    string `json:"id"`
 	Kind  string
 	State string
-	Error *struct{ Code, Message string }
+	Error *struct{ Code, Message, Original string }
 }
 
 func (e *env) waitOp(id string) opState {

@@ -57,7 +57,18 @@ type Operation struct {
 	firstID    int // id of events[0]
 	nextID     int
 	wake       chan struct{}
+	errTail    []string // the last lines of stderr, kept to explain a failure
 }
+
+// tailedError adds the last lines the tool printed to its error: Docker says
+// why it failed on stderr, and the exit status alone explains nothing.
+type tailedError struct {
+	err  error
+	tail []string
+}
+
+func (t *tailedError) Error() string { return t.err.Error() + "\n\n" + strings.Join(t.tail, "\n") }
+func (t *tailedError) Unwrap() error { return t.err }
 
 type opResult struct {
 	OK      bool   `json:"ok"`
@@ -213,6 +224,14 @@ func (w *lineWriter) Flush() {
 		data["truncated"] = true
 	}
 	w.op.append("log", data)
+	if w.stream == "stderr" && strings.TrimSpace(line) != "" {
+		w.op.mu.Lock()
+		w.op.errTail = append(w.op.errTail, line)
+		if len(w.op.errTail) > 20 {
+			w.op.errTail = w.op.errTail[1:]
+		}
+		w.op.mu.Unlock()
+	}
 	w.buf, w.cut = w.buf[:0], false
 }
 
@@ -376,6 +395,9 @@ func (o *operations) run(ctx context.Context, op *Operation, req startRequest) {
 func (o *operations) finish(op *Operation, summary string, err error, wasCancelled bool) {
 	op.mu.Lock()
 	cancelRequested := op.state == OpCancelling
+	if err != nil && len(op.errTail) > 0 {
+		err = &tailedError{err: err, tail: append([]string(nil), op.errTail...)}
+	}
 	op.mu.Unlock()
 	res := &opResult{OK: err == nil, Summary: summary}
 	state := OpSucceeded
