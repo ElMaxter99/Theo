@@ -21,8 +21,8 @@ export function clashesForNewInstance(plan: PortPlan | undefined): PortClash[] {
 
 function clashOf(m: PortMapping): PortClash | null {
   // Only fixed host ports can clash; random ports and ranges are picked by Docker.
-  const fixed = Number.parseInt(m.configured ?? "", 10);
-  if (!Number.isFinite(fixed) || fixed <= 0) return null;
+  const fixed = fixedPort(m.configured);
+  if (fixed === 0) return null;
   if (m.status === "running") return { service: m.service, port: m.running || fixed, who: "instance" };
   if (m.status === "in use") return { service: m.service, port: fixed, who: "program" };
   return null;
@@ -30,5 +30,11 @@ function clashOf(m: PortMapping): PortClash | null {
 
 /** Fixed host ports of a plan, whether they clash or not (used to say "nothing to clash" or not). */
 export function hasFixedPorts(plan: PortPlan | undefined): boolean {
-  return (plan?.ports ?? []).some((m) => Number.parseInt(m.configured ?? "", 10) > 0);
+  return (plan?.ports ?? []).some((m) => fixedPort(m.configured) > 0);
+}
+
+/** A single fixed host port ("3000"); 0 for random ("") and for ranges ("8000-8010"). */
+function fixedPort(configured: string | undefined): number {
+  if (!configured || !/^\d+$/.test(configured)) return 0;
+  return Number.parseInt(configured, 10);
 }
