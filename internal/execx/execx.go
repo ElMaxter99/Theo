@@ -14,6 +14,7 @@ import (
 	"io"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // ErrNotFound is returned when the requested tool is not installed or not
@@ -61,13 +62,41 @@ func run(ctx context.Context, dir, name string, args ...string) ([]byte, error) 
 		return nil, fmt.Errorf("%s: %w", name, ErrNotFound)
 	}
 
-	cmd := exec.CommandContext(ctx, path, args...)
+	lim := limitsOf(ctx)
+	if lim.Breaker != nil {
+		if err := lim.Breaker.check(name, dir); err != nil {
+			return nil, fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
+		}
+	}
+	release, err := acquire(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
+	}
+	defer release()
+	runCtx := ctx
+	if lim.Timeout > 0 { // counted from the start of the command, not from the wait for a slot
+		var cancel context.CancelFunc
+		runCtx, cancel = context.WithTimeout(ctx, lim.Timeout)
+		defer cancel()
+	}
+
+	cmd := exec.CommandContext(runCtx, path, args...)
 	cmd.Dir = dir
+	if lim.Timeout > 0 {
+		killTree(cmd)
+	}
+	cmd.WaitDelay = 2 * time.Second // a grandchild holding the pipes cannot keep us waiting after the kill
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
+		if lim.Timeout > 0 && ctx.Err() == nil && errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+			if lim.Breaker != nil {
+				lim.Breaker.trip(name, dir)
+			}
+			return nil, fmt.Errorf("%s %s: %w after %s", name, strings.Join(args, " "), ErrTimeout, lim.Timeout)
+		}
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
 			msg = err.Error()
