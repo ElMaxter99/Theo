@@ -63,8 +63,9 @@ func run(ctx context.Context, dir, name string, args ...string) ([]byte, error) 
 	}
 
 	lim := limitsOf(ctx)
+	key := breakerKey(name, dir, args)
 	if lim.Breaker != nil {
-		if err := lim.Breaker.peek(name, dir); err != nil {
+		if err := lim.Breaker.peek(key); err != nil {
 			return nil, fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
 		}
 	}
@@ -74,7 +75,7 @@ func run(ctx context.Context, dir, name string, args ...string) ([]byte, error) 
 	}
 	defer release()
 	if lim.Breaker != nil { // it may have opened while this command waited for a slot
-		if err := lim.Breaker.check(name, dir); err != nil {
+		if err := lim.Breaker.check(key); err != nil {
 			return nil, fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
 		}
 	}
@@ -98,7 +99,7 @@ func run(ctx context.Context, dir, name string, args ...string) ([]byte, error) 
 	if err := cmd.Run(); err != nil {
 		if lim.Timeout > 0 && ctx.Err() == nil && errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 			if lim.Breaker != nil {
-				lim.Breaker.trip(name, dir)
+				lim.Breaker.trip(key)
 			}
 			return nil, fmt.Errorf("%s %s: %w after %s", name, strings.Join(args, " "), ErrTimeout, lim.Timeout)
 		}
@@ -108,15 +109,15 @@ func run(ctx context.Context, dir, name string, args ...string) ([]byte, error) 
 		}
 		if lim.Breaker != nil {
 			if runCtx.Err() == nil {
-				lim.Breaker.worked(name, dir) // it answered, even if with a failure
+				lim.Breaker.worked(key) // it answered, even if with a failure
 			} else {
-				lim.Breaker.abandon(name, dir) // the caller gave up: nothing learned
+				lim.Breaker.abandon(key) // the caller gave up: nothing learned
 			}
 		}
 		return nil, fmt.Errorf("%s %s: %s", name, strings.Join(args, " "), msg)
 	}
 	if lim.Breaker != nil {
-		lim.Breaker.worked(name, dir)
+		lim.Breaker.worked(key)
 	}
 	return stdout.Bytes(), nil
 }

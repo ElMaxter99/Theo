@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -116,25 +117,37 @@ func NewBreaker(cooldown time.Duration) *Breaker {
 	return &Breaker{Cooldown: cooldown, state: map[string]breakerState{}, now: time.Now}
 }
 
-func breakerKey(name, dir string) string {
+// breakerKey says which tool a command belongs to for the breaker. All of
+// Docker is one (a stuck daemon stalls every command that needs it), except
+// `docker compose config`, which reads files and works with the daemon down.
+// Other tools are tracked per directory.
+func breakerKey(name, dir string, args []string) string {
 	if name == "docker" {
+		if len(args) > 0 && args[0] == "compose" {
+			for _, a := range args[1:] {
+				if a == "config" {
+					return "docker config"
+				}
+			}
+		}
 		return name
 	}
 	return name + "|" + dir
 }
 
-func (b *Breaker) refusal(name string, left time.Duration) error {
+func (b *Breaker) refusal(key string, left time.Duration) error {
+	name, _, _ := strings.Cut(key, "|")
 	return fmt.Errorf("%s did not answer a moment ago; not trying again for %s: %w", name, left.Round(time.Second), ErrUnresponsive)
 }
 
 // peek fails while the breaker is open. It admits nothing: it only spares a
 // command from queueing for a slot it would not be allowed to use.
-func (b *Breaker) peek(name, dir string) error {
+func (b *Breaker) peek(key string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if st, ok := b.state[breakerKey(name, dir)]; ok {
+	if st, ok := b.state[key]; ok {
 		if left := st.until.Sub(b.now()); left > 0 {
-			return b.refusal(name, left)
+			return b.refusal(key, left)
 		}
 	}
 	return nil
@@ -143,19 +156,19 @@ func (b *Breaker) peek(name, dir string) error {
 // check admits a command: it fails while the breaker is open, and once the
 // pause is over lets exactly one command through to try the tool again
 // (the others keep failing until it finishes).
-func (b *Breaker) check(name, dir string) error {
+func (b *Breaker) check(key string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	k := breakerKey(name, dir)
+	k := key
 	st, ok := b.state[k]
 	if !ok {
 		return nil
 	}
 	if left := st.until.Sub(b.now()); left > 0 {
-		return b.refusal(name, left)
+		return b.refusal(key, left)
 	}
 	if st.probing {
-		return b.refusal(name, 0)
+		return b.refusal(key, 0)
 	}
 	st.probing = true
 	b.state[k] = st
@@ -165,10 +178,10 @@ func (b *Breaker) check(name, dir string) error {
 // trip records a timeout. Commands that were already running when the first
 // one timed out are not new evidence: only the first timeout of an episode,
 // or the failure of a probe, opens (and lengthens) the pause.
-func (b *Breaker) trip(name, dir string) {
+func (b *Breaker) trip(key string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	k := breakerKey(name, dir)
+	k := key
 	st, ok := b.state[k]
 	if ok && !st.probing {
 		return
@@ -185,10 +198,10 @@ func (b *Breaker) trip(name, dir string) {
 
 // abandon ends a probe that was cancelled by its caller, so another command
 // can try the tool.
-func (b *Breaker) abandon(name, dir string) {
+func (b *Breaker) abandon(key string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	k := breakerKey(name, dir)
+	k := key
 	if st, ok := b.state[k]; ok && st.probing {
 		st.probing = false
 		b.state[k] = st
@@ -196,9 +209,9 @@ func (b *Breaker) abandon(name, dir string) {
 }
 
 // worked closes the breaker of a tool whose command just finished in time.
-func (b *Breaker) worked(name, dir string) {
+func (b *Breaker) worked(key string) {
 	b.mu.Lock()
-	delete(b.state, breakerKey(name, dir))
+	delete(b.state, key)
 	b.mu.Unlock()
 }
 

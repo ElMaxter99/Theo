@@ -90,19 +90,19 @@ func TestBreakerCoolsDown(t *testing.T) {
 	br := NewBreaker(time.Minute)
 	now := time.Now()
 	br.now = func() time.Time { return now }
-	br.trip("git", "/a")
-	if err := br.check("git", "/a"); !errors.Is(err, ErrUnresponsive) {
+	br.trip(breakerKey("git", "/a", nil))
+	if err := br.check(breakerKey("git", "/a", nil)); !errors.Is(err, ErrUnresponsive) {
 		t.Fatalf("inside the cooldown: %v", err)
 	}
-	if err := br.check("git", "/b"); err != nil {
+	if err := br.check(breakerKey("git", "/b", nil)); err != nil {
 		t.Errorf("git is tracked per directory, /b is fine: %v", err)
 	}
-	br.trip("docker", "/a")
-	if err := br.check("docker", "/elsewhere"); !errors.Is(err, ErrUnresponsive) {
+	br.trip(breakerKey("docker", "/a", nil))
+	if err := br.check(breakerKey("docker", "/elsewhere", nil)); !errors.Is(err, ErrUnresponsive) {
 		t.Errorf("docker is tracked as a whole: %v", err)
 	}
 	now = now.Add(2 * time.Minute)
-	if err := br.check("git", "/a"); err != nil {
+	if err := br.check(breakerKey("git", "/a", nil)); err != nil {
 		t.Errorf("after the cooldown: %v", err)
 	}
 }
