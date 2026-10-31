@@ -96,35 +96,50 @@ func (h *hub) pollLoop(s *Server) {
 		if h.clients() == 0 || !s.auth.anyVisible() {
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		ctx, cancel := context.WithTimeout(s.workCtx, pollCycleTimeout)
 		s.pollOnce(ctx)
 		cancel()
 	}
 }
 
+// pollCycleTimeout bounds one look at all projects.
+const pollCycleTimeout = 20 * time.Second
+
+// pollParallelism is how many projects one cycle looks at at once.
+const pollParallelism = 4
+
 // pollOnce recomputes the overview of every project and publishes
-// state.changed for the ones that differ from the last look.
+// state.changed for the ones that differ from the last look. Docker is read
+// once for the whole cycle, not once per project.
 func (s *Server) pollOnce(ctx context.Context) {
 	projects, err := s.eng.Projects()
 	if err != nil {
 		return
 	}
-	seen := map[string]bool{}
+	snap := s.dockerSnapshot(ctx, true)
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, pollParallelism)
 	for _, p := range projects {
-		seen[p.Name] = true
-		ov, err := s.overview(ctx, p.Name, true)
-		if err != nil {
-			continue
-		}
-		sig := ov.signature()
-		s.hub.mu.Lock()
-		prev, known := s.hub.lastSig[p.Name]
-		s.hub.lastSig[p.Name] = sig
-		s.hub.mu.Unlock()
-		if known && prev != sig {
-			s.hub.publish("state.changed", map[string]string{"project": p.Name})
-		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(name string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			ov, err := s.overviewWith(ctx, name, overviewOpts{fresh: true, snap: snap})
+			if err != nil {
+				return
+			}
+			sig := ov.signature()
+			s.hub.mu.Lock()
+			prev, known := s.hub.lastSig[name]
+			s.hub.lastSig[name] = sig
+			s.hub.mu.Unlock()
+			if known && prev != sig {
+				s.hub.publish("state.changed", map[string]string{"project": name})
+			}
+		}(p.Name)
 	}
+	wg.Wait()
 }
 
 // handleEvents serves GET /events.
