@@ -61,8 +61,9 @@ type Config struct {
 	// MaxProcesses is how many read commands run at once in the process
 	// (default 8).
 	MaxProcesses int
-	// ConfigCacheTTL is how long a `docker compose config` answer is reused
-	// while its files do not change (default 30 s; negative turns it off).
+	// ConfigCacheTTL is how long a `docker compose config` answer is reused for
+	// the panel's reads (overview, health, reconcile) while its files do not
+	// change (default 5 min; negative turns it off).
 	ConfigCacheTTL time.Duration
 	// Log receives one line per request (method and route pattern only, never
 	// paths, queries or bodies). Nil discards.

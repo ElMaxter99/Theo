@@ -125,7 +125,7 @@ func composeFileFromEnv(env EnvFile, envFiles []string) (items []string, source 
 // files. The adapter takes the files through an optional method, so fakes
 // that only know Config keep working.
 func (e *Engine) configWithFiles(ctx context.Context, dir string, envFiles, files []string) (*compose.Project, error) {
-	if c := e.cfgCache; c != nil && !execx.Explaining() {
+	if c := e.cfgCache; c != nil && ctx.Value(cachedConfigKey{}) != nil && !execx.Explaining() {
 		key, fp := c.key(dir, envFiles, files), configFingerprint(dir, envFiles, files)
 		if cfg := c.get(key, fp); cfg != nil {
 			return cfg, nil

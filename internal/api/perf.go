@@ -20,7 +20,7 @@ const (
 	defaultCommandTimeout = 15 * time.Second
 	defaultWorkTimeout    = 60 * time.Second
 	defaultBreakerPause   = 5 * time.Second
-	defaultConfigCacheTTL = 30 * time.Second
+	defaultConfigCacheTTL = 5 * time.Minute
 
 	// snapshotTTL is how long a read of Docker is reused. A request that asks
 	// for fresh data accepts one no older than snapshotFreshAge.
@@ -46,7 +46,7 @@ type snapCache struct {
 // request that started them, ends with the server, and bounds every Git and
 // Docker command it starts (timeout, hang breaker, process count).
 func (s *Server) work() (context.Context, context.CancelFunc) {
-	ctx := engine.WithRequestMemo(execx.WithLimits(s.workCtx, s.limits))
+	ctx := engine.WithCachedConfig(engine.WithRequestMemo(execx.WithLimits(s.workCtx, s.limits)))
 	return context.WithTimeout(ctx, s.cfg.WorkTimeout)
 }
 

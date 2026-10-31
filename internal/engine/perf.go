@@ -128,11 +128,13 @@ type configEntry struct {
 	cfg *compose.Project
 }
 
-// EnableConfigCache makes the engine remember `docker compose config`
-// answers for ttl. It is for long-running interfaces that read the same
-// configuration every few seconds (the HTTP API); a command-line run reads
-// each once and needs no cache. Call it before the engine is shared. ttl <= 0
-// turns the cache off.
+// EnableConfigCache lets the engine remember `docker compose config` answers
+// for ttl, but only for reads whose context says a remembered answer is good
+// enough (WithCachedConfig): what a panel shows. Anything that acts on the
+// configuration (up, down, ports to assign) always asks Compose. It is for
+// long-running interfaces that read the same configuration every few seconds
+// (the HTTP API). Call it before the engine is shared. ttl <= 0 turns the
+// cache off.
 func (e *Engine) EnableConfigCache(ttl time.Duration) *Engine {
 	if ttl <= 0 {
 		e.cfgCache = nil
@@ -140,6 +142,14 @@ func (e *Engine) EnableConfigCache(ttl time.Duration) *Engine {
 	}
 	e.cfgCache = &configCache{ttl: ttl, now: time.Now, m: map[string]configEntry{}}
 	return e
+}
+
+type cachedConfigKey struct{}
+
+// WithCachedConfig returns a context under which resolving an instance may
+// use a remembered configuration (see EnableConfigCache).
+func WithCachedConfig(ctx context.Context) context.Context {
+	return context.WithValue(ctx, cachedConfigKey{}, true)
 }
 
 var defaultComposeNames = []string{
