@@ -8,7 +8,9 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -46,10 +48,25 @@ func (f *fakeCompose) Config(_ context.Context, dir string, _ []string) (*compos
 	}}, nil
 }
 
+var publishedInOverlay = regexp.MustCompile(`published: "(\d+)"`)
+
 func (f *fakeCompose) ConfigFor(ctx context.Context, t compose.Target) (*compose.Project, error) {
 	p, err := f.Config(ctx, t.Dir, nil)
-	if err != nil || f.configEnv == nil {
+	if err != nil {
 		return p, err
+	}
+	// Stand in for Compose reading Theo's generated file: the port it publishes wins.
+	if len(t.Files) > 0 {
+		if data, rerr := os.ReadFile(t.Files[len(t.Files)-1]); rerr == nil {
+			if m := publishedInOverlay.FindSubmatch(data); m != nil {
+				web := p.Services["web"]
+				web.Ports = []compose.Port{{Target: 80, Published: string(m[1]), Protocol: "tcp"}}
+				p.Services["web"] = web
+			}
+		}
+	}
+	if f.configEnv == nil {
+		return p, nil
 	}
 	// Stand in for Compose reading the generated file: every service gets the variables.
 	for name, s := range p.Services {

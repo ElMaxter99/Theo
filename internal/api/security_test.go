@@ -528,6 +528,36 @@ func TestFindRunningDoesNotFollowRedirects(t *testing.T) {
 	}
 }
 
+// docs/api.md: auto_ports=1 on a GET is a preview, it reserves nothing. Asking
+// for the resolved config used to record the reassigned port in ports.json.
+func TestConfigPreviewReservesNoPorts(t *testing.T) {
+	ln, err := net.Listen("tcp", "0.0.0.0:18080") // the port the fake project publishes
+	if err != nil {
+		t.Skipf("port 18080 is not free: %v", err)
+	}
+	defer ln.Close()
+	e := newEnv(t)
+	base := "/api/v1/projects/ubapp/worktrees/" + e.wtID(e.linked)
+	st, body, _ := e.c.raw("GET", base+"/config?auto_ports=1", nil, nil)
+	if st != 200 {
+		t.Fatalf("config = %d %s", st, body)
+	}
+	// A fresh plan with auto_ports reassigns the busy port; a recorded reservation would make it "kept".
+	var plan struct {
+		Ports []struct {
+			Configured string
+			Effective  int
+			Status     string
+		}
+	}
+	if st := e.c.call("GET", base+"/ports?auto_ports=1", nil, &plan); st != 200 || len(plan.Ports) != 1 {
+		t.Fatalf("ports = %d %+v", st, plan)
+	}
+	if p := plan.Ports[0]; p.Status != "reassigned" {
+		t.Errorf("GET .../config?auto_ports=1 recorded a reservation: web is %q on %d, not a fresh reassignment", p.Status, p.Effective)
+	}
+}
+
 // A GET does not change Theo's records (contract 9.4). The generated Compose
 // overlay that GET .../config writes to ask Compose is a regenerable file, not
 // a record, and is left out.

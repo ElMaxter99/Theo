@@ -247,6 +247,12 @@ func secretForms(v string) []string {
 // with `docker compose config`, and from then on the instance runs with
 // them. Without changes the instance runs with the project's own files.
 func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []string, auto bool) (*PortPlan, error) {
+	return e.applyInstance(ctx, inst, profiles, auto, true)
+}
+
+// applyInstance is ApplyInstance; remember says whether the ports it
+// reassigns are recorded (up) or only proposed (a preview).
+func (e *Engine) applyInstance(ctx context.Context, inst *Instance, profiles []string, auto, remember bool) (*PortPlan, error) {
 	plan, state, err := e.planPorts(ctx, inst, profiles, auto)
 	if err != nil {
 		return nil, err
@@ -290,7 +296,7 @@ func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []s
 	inst.files, inst.instanceEnv, inst.generated = inst.selected, "", nil
 	overlayPath, envPath := e.instanceFile(inst, ".yaml"), e.instanceFile(inst, ".env")
 	if overlay.Empty() && len(env) == 0 {
-		if auto {
+		if auto && remember {
 			if err := e.savePorts(inst.Workspace, state); err != nil {
 				return nil, err
 			}
@@ -311,7 +317,7 @@ func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []s
 			return nil, fmt.Errorf("%w (generated file %s)", err, inst.generated[0])
 		}
 	}
-	if auto {
+	if auto && remember {
 		if err := e.savePorts(inst.Workspace, state); err != nil {
 			return nil, err
 		}
@@ -406,7 +412,18 @@ func renderEnvFile(env map[string]string) []byte {
 // `docker compose config` prints it, with secret values masked. It applies
 // the instance's generated files, but starts nothing.
 func (e *Engine) ResolvedConfig(ctx context.Context, inst *Instance, profiles []string, auto bool) (string, error) {
-	if _, err := e.ApplyInstance(ctx, inst, profiles, auto); err != nil {
+	return e.resolvedConfig(ctx, inst, profiles, auto, true)
+}
+
+// PreviewConfig is ResolvedConfig for a read-only caller (GET .../config): the
+// ports that auto reassigns are shown but not recorded, so asking changes no
+// reservation. The regenerable files Theo hands to Compose are still written.
+func (e *Engine) PreviewConfig(ctx context.Context, inst *Instance, profiles []string, auto bool) (string, error) {
+	return e.resolvedConfig(ctx, inst, profiles, auto, false)
+}
+
+func (e *Engine) resolvedConfig(ctx context.Context, inst *Instance, profiles []string, auto, remember bool) (string, error) {
+	if _, err := e.applyInstance(ctx, inst, profiles, auto, remember); err != nil {
 		return "", err
 	}
 	out, err := e.compose.ConfigText(ctx, inst.target())

@@ -542,7 +542,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request, _ *session
 		return err
 	}
 	q := r.URL.Query()
-	text, err := s.eng.ResolvedConfig(r.Context(), inst, q["profile"], q.Get("auto_ports") == "1")
+	text, err := s.eng.PreviewConfig(r.Context(), inst, q["profile"], q.Get("auto_ports") == "1") // a GET reserves nothing
 	if err != nil {
 		return err
 	}
