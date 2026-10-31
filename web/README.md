@@ -11,4 +11,4 @@ npm run test:e2e:real        # Playwright against the real `theo serve` (needs D
 ```
 
 Structure, design decisions, tests and what is not verified: `docs/cli/ui-web.md`. Dependencies and licences: `DEPENDENCIES.md`.
-The API it talks to: `docs/api.md`. The artwork in `public/brand/` is provisional and not MIT-licensed (`public/brand/NOTICE.md`).
+The API it talks to: `docs/api.md`. The artwork in `public/brand/` is under CC BY 4.0, not MIT (`public/brand/NOTICE.md`).
