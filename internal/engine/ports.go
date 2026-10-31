@@ -98,6 +98,14 @@ func (e *Engine) PlanPorts(ctx context.Context, inst *Instance, profiles []strin
 	return plan, err
 }
 
+// PlanPortsWith is PlanPorts for a caller that has just read the containers
+// of the instance (Containers, ContainersFrom): it does not ask Docker for
+// them a second time.
+func (e *Engine) PlanPortsWith(ctx context.Context, inst *Instance, profiles []string, auto bool, containers []compose.Container) (*PortPlan, error) {
+	plan, _, err := e.planPortsKnown(ctx, inst, profiles, auto, &containers)
+	return plan, err
+}
+
 // savePorts records the ports of one instance. The file is read again under
 // the lock and only this instance's entry is replaced, so two instances
 // starting at the same time do not undo each other's reservations.
@@ -120,6 +128,12 @@ func (e *Engine) savePorts(workspace string, mine ports.State) error {
 }
 
 func (e *Engine) planPorts(ctx context.Context, inst *Instance, profiles []string, auto bool) (*PortPlan, ports.State, error) {
+	return e.planPortsKnown(ctx, inst, profiles, auto, nil)
+}
+
+// planPortsKnown is planPorts; known, when not nil, holds the containers of
+// the instance already read.
+func (e *Engine) planPortsKnown(ctx context.Context, inst *Instance, profiles []string, auto bool, known *[]compose.Container) (*PortPlan, ports.State, error) {
 	// An instance that was started with --auto-ports keeps doing it.
 	if cfg, err := e.Settings(inst); err == nil && cfg.AutoPorts {
 		auto = true
@@ -144,7 +158,14 @@ func (e *Engine) planPorts(ctx context.Context, inst *Instance, profiles []strin
 	// conflicts. Without a Docker daemon there are none to find.
 	own := map[string]int{}
 	running := map[string]int{}
-	if cs, err := e.compose.PS(ctx, inst.target()); err == nil {
+	var cs []compose.Container
+	var psErr error
+	if known != nil {
+		cs = *known
+	} else {
+		cs, psErr = e.compose.PS(ctx, inst.target())
+	}
+	if psErr == nil {
 		for _, c := range cs {
 			for _, p := range c.Publishers {
 				if p.PublishedPort == 0 {

@@ -9,7 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,6 +35,7 @@ type fakeGit struct {
 	worktrees []git.Worktree
 	dirty     map[string]bool
 	checked   []string
+	checkedMu sync.Mutex // Worktrees checks several worktrees at once
 
 	branches []git.Branch
 	changes  map[string][]string
@@ -54,7 +57,9 @@ func (g *fakeGit) Worktrees(context.Context, string) ([]git.Worktree, error) {
 }
 
 func (g *fakeGit) Dirty(_ context.Context, dir string) (bool, error) {
+	g.checkedMu.Lock()
 	g.checked = append(g.checked, dir)
+	g.checkedMu.Unlock()
 	return g.dirty[dir], nil
 }
 
@@ -263,7 +268,10 @@ func TestWorktreesReportsChangesAndSkipsMissingOnes(t *testing.T) {
 	if len(list) != 3 || list[0].Dirty || !list[1].Dirty || list[2].Dirty {
 		t.Errorf("Worktrees() = %+v", list)
 	}
-	if !reflect.DeepEqual(g.checked, []string{root, feature}) {
+	sort.Strings(g.checked) // the checks run in parallel: only the set matters
+	want := []string{root, feature}
+	sort.Strings(want)
+	if !reflect.DeepEqual(g.checked, want) {
 		t.Errorf("checked status of %v; the missing worktree must be skipped", g.checked)
 	}
 }

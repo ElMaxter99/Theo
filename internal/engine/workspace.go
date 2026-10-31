@@ -47,7 +47,7 @@ type trackedChecker interface {
 // independent clones Theo recorded. A clone whose directory is gone is
 // marked Prunable, like a worktree Git still lists but cannot find.
 func (e *Engine) worktreeList(ctx context.Context, p registry.Project) ([]git.Worktree, error) {
-	list, err := e.git.Worktrees(ctx, p.Path)
+	list, err := e.gitWorktrees(ctx, p.Path)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,7 @@ func (e *Engine) worktreeList(ctx context.Context, p registry.Project) ([]git.Wo
 		entry := git.Worktree{Path: w.Path}
 		if !dirExists(w.Path) {
 			entry.Prunable = true
-		} else if l, err := e.git.Worktrees(ctx, w.Path); err == nil && len(l) > 0 {
+		} else if l, err := e.gitWorktrees(ctx, w.Path); err == nil && len(l) > 0 {
 			entry = l[0]
 			entry.Path = w.Path
 		}

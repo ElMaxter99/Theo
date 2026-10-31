@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/ElMaxter99/Theo/internal/compose"
+	"github.com/ElMaxter99/Theo/internal/execx"
 	"github.com/ElMaxter99/Theo/internal/git"
 	"github.com/ElMaxter99/Theo/internal/instances"
 	"github.com/ElMaxter99/Theo/internal/registry"
@@ -124,6 +125,21 @@ func composeFileFromEnv(env EnvFile, envFiles []string) (items []string, source 
 // files. The adapter takes the files through an optional method, so fakes
 // that only know Config keep working.
 func (e *Engine) configWithFiles(ctx context.Context, dir string, envFiles, files []string) (*compose.Project, error) {
+	if c := e.cfgCache; c != nil && !execx.Explaining() {
+		key, fp := c.key(dir, envFiles, files), configFingerprint(dir, envFiles, files)
+		if cfg := c.get(key, fp); cfg != nil {
+			return cfg, nil
+		}
+		cfg, err := e.readConfig(ctx, dir, envFiles, files)
+		if err == nil {
+			c.put(key, fp, cfg)
+		}
+		return cfg, err
+	}
+	return e.readConfig(ctx, dir, envFiles, files)
+}
+
+func (e *Engine) readConfig(ctx context.Context, dir string, envFiles, files []string) (*compose.Project, error) {
 	if len(files) > 0 {
 		if c, ok := e.compose.(interface {
 			ConfigFiles(ctx context.Context, dir string, envFiles, files []string) (*compose.Project, error)
