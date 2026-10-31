@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -465,6 +466,38 @@ func TestFindRunningDoesNotFollowRedirects(t *testing.T) {
 	defer mu.Unlock()
 	if len(hits) != 0 {
 		t.Errorf("the redirect was followed and the control secret sent to another server: %v", hits)
+	}
+}
+
+// What an operation keeps for reconnecting clients is bounded in bytes, not
+// only in lines: 5000 lines of 64 KiB would be 320 MB per operation.
+func TestOperationOutputKeptIsBoundedInBytes(t *testing.T) {
+	e := newEnv(t)
+	line := strings.Repeat("x", 60000) + "\n"
+	e.fc.upHook = func(_ context.Context, _ compose.Target, so, _ io.Writer) error {
+		for i := 0; i < 600; i++ {
+			io.WriteString(so, line)
+		}
+		return nil
+	}
+	id := e.wtID(e.linked)
+	var op opState
+	if st := e.c.call("POST", "/api/v1/projects/ubapp/worktrees/"+id+"/up", nil, &op); st != 202 {
+		t.Fatalf("up = %d", st)
+	}
+	e.waitOp(op.ID)
+	st, body, _ := e.c.raw("GET", "/api/v1/operations/"+op.ID+"/events", nil, nil)
+	if st != 200 {
+		t.Fatalf("events = %d", st)
+	}
+	if len(body) > 8<<20 {
+		t.Errorf("the operation kept %d MiB of output", len(body)>>20)
+	}
+	if !strings.Contains(string(body), "event: gap") {
+		t.Error("the lost lines were not reported as a gap")
+	}
+	if !strings.Contains(string(body), `"state":"succeeded"`) {
+		t.Error("the final state is missing from what was kept")
 	}
 }
 
