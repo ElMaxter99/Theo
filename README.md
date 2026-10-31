@@ -101,4 +101,4 @@ The repository is in English.
 
 ## License
 
-Theo is open source under the [MIT License](LICENSE).
+Theo is open source under the [MIT License](LICENSE). The brand artwork (mascot, logo, icons) is separate and is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); see [the notice](web/public/brand/NOTICE.md).
