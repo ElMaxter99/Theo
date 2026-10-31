@@ -121,6 +121,11 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request, _ *session) 
 	if !ok {
 		return errf(http.StatusInternalServerError, "internal", "streaming is not supported")
 	}
+	closeStream, err := s.openStream()
+	if err != nil {
+		return err
+	}
+	defer closeStream()
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	var dropped atomic.Int64
@@ -141,8 +146,6 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request, _ *session) 
 	// Whatever happens, the process is gone when this handler returns.
 	defer func() { cancel(); wg.Wait() }()
 
-	s.sse.Add(1)
-	defer func() { s.sse.Add(-1); s.touch() }()
 	startSSE(w)
 	fl.Flush()
 	keep := time.NewTicker(15 * time.Second)

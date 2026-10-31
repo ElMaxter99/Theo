@@ -524,8 +524,11 @@ func (s *Server) handleOperationEvents(w http.ResponseWriter, r *http.Request, _
 			last = n
 		}
 	}
-	s.sse.Add(1)
-	defer func() { s.sse.Add(-1); s.touch() }()
+	closeStream, err := s.openStream()
+	if err != nil {
+		return err
+	}
+	defer closeStream()
 	startSSE(w)
 	fl.Flush()
 	keep := time.NewTicker(20 * time.Second)

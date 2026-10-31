@@ -469,6 +469,62 @@ func TestFindRunningDoesNotFollowRedirects(t *testing.T) {
 	}
 }
 
+// Every stream holds a goroutine (and, for logs, a docker process): the
+// number of open ones is capped, and a slot comes back when one closes.
+func TestStreamsAreCapped(t *testing.T) {
+	e := newEnv(t)
+	open := func() (*http.Response, context.CancelFunc) {
+		ctx, cancel := context.WithCancel(context.Background())
+		req, _ := http.NewRequestWithContext(ctx, "GET", e.c.base+"/api/v1/events", nil)
+		req.AddCookie(&http.Cookie{Name: "theo_session", Value: e.c.cookie})
+		resp, err := (&http.Client{}).Do(req)
+		if err != nil {
+			cancel()
+			t.Fatal(err)
+		}
+		return resp, cancel
+	}
+	var cancels []context.CancelFunc
+	defer func() {
+		for _, c := range cancels {
+			c()
+		}
+	}()
+	refused := 0
+	for i := 0; i < 80; i++ {
+		resp, cancel := open()
+		cancels = append(cancels, cancel)
+		if resp.StatusCode == http.StatusTooManyRequests {
+			refused++
+		} else if resp.StatusCode != 200 {
+			t.Fatalf("stream %d: %d", i, resp.StatusCode)
+		}
+	}
+	if refused == 0 {
+		t.Fatal("80 simultaneous streams were all accepted")
+	}
+	if refused > 50 {
+		t.Errorf("only %d streams fit", 80-refused)
+	}
+	// Closing them frees the slots.
+	for _, c := range cancels {
+		c()
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		resp, cancel := open()
+		code := resp.StatusCode
+		cancel()
+		if code == 200 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("slots were not released: %d", code)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 // What an operation keeps for reconnecting clients is bounded in bytes, not
 // only in lines: 5000 lines of 64 KiB would be 320 MB per operation.
 func TestOperationOutputKeptIsBoundedInBytes(t *testing.T) {
