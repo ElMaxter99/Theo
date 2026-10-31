@@ -1111,89 +1111,6 @@ check with the upgrade instructions in `fix`.
 }
 ```
 
-## 13. Performance
-
-The panel polls `GET /health` and one `GET /projects/{p}/overview` per project card, and the server itself
-looks at every project every 5 s while a tab is visible (the SSE state poller). With many projects that used
-to start hundreds of `git` and `docker` processes per poll. None of the JSON changed: the API still answers what the
-CLI's `--json` answers (checked by comparing the bodies of all overviews, `/health` and `/reconcile` of the old
-and the new binary over projects in running, stopped, unhealthy, absent and missing-worktree states).
-
-**Measured** on 30 registered projects (each a repository with a `compose.yaml` and 3 linked worktrees, 12
-Compose stacks and 22 containers running), 4 CPUs, Docker 29.9 and Compose 5.6, through shims on `PATH` that
-count every `git` and `docker` start. Latency is measured by the client; "procs" are processes started per request.
-
-| | before | after |
-|---|---|---|
-| `GET /health`, cache cold: p50 / p95 / procs | 3.9 s / 5.1 s / 121 | 0.49 s / 2.5 s / 35 (the p95 is the very first call, with no remembered `compose config`) |
-| `GET /projects/{p}/overview`, one card, cold: p50 / p95 / procs | 585 ms / 1.2 s / 21 | 180 ms / 460 ms / 7 |
-| 30 overviews at once (all cards, 2 rounds): wall / peak child processes | 19-22 s / 117-119 | 0.6 s / 3-4 |
-| `GET /reconcile`: p50 / p95 / procs | 5.2 s / 6.2 s / 121 | 0.45 s / 0.48 s / 31 |
-| State poller, one cycle over the 30 projects (docker up) | over 20 s: the cycle timed out before reaching the last project | 0.3-0.5 s |
-| State poller, processes per minute (visible tab) | about 1 600 (and cycles that never finish) | about 1 800 cheap ones (`git status` 1 071 and `git worktree list` 270 per 45 s) and 13 `docker` |
-| Docker stopped: `/health` p50, overview x30 wall | 3.6 s, 7.7-8.6 s | 0.28 s, 0.25-0.30 s |
-| Docker hung (every `docker` sleeps): `/health`, overview, `/reconcile` | no answer until the client gave up (45 s+); up to 15 stuck `docker` children; 5 left running after the server exited | `200` with Docker reported unavailable after one command timeout (15 s here; 30 s in this test because the shim also hangs `compose config`, which really does not need the daemon); at most one stuck `docker` at a time once the breaker is open; none left |
-
-(After: the poller's cost is now mostly 4 `git status` per worktree each cycle, 2 ms each. The 1 800 is a
-count of processes, not of load; before, the same minute was dominated by `docker compose` at 90-110 ms each.)
-
-Where the time went. A cold overview of a project with 4 worktrees ran 21 processes: `git worktree list` 5 times
-(once per step that needed the list), `git status` 4, `docker compose config` 4 (about 90 ms each) and
-`docker compose ps` 8 (4 for the state and 4 again inside the port planning, 60-110 ms each). `/health` and
-`/reconcile` read the Compose name of the main worktree of every project (`compose config`, again) after
-listing the worktrees of each project twice, so 4 processes per project. With 30 cards, nothing bounded the
-number of processes (117 at once), and nothing cancelled a stuck one.
-
-What changed, and why each is safe:
-
-- **One Docker read for everyone** (`compose.AllContainers`, `engine.DockerSnapshot`): `docker ps --all --filter
-  label=com.docker.compose.project` for the ids and one `docker inspect` with a template, grouped by Compose
-  project. The result carries the same fields `compose ps` gave the overview (name, service, state, health, exit
-  code, published ports), so the state and the ports are identical. It is shared by every card within 1 s (250 ms
-  for `refresh=1`), by the poller (once per cycle, not once per project), and dropped whenever an operation ends
-  or records are forgotten. Docker being down is cached for that same second, so a stopped daemon is asked about
-  once per interval, not once per card. An adapter that cannot do it (the test fakes) falls back to `compose ps`
-  per instance.
-- **No repeated work inside a request** (`engine.WithRequestMemo`): `git worktree list` runs once per repository
-  per request or poll cycle (it was 5 per overview and 3 per project in `/health`); the port planning reuses the
-  containers already read instead of running `compose ps` again.
-- **Remembered `compose config`** (`engine.EnableConfigCache`, only for the panel's reads: overview, health,
-  reconcile; `engine.WithCachedConfig`): keyed by directory and chosen files and valid while the Compose
-  files, the override files and the `.env` it depends on have the same mtime and size, for at most 5 minutes (a
-  file pulled in by `include:`, `extends:` or `env_file:` is only noticed when the 5 minutes pass). Operations
-  (`up`, `down`, port assignment) always ask Compose. The copy handed out is deep, so callers cannot change it.
-- **Single-flight** (`flightGroup`): concurrent identical requests (a project overview, `/health`,
-  `GET /reconcile`, the Docker read) run once on a context that belongs to the server, not to the first client:
-  a client that disconnects does not fail the others and a caller leaving early does not stop the work. A flight
-  is only joined by requests of the same generation; the generation moves when an operation ends or records are
-  forgotten, so a request made after a change never gets the result of a computation that began before it (and
-  that result is not cached).
-- **Bounded concurrency** (`execx.SetMaxConcurrent`, default 8, `Config.MaxProcesses`): at most 8 read commands
-  (`execx.Run`/`RunChange`) at once in the process. Streams (`up`, `logs -f`) are not counted. Within a project,
-  4 worktrees at a time, and `git status` of the worktrees of a project 4 at a time. The poller looks at 4
-  projects at a time.
-- **Timeouts that really cancel** (`execx.WithLimits`, `Config.CommandTimeout` 15 s, `Config.WorkTimeout` 60 s):
-  each command of those reads is killed after the command timeout, with its whole process group (a plugin the
-  `docker` CLI started cannot keep the pipes open). The timeout counts from the start of the command, not from
-  the wait for a slot. A request ends with `200` and "Docker is unavailable", not with a hang.
-- **A hang breaker** (`execx.Breaker`): after one `docker` timeout, further `docker` commands fail at once for 5 s
-  (the error says so), then exactly one is let through to try again; if it hangs too the pause doubles, up to a
-  minute; one that works closes the breaker. So a stuck daemon costs one timeout, not one per project per poll,
-  and processes cannot pile up. `docker compose config` has its own breaker: it reads files and works without
-  the daemon. `git` is tracked per repository.
-
-What remains.
-
-- The poller still runs `git status` for every worktree each cycle (120 for 30 projects), because uncommitted
-  changes are part of what the panel shows and Git has no cheap "did anything change" call; on very large
-  repositories each is slower than the 2 ms measured here. It only runs while a tab is visible.
-- `/health` and `/reconcile` still list the worktrees of every project (30 cheap `git` processes, 5 s apart at most).
-- The first `/health` or overview after the server starts pays for `compose config` of the main worktrees (about 90
-  ms each, 4 at a time).
-- `GET /projects/{p}/worktrees/{wt}` and the other per-worktree reads are not shared or bounded by timeouts
-  beyond the process limit; they run on the request context.
-- The process limit and the breaker are per process (one `theo serve`), not shared with the CLI.
-
 ## 12. Differences from the design contract
 
 - `GET /projects/{p}/worktrees` items have `containers` as `{running,total}`; the detail uses `containers` for the
@@ -1207,3 +1124,82 @@ What remains.
 - Findings carry an `id` (a hash of what they are about), also in `theo reconcile --json`.
 - Logs do not carry Docker's own timestamps (`LogOptions` has no `--timestamps`); `at` is the receive time.
 - Idle shutdown counts SSE streams (global events, operation events, logs) and operations.
+
+## 13. Performance
+
+The shell polls `GET /health` and one `GET /projects/{p}/overview` per project card, and the server looks at
+every project itself while a tab is visible (the SSE state poller). With many projects that used to start
+hundreds of `git` and `docker` processes per poll and could hang on a stuck Docker. No JSON changed: the
+bodies of all overviews, `/health` and `/reconcile` are identical to the old binary's over projects that were
+running, stopped, unhealthy, absent, dirty and with a missing worktree.
+
+**Measured** with 30 registered projects (a repository with a `compose.yaml` and 3 linked worktrees each; 12
+Compose stacks, 22 containers, 2 of them stopped), 4 CPUs, Docker 29.9, Compose 5.6, with shims on `PATH` that
+count every `git`/`docker` start. Latency is the client's; "procs" are processes started per request.
+
+| | before | after |
+|---|---|---|
+| `GET /health`, cache cold: p50 / p95 / procs | 3.9 s / 5.1 s / 121 | 0.4-0.5 s / 1.7-2.5 s / 35 (p95 = the first call after start) |
+| One card, `GET /projects/{p}/overview`, cold: p50 / p95 / procs | 585 ms / 1.2 s / 21 | 130-180 ms / 300-460 ms / 7 |
+| 30 cards at once: wall / peak child processes | 19-22 s / 117-119 | 0.4-0.6 s / 3-7 |
+| `GET /reconcile`: p50 / procs | 5.2 s / 121 | 0.4-0.45 s / 31 |
+| SSE poller, one cycle over 30 projects | over 20 s (it timed out before the last project) | 0.2-0.5 s |
+| SSE poller, processes per 45 s with a visible tab | 1 200-1 900 (`docker compose` 700-1 100) | 316 (`docker` 18) |
+| Docker stopped: `/health` p50; 30 cards wall | 3.6 s; 7.7-8.6 s | 0.28 s; 0.25-0.30 s |
+| Docker hung (every `docker` sleeps) | no answer until the client gave up (45 s+); up to 15 stuck children, 5 outliving the server | `200` with `docker.available: false` after one command timeout; at most one stuck child once the breaker is open; none left |
+
+(In the hung test the answer came after 30 s, two sequential timeouts of 15 s, because the shim also hangs `compose
+config`, which in reality works without the daemon.)
+
+**Where the time went.** A cold overview of 4 worktrees ran 21 processes: `git worktree list` 5 times,
+`git status` 4, `docker compose config` 4 (90 ms each) and `docker compose ps` 8 (4 for the state, 4 more inside the
+port plan; 60-110 ms each). `/health` and `/reconcile` listed the worktrees of every project twice and resolved the
+Compose name of every main worktree (`compose config` again): 4 processes per project. Nothing bounded how many
+ran at once (117 with 30 cards), nothing cancelled a stuck one, and the poller did all this for every project
+each cycle.
+
+**What changed**
+
+- **One Docker read for all instances** (`compose.AllContainers`, `engine.DockerSnapshot`): `docker ps --all
+  --filter label=com.docker.compose.project` for the ids and one `docker inspect` with a template, grouped by
+  Compose project, with the fields `compose ps` gave the overview (name, service, state, health, exit code,
+  published ports). Shared by all cards for 1 s (250 ms for `refresh=1`), by the poller (once per cycle) and
+  dropped when an operation ends or records are forgotten. Docker being down is cached for that second too. An
+  adapter without it (test fakes) falls back to `compose ps` per instance. The port plan reuses the containers
+  already read (`PlanPortsWith`).
+- **Nothing twice in a request** (`engine.WithRequestMemo`): `git worktree list` once per repository per request or
+  poll cycle; `registeredInstances` (duplicate-name check of Reconcile) resolves main worktrees 4 at a time, in order.
+- **Remembered `compose config`** (`engine.EnableConfigCache`, used only by the panel's reads through
+  `WithCachedConfig`): valid while the default Compose files, the chosen ones and the env files keep their mtime and
+  size, at most 5 min (a file pulled in by `include:`, `extends:` or `env_file:` is noticed when the 5 min pass).
+  Operations (`up`, `down`, port assignment) always ask Compose. Callers get a deep copy.
+- **Single-flight** (`flightGroup`): concurrent identical requests (a project's overview, `/health`, `GET /reconcile`,
+  the Docker read) run once, on a context owned by the server: a client that disconnects does not fail the
+  others, and one leaving does not stop the work. A flight is only joined by requests of the same generation (it
+  moves when an operation ends or records are forgotten), so nothing computed before a change answers a request
+  made after it, or is cached.
+- **Bounded concurrency**: `execx.SetMaxConcurrent` (8 read commands at once per process, `Config.MaxProcesses`;
+  streams like `up` and `logs -f` are not counted), 4 worktrees at a time per project, 4 `git status` at a time,
+  4 projects at a time in the poller.
+- **Timeouts that cancel** (`execx.WithLimits`; `Config.CommandTimeout` 15 s, `Config.WorkTimeout` 60 s): each
+  command of the panel's reads is killed with its process group after the timeout, counted from its start. The
+  request ends with `200` and "Docker is unavailable".
+- **Hang breaker** (`execx.Breaker`): after a `docker` timeout, `docker` commands fail at once for 5 s, then one
+  is let through; if it hangs too the pause doubles (up to 1 min); one that works closes it. A stuck daemon costs
+  one timeout, not one per project per poll. `compose config` has its own breaker (it needs no daemon); `git` is
+  tracked per repository.
+- **Quiet poll cycles**: the poller reads Docker every `PollInterval` (5 s) but recomputes a project in full
+  (Git, changes, port plan) only when the containers of its instances changed, after an operation, or every 4
+  intervals (20 s). A change made in Docker still shows within one interval; one made only in Git or in the
+  ports of the host within 20-25 s (it was 5 s).
+
+**What remains**
+
+- A full look still runs `git status` for every worktree (120 for 30 projects every 20 s), because uncommitted changes
+  are part of the panel and Git has no cheap "anything changed?"; each is slower on very large repositories.
+- `/health` and `/reconcile` list the worktrees of every project (30 cheap `git` processes at most every 5 s).
+- The first `/health` or overview after the server starts pays for `compose config` of the main worktrees
+  (about 90 ms each, 4 at a time).
+- Per-worktree reads (`GET .../worktrees/{wt}`, ports, services...) run on the request context: bounded by the
+  process limit but without the command timeout or the breaker.
+- The process limit and the breaker are per process (`theo serve`), not shared with the CLI.
