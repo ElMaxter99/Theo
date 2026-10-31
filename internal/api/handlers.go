@@ -355,6 +355,10 @@ func (s *Server) handleCreateWorktree(w http.ResponseWriter, r *http.Request, _ 
 	if strings.TrimSpace(req.Branch) == "" {
 		return badRequest("branch is required")
 	}
+	// Git would read these as options (--force, --detach...).
+	if strings.HasPrefix(req.Branch, "-") || strings.HasPrefix(req.From, "-") {
+		return badRequest("branch and from must not start with \"-\"")
+	}
 	added, err := s.eng.AddWorktree(r.Context(), project, req.Branch, engine.AddWorktreeOptions{NewBranch: req.New, Base: req.From, Path: req.Path, Copy: req.Copy})
 	if err != nil {
 		return fromEngine(err, &ResourceRef{Kind: "project", Project: project})
@@ -538,7 +542,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request, _ *session
 		return err
 	}
 	q := r.URL.Query()
-	text, err := s.eng.ResolvedConfig(r.Context(), inst, q["profile"], q.Get("auto_ports") == "1")
+	text, err := s.eng.PreviewConfig(r.Context(), inst, q["profile"], q.Get("auto_ports") == "1") // a GET reserves nothing
 	if err != nil {
 		return err
 	}
@@ -784,6 +788,9 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request, _ *session
 	if dir == "" {
 		dir = home
 	}
+	if networkPath(dir, runtime.GOOS) {
+		return badRequest("network and device paths (\\\\server\\share, \\\\.\\...) are not browsed: Windows would connect to that host with your credentials")
+	}
 	if !filepath.IsAbs(dir) {
 		return badRequest("path must be absolute")
 	}
@@ -808,7 +815,10 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request, _ *session
 			continue
 		}
 		full := filepath.Join(dir, name)
-		if !e.IsDir() { // a symbolic link to a directory counts as one
+		if !e.IsDir() { // a symbolic link to a directory counts as one; anything else is skipped without a stat
+			if e.Type()&os.ModeSymlink == 0 {
+				continue
+			}
 			if fi, err := os.Stat(full); err != nil || !fi.IsDir() {
 				continue
 			}

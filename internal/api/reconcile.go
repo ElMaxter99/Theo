@@ -216,6 +216,8 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request, _ *se
 	}
 	d := Diagnostics{Meta: meta, Doctor: doc, Projects: len(projects)}
 	var b strings.Builder
+	// The data directory is the one path the report shows, on purpose (docs/api.md: the page says so before
+	// copying). Every other path, in the details of the checks and in tool errors, is replaced.
 	fmt.Fprintf(&b, "Theo %s (API %s)\nPlatform: %s/%s\nData directory: %s\nProjects: %d\n", meta.TheoVersion, meta.APIVersion, runtime.GOOS, runtime.GOARCH, meta.DataDir, len(projects))
 	for _, t := range []struct {
 		name string
@@ -223,7 +225,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request, _ *se
 	}{{"Docker", meta.Docker}, {"Docker Compose", meta.Compose}, {"Git", meta.Git}} {
 		state := t.info.Version
 		if !t.info.Available {
-			state = "not available: " + t.info.Error
+			state = "not available: " + redactPaths(t.info.Error)
 		}
 		min := ""
 		if t.info.MinVersion != "" {
@@ -235,7 +237,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request, _ *se
 	for _, c := range doc.Checks {
 		fmt.Fprintf(&b, "- [%s] %s", c.Status, c.Name)
 		if c.Detail != "" {
-			b.WriteString(": " + firstLine(c.Detail))
+			b.WriteString(": " + redactPaths(firstLine(c.Detail)))
 		}
 		b.WriteString("\n")
 	}

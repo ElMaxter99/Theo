@@ -199,6 +199,23 @@ func (s *Server) Routes() []Route { return append([]Route(nil), s.routes...) }
 
 func (s *Server) touch() { s.lastBusy.Store(time.Now().UnixNano()) }
 
+// maxStreams is how many server-sent event streams can be open at once. A
+// browser keeps a handful (it opens six connections per host at most); each
+// stream holds a goroutine, and a log stream a `docker compose logs` process.
+const maxStreams = 32
+
+// openStream counts a stream and returns the function that closes it, or a
+// 429 when there are too many. Call it before anything is spawned or written.
+func (s *Server) openStream() (func(), error) {
+	if s.sse.Add(1) > maxStreams {
+		s.sse.Add(-1)
+		e := errf(http.StatusTooManyRequests, "too_many_streams", "too many live streams are open; close a tab or wait")
+		e.Hint = "each tab keeps a few open"
+		return nil, e
+	}
+	return func() { s.sse.Add(-1); s.touch() }, nil
+}
+
 // Serve serves until ctx is cancelled, the idle timeout passes, or Close is
 // called. It shuts down gracefully: open streams are closed, and operations
 // are cancelled only if the server is told to stop, never by idling.

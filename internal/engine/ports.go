@@ -56,7 +56,10 @@ func (m PortMapping) URL() string {
 		return ""
 	}
 	host := m.HostIP
-	if host == "" || host == "0.0.0.0" || host == "::" {
+	// Loopback is always written as localhost: the web interface itself is served from
+	// 127.0.0.1, and a link to another server on that same host would be sent its session
+	// cookie (cookies are not scoped by port).
+	if host == "" || host == "0.0.0.0" || host == "::" || host == "127.0.0.1" || host == "::1" {
 		host = "localhost"
 	}
 	return "http://" + host + ":" + strconv.Itoa(port)

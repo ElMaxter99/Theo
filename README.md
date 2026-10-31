@@ -8,6 +8,14 @@ Theo is a cross-platform command-line tool (macOS, Linux, Windows) that manages 
 
 **Release binaries.** Download the archive for your system from the [releases page](https://github.com/ElMaxter99/Theo/releases) (`tar.gz` for Linux and macOS, `zip` for Windows, amd64 and arm64), check it against `checksums.txt`, and put `theo` in your `PATH`.
 
+**Scoop (Windows).** Each release attaches a manifest, so no bucket is needed:
+
+```powershell
+scoop install https://github.com/ElMaxter99/Theo/releases/latest/download/theo.json
+```
+
+**Homebrew (macOS, Linux).** Each release attaches `theo.rb`, a formula for a tap of your own; no public tap is published yet.
+
 **With Go** (1.24 or later):
 
 ```sh
@@ -93,4 +101,4 @@ The repository is in English.
 
 ## License
 
-Theo is open source under the [MIT License](LICENSE).
+Theo is open source under the [MIT License](LICENSE). The brand artwork (mascot, logo, icons) is separate and is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); see [the notice](web/public/brand/NOTICE.md).

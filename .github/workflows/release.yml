@@ -76,6 +76,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: assets
@@ -91,5 +92,6 @@ jobs:
           cd assets
           sha256sum *.tar.gz *.zip > checksums.txt
           cat checksums.txt
+          bash ../scripts/package-manifests.sh "$TAG" checksums.txt manifests
           gh release create "$TAG" --repo "$REPO" --title "Theo $TAG" --generate-notes \
-            --verify-tag *.tar.gz *.zip checksums.txt
+            --verify-tag *.tar.gz *.zip checksums.txt manifests/theo.json manifests/theo.rb
