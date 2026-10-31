@@ -118,6 +118,7 @@ type Server struct {
 	cancelWork context.CancelFunc
 	limits     execx.Limits
 	snaps      snapCache
+	polled     pollMemo
 
 	ovFlight     flightGroup[*Overview]
 	snapFlight   flightGroup[*snapResult]

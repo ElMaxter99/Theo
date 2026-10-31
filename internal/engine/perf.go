@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -97,6 +98,32 @@ func (e *Engine) DockerSnapshot(ctx context.Context) (*DockerSnapshot, error) {
 		return nil, err
 	}
 	return &DockerSnapshot{byProject: m}, nil
+}
+
+// Signature identifies what the snapshot holds for the given Compose projects
+// (container names, states, health, exit codes and published ports), so that
+// two snapshots can be compared without comparing the containers.
+func (s *DockerSnapshot) Signature(composeNames []string) string {
+	names := make([]string, 0, len(composeNames))
+	for _, n := range composeNames {
+		names = append(names, strings.ToLower(n))
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	for _, n := range names {
+		b.WriteString(n + "{")
+		cs := append([]compose.Container(nil), s.byProject[n]...)
+		sort.Slice(cs, func(i, j int) bool { return cs[i].Name < cs[j].Name })
+		for _, c := range cs {
+			fmt.Fprintf(&b, "%s|%s|%s|%s|%d|", c.Name, c.Service, c.State, c.Health, c.ExitCode)
+			for _, p := range c.Publishers {
+				fmt.Fprintf(&b, "%s:%d:%d/%s,", p.URL, p.TargetPort, p.PublishedPort, p.Protocol)
+			}
+			b.WriteString(";")
+		}
+		b.WriteString("}")
+	}
+	return b.String()
 }
 
 // ContainersFrom is Containers for a worktree's instance, taken from snap

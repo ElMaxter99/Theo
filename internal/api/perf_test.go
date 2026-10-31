@@ -28,11 +28,11 @@ type perfCompose struct {
 	*fakeCompose
 	snapshot bool // offers AllContainers (the real adapter does)
 
-	stacks, ps, all atomic.Int64
-	stacksDelay     time.Duration
-	allDelay        time.Duration
-	allErr          error
-	blockUntilDone  bool // Stacks and AllContainers hang until their context ends
+	stacks, ps, all, configs atomic.Int64
+	stacksDelay              time.Duration
+	allDelay                 time.Duration
+	allErr                   error
+	blockUntilDone           bool // Stacks and AllContainers hang until their context ends
 }
 
 func (p *perfCompose) Stacks(ctx context.Context) ([]compose.Stack, error) {
@@ -43,6 +43,11 @@ func (p *perfCompose) Stacks(ctx context.Context) ([]compose.Stack, error) {
 	}
 	time.Sleep(p.stacksDelay)
 	return p.fakeCompose.Stacks(ctx)
+}
+
+func (p *perfCompose) Config(ctx context.Context, dir string, envFiles []string) (*compose.Project, error) {
+	p.configs.Add(1)
+	return p.fakeCompose.Config(ctx, dir, envFiles)
 }
 
 func (p *perfCompose) PS(ctx context.Context, t compose.Target) ([]compose.Container, error) {
@@ -402,4 +407,33 @@ func TestPollingReadsDockerOncePerCycleNotOncePerProject(t *testing.T) {
 	if pc.ps.Load() != 0 {
 		t.Errorf("the poller ran `compose ps` %d times", pc.ps.Load())
 	}
+}
+
+func TestQuietCyclesDoNotRecomputeProjectsButAContainerChangeIsStillSeenAtOnce(t *testing.T) {
+	pc := &perfCompose{fakeCompose: &fakeCompose{}, snapshot: true}
+	e := perfEnv(t, pc, 2, func(c *api.Config) { c.ConfigCacheTTL = -1 }) // 3 projects x 2 worktrees
+	s := e.c.sse("/api/v1/events", "")
+	s.next(t, 3*time.Second) // hello
+	if st := e.c.call("POST", "/api/v1/events/focus", map[string]bool{"visible": true}, nil); st != 204 {
+		t.Fatal(st)
+	}
+	time.Sleep(300 * time.Millisecond) // the baseline look
+	base := pc.configs.Load()
+	start := time.Now()
+	time.Sleep(2 * time.Second) // ~20 poll cycles of 100 ms; a full look is due every ~400-500 ms
+	cycles := int(time.Since(start) / (100 * time.Millisecond))
+	perFullLook := int64(6) // `compose config` of 3 projects x 2 worktrees
+	got := pc.configs.Load() - base
+	if everyCycle := int64(cycles) * perFullLook; got >= everyCycle/2 {
+		t.Errorf("%d `compose config` in %d quiet cycles: projects are recomputed in full every cycle (%d would be every cycle)", got, cycles, everyCycle)
+	}
+	if got == 0 {
+		t.Error("projects are never looked at in full again: changes in Git would go unseen")
+	}
+
+	// A container started from outside is a change of the signature: seen at the next cycle.
+	cfg, _ := e.fc.Config(context.Background(), e.main, nil)
+	e.fc.set(cfg.Name, running("web", cfg.Name))
+	// (the fake names every project's main worktree "app", so any may report it)
+	s.until(t, "state.changed", 3*time.Second)
 }

@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -108,27 +110,37 @@ const pollCycleTimeout = 20 * time.Second
 // pollParallelism is how many projects one cycle looks at at once.
 const pollParallelism = 4
 
-// pollOnce recomputes the overview of every project and publishes
-// state.changed for the ones that differ from the last look. Docker is read
-// once for the whole cycle, not once per project.
+// pollOnce looks at every project and publishes state.changed for the ones
+// that differ from the last look. Docker is read once for the whole cycle. A
+// project is recomputed in full (its worktrees from Git, their changes, the
+// port plan) when the containers of its instances changed, when an operation
+// or a forget happened, or every pollFullFactor poll intervals; otherwise the
+// cycle costs two Docker commands for all projects together.
 func (s *Server) pollOnce(ctx context.Context) {
 	projects, err := s.eng.Projects()
 	if err != nil {
 		return
 	}
+	gen := s.cache.generation()
 	snap := s.dockerSnapshot(ctx, true)
+	fullEvery := pollFullFactor * s.cfg.PollInterval
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, pollParallelism)
 	for _, p := range projects {
+		name := p.Name
+		if s.pollSkips(name, snap, gen) {
+			continue
+		}
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(name string) {
+		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
 			ov, err := s.overviewWith(ctx, name, overviewOpts{fresh: true, snap: snap})
 			if err != nil {
 				return
 			}
+			s.pollRemember(name, ov, snap, gen, fullEvery)
 			sig := ov.signature()
 			s.hub.mu.Lock()
 			prev, known := s.hub.lastSig[name]
@@ -137,9 +149,69 @@ func (s *Server) pollOnce(ctx context.Context) {
 			if known && prev != sig {
 				s.hub.publish("state.changed", map[string]string{"project": name})
 			}
-		}(p.Name)
+		}()
 	}
 	wg.Wait()
+}
+
+// pollFullFactor: a project that looks unchanged from Docker's side is still
+// recomputed in full every pollFullFactor poll intervals (changes made in the
+// repository or in the ports of the host do not show in Docker).
+const pollFullFactor = 4
+
+type pollEntry struct {
+	composeNames []string
+	sig          string // containers seen at the last full look; "" means: always look in full
+	gen          uint64
+	nextFull     time.Time
+}
+
+type pollMemo struct {
+	mu sync.Mutex
+	m  map[string]*pollEntry
+}
+
+func snapSignature(snap *snapResult, names []string) string {
+	switch {
+	case snap == nil:
+		return ""
+	case snap.err != nil:
+		return "docker-down"
+	case snap.snap == nil:
+		return "" // the adapter cannot read all containers at once: no cheap comparison
+	}
+	return snap.snap.Signature(names)
+}
+
+// pollSkips says whether the full look at a project can wait for this cycle.
+func (s *Server) pollSkips(name string, snap *snapResult, gen uint64) bool {
+	s.polled.mu.Lock()
+	ent := s.polled.m[strings.ToLower(name)]
+	s.polled.mu.Unlock()
+	if ent == nil || ent.sig == "" || ent.gen != gen || !time.Now().Before(ent.nextFull) {
+		return false
+	}
+	return snapSignature(snap, ent.composeNames) == ent.sig
+}
+
+func (s *Server) pollRemember(name string, ov *Overview, snap *snapResult, gen uint64, fullEvery time.Duration) {
+	var names []string
+	for _, w := range ov.Worktrees {
+		if w.ComposeProject != "" {
+			names = append(names, w.ComposeProject)
+		}
+	}
+	// Spread the full looks of different projects over time.
+	h := fnv.New32a()
+	h.Write([]byte(name))
+	jitter := time.Duration(h.Sum32()%1000) * fullEvery / 4000
+	ent := &pollEntry{composeNames: names, sig: snapSignature(snap, names), gen: gen, nextFull: time.Now().Add(fullEvery + jitter)}
+	s.polled.mu.Lock()
+	if s.polled.m == nil {
+		s.polled.m = map[string]*pollEntry{}
+	}
+	s.polled.m[strings.ToLower(name)] = ent
+	s.polled.mu.Unlock()
 }
 
 // handleEvents serves GET /events.
