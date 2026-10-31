@@ -64,7 +64,7 @@ func run(ctx context.Context, dir, name string, args ...string) ([]byte, error) 
 
 	lim := limitsOf(ctx)
 	if lim.Breaker != nil {
-		if err := lim.Breaker.check(name, dir); err != nil {
+		if err := lim.Breaker.peek(name, dir); err != nil {
 			return nil, fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
 		}
 	}
@@ -73,6 +73,11 @@ func run(ctx context.Context, dir, name string, args ...string) ([]byte, error) 
 		return nil, fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
 	}
 	defer release()
+	if lim.Breaker != nil { // it may have opened while this command waited for a slot
+		if err := lim.Breaker.check(name, dir); err != nil {
+			return nil, fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
+		}
+	}
 	runCtx := ctx
 	if lim.Timeout > 0 { // counted from the start of the command, not from the wait for a slot
 		var cancel context.CancelFunc
@@ -101,7 +106,17 @@ func run(ctx context.Context, dir, name string, args ...string) ([]byte, error) 
 		if msg == "" {
 			msg = err.Error()
 		}
+		if lim.Breaker != nil {
+			if runCtx.Err() == nil {
+				lim.Breaker.worked(name, dir) // it answered, even if with a failure
+			} else {
+				lim.Breaker.abandon(name, dir) // the caller gave up: nothing learned
+			}
+		}
 		return nil, fmt.Errorf("%s %s: %s", name, strings.Join(args, " "), msg)
+	}
+	if lim.Breaker != nil {
+		lim.Breaker.worked(name, dir)
 	}
 	return stdout.Bytes(), nil
 }
