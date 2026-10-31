@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -187,13 +188,56 @@ func (inst *Instance) FixedContainerNames() map[string]string {
 const Mask = "********"
 
 // MaskSecrets replaces the values of the instance's secret variables in text.
+// It looks for the value as typed and for the ways `docker compose config`
+// and its errors print it: a literal $ doubled, quotes escaped for YAML or
+// JSON, and each line of a multi-line value (YAML prints those as a block of
+// separate lines).
 func MaskSecrets(text string, cfg instances.Config) string {
+	var forms []string
 	for _, v := range cfg.Env {
 		if v.Secret && v.Value != "" {
-			text = strings.ReplaceAll(text, v.Value, Mask)
+			forms = append(forms, secretForms(v.Value)...)
 		}
 	}
+	sort.Slice(forms, func(i, j int) bool { return len(forms[i]) > len(forms[j]) }) // a whole value before its pieces
+	for _, f := range forms {
+		text = strings.ReplaceAll(text, f, Mask)
+	}
 	return text
+}
+
+// minMaskedLine is the shortest line of a multi-line secret that is masked on
+// its own: shorter ones ("}", "--") say nothing and would blank the output.
+const minMaskedLine = 3
+
+// secretForms lists the texts under which a secret value can show up.
+func secretForms(v string) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(s string) {
+		if s != "" && !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	forms := func(s string) {
+		for _, x := range []string{s, strings.ReplaceAll(s, "$", "$$")} {
+			add(x)
+			add(strings.ReplaceAll(x, "'", "''")) // YAML single-quoted
+			if j, err := json.Marshal(x); err == nil {
+				add(string(j[1 : len(j)-1])) // JSON and YAML double-quoted
+			}
+		}
+	}
+	forms(v)
+	if strings.ContainsAny(v, "\r\n") {
+		for _, line := range strings.FieldsFunc(v, func(r rune) bool { return r == '\n' || r == '\r' }) {
+			if line = strings.TrimSpace(line); len(line) >= minMaskedLine {
+				forms(line)
+			}
+		}
+	}
+	return out
 }
 
 // ApplyInstance prepares an instance for `up`: it plans the host ports (see

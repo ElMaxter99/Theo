@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ElMaxter99/Theo/internal/api"
+	"github.com/ElMaxter99/Theo/internal/compose"
 )
 
 func TestNoCookieIs401(t *testing.T) {
@@ -367,3 +368,37 @@ func TestStaleUILockIsIgnored(t *testing.T) {
 }
 
 func runtimeUnix() bool { return os.PathSeparator == '/' }
+
+// The resolved configuration prints a literal $ as $$ and a multi-line value
+// as an indented block; the secrets of the instance are masked in both.
+func TestConfigMasksSecretsAsComposeRendersThem(t *testing.T) {
+	e := newEnv(t)
+	e.fc.configText = func(compose.Target) string {
+		return "services:\n  web:\n    environment:\n      DB_PASS: pa$$word\n      KEY: |-\n        -----BEGIN KEY-----\n        s3cr3t-line-two\n        -----END KEY-----\n      LEVEL: debug\n"
+	}
+	id := e.wtID(e.linked)
+	base := "/api/v1/projects/ubapp/worktrees/" + id
+	secrets := map[string]string{"DB_PASS": "pa$word", "KEY": "-----BEGIN KEY-----\ns3cr3t-line-two\n-----END KEY-----"}
+	e.fc.configEnv = map[string]string{"LEVEL": "debug"}
+	for k, v := range secrets {
+		e.fc.configEnv[k] = v
+	}
+	for name, v := range secrets {
+		if st := e.c.call("PUT", base+"/env/"+name, map[string]any{"value": v, "secret": true, "services": []string{"web"}}, nil); st != 200 {
+			t.Fatalf("put %s = %d", name, st)
+		}
+	}
+	e.c.call("PUT", base+"/env/LEVEL", map[string]any{"value": "debug", "services": []string{"web"}}, nil)
+	st, body, _ := e.c.raw("GET", base+"/config", nil, nil)
+	if st != 200 {
+		t.Fatalf("config = %d %s", st, body)
+	}
+	for _, leak := range []string{"pa$$word", "pa$word", "s3cr3t-line-two", "BEGIN KEY"} {
+		if strings.Contains(string(body), leak) {
+			t.Errorf("GET /config leaks %q:\n%s", leak, body)
+		}
+	}
+	if !strings.Contains(string(body), "LEVEL: debug") {
+		t.Errorf("a plain variable was masked:\n%s", body)
+	}
+}

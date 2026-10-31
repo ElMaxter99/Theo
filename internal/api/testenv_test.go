@@ -31,6 +31,8 @@ type fakeCompose struct {
 	users      map[string][]string
 	psErr      error
 	files      map[string]string // config file of a stack, by Compose project
+	configText func(compose.Target) string
+	configEnv  map[string]string // variables ConfigFor reports as set
 	// upHook runs inside Up; it can block until ctx is cancelled.
 	upHook func(ctx context.Context, t compose.Target, stdout, stderr io.Writer) error
 	// logsHook runs inside Logs.
@@ -45,9 +47,25 @@ func (f *fakeCompose) Config(_ context.Context, dir string, _ []string) (*compos
 }
 
 func (f *fakeCompose) ConfigFor(ctx context.Context, t compose.Target) (*compose.Project, error) {
-	return f.Config(ctx, t.Dir, nil)
+	p, err := f.Config(ctx, t.Dir, nil)
+	if err != nil || f.configEnv == nil {
+		return p, err
+	}
+	// Stand in for Compose reading the generated file: every service gets the variables.
+	for name, s := range p.Services {
+		s.Environment = map[string]*string{}
+		for k, v := range f.configEnv {
+			v := v
+			s.Environment[k] = &v
+		}
+		p.Services[name] = s
+	}
+	return p, nil
 }
 func (f *fakeCompose) ConfigText(_ context.Context, t compose.Target) ([]byte, error) {
+	if f.configText != nil {
+		return []byte(f.configText(t)), nil
+	}
 	return []byte("name: " + t.Name + "\n"), nil
 }
 
