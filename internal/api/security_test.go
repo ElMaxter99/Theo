@@ -1,13 +1,18 @@
 package api_test
 
 import (
+	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -368,6 +373,105 @@ func TestStaleUILockIsIgnored(t *testing.T) {
 }
 
 func runtimeUnix() bool { return os.PathSeparator == '/' }
+
+// fakeLockServer listens where ui.lock says Theo is, but is something else
+// (a stale lock whose port another program took). It answers POST /launch
+// with whatever reply says and records the control secrets it receives.
+func fakeLockServer(t *testing.T, dir string, reply func(port int) string) (port int, secrets *[]string) {
+	t.Helper()
+	var got []string
+	var mu sync.Mutex
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port = ln.Addr().(*net.TCPAddr).Port
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		got = append(got, r.Header.Get("X-Theo-Control"))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, reply(port))
+	})}
+	go srv.Serve(ln)
+	t.Cleanup(func() { srv.Close() })
+	lock := fmt.Sprintf(`{"pid":%d,"port":%d,"control_secret":"the-control-secret"}`, os.Getpid(), port)
+	if err := os.WriteFile(api.LockPath(dir), []byte(lock), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return port, &got
+}
+
+// The launch URL is handed to the system's URL opener (xdg-open, open,
+// rundll32): FindRunning must only return the address of that very server.
+func TestFindRunningRejectsAForeignLaunchURL(t *testing.T) {
+	for name, url := range map[string]string{
+		"file":        "file:///etc/passwd#n=abc",
+		"program":     `C:\\Windows\\System32\\calc.exe`,
+		"other host":  "http://evil.example/#n=abc",
+		"other port":  "http://127.0.0.1:1/#n=abc",
+		"userinfo":    "http://127.0.0.1@evil.example/#n=abc",
+		"no nonce":    "PORT",
+		"odd nonce":   "PORT#n=a b;calc",
+		"empty nonce": "PORT#n=",
+	} {
+		dir := t.TempDir()
+		fakeLockServer(t, dir, func(port int) string {
+			u := strings.ReplaceAll(url, "PORT", fmt.Sprintf("http://127.0.0.1:%d/", port))
+			return fmt.Sprintf(`{"url":%q,"port":%d,"pid":1}`, u, port)
+		})
+		if l, ok := api.FindRunning(dir); ok {
+			t.Errorf("%s: FindRunning accepted %q", name, l.URL)
+		}
+	}
+	// A well-formed answer from the right port still works.
+	dir := t.TempDir()
+	fakeLockServer(t, dir, func(port int) string {
+		return fmt.Sprintf(`{"url":"http://127.0.0.1:%d/#n=abc_DEF-123","port":%d,"pid":1}`, port, port)
+	})
+	if _, ok := api.FindRunning(dir); !ok {
+		t.Error("a well-formed launch URL was rejected")
+	}
+}
+
+// The control secret goes to the port in ui.lock and nowhere else, even if
+// that port redirects.
+func TestFindRunningDoesNotFollowRedirects(t *testing.T) {
+	dir := t.TempDir()
+	var hits []string
+	var mu sync.Mutex
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hits = append(hits, r.Header.Get("X-Theo-Control"))
+		mu.Unlock()
+		io.WriteString(w, `{"url":"http://127.0.0.1:1/#n=abc","port":1,"pid":1}`)
+	}))
+	defer other.Close()
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	redirector := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/api/v1/launch", http.StatusTemporaryRedirect)
+	})}
+	go redirector.Serve(ln)
+	defer redirector.Close()
+	lock := fmt.Sprintf(`{"pid":%d,"port":%d,"control_secret":"the-control-secret"}`, os.Getpid(), mustPort(t, ln.Addr()))
+	if err := os.WriteFile(api.LockPath(dir), []byte(lock), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	api.FindRunning(dir)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(hits) != 0 {
+		t.Errorf("the redirect was followed and the control secret sent to another server: %v", hits)
+	}
+}
+
+func mustPort(t *testing.T, a net.Addr) int {
+	t.Helper()
+	return a.(*net.TCPAddr).Port
+}
 
 // The resolved configuration prints a literal $ as $$ and a multi-line value
 // as an indented block; the secrets of the instance are masked in both.

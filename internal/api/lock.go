@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ElMaxter99/Theo/internal/filelock"
@@ -54,7 +56,11 @@ func FindRunning(dataDir string) (*Launch, bool) {
 	if json.Unmarshal(data, &info) != nil || info.Port == 0 || info.Control == "" {
 		return nil, false
 	}
-	client := &http.Client{Timeout: 2 * time.Second}
+	// The port may have been taken by another program since the lock was
+	// written: the control secret goes to that port only (no redirects), and
+	// what comes back is checked before it reaches the URL opener.
+	client := &http.Client{Timeout: 2 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	req, err := http.NewRequest(http.MethodPost, "http://127.0.0.1:"+strconv.Itoa(info.Port)+apiBase+"/launch", nil)
 	if err != nil {
 		return nil, false
@@ -67,10 +73,22 @@ func FindRunning(dataDir string) (*Launch, bool) {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 	var l Launch
-	if resp.StatusCode != http.StatusOK || json.Unmarshal(body, &l) != nil || l.URL == "" {
+	if resp.StatusCode != http.StatusOK || json.Unmarshal(body, &l) != nil || !launchURLOK(l.URL, info.Port) {
 		return nil, false
 	}
+	l.Port = info.Port
 	return &l, true
+}
+
+// launchRest is what may follow "http://127.0.0.1:<port>/#n=": a nonce, which
+// is base64url.
+var launchRest = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// launchURLOK reports whether u is a launch URL of the server on port:
+// nothing else may be handed to the browser opener.
+func launchURLOK(u string, port int) bool {
+	rest, ok := strings.CutPrefix(u, "http://127.0.0.1:"+strconv.Itoa(port)+"/#n=")
+	return ok && launchRest.MatchString(rest)
 }
 
 // WriteLock records this server in ui.lock (readable by the user only) and
