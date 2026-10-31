@@ -788,6 +788,9 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request, _ *session
 	if dir == "" {
 		dir = home
 	}
+	if networkPath(dir, runtime.GOOS) {
+		return badRequest("network and device paths (\\\\server\\share, \\\\.\\...) are not browsed: Windows would connect to that host with your credentials")
+	}
 	if !filepath.IsAbs(dir) {
 		return badRequest("path must be absolute")
 	}
@@ -812,7 +815,10 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request, _ *session
 			continue
 		}
 		full := filepath.Join(dir, name)
-		if !e.IsDir() { // a symbolic link to a directory counts as one
+		if !e.IsDir() { // a symbolic link to a directory counts as one; anything else is skipped without a stat
+			if e.Type()&os.ModeSymlink == 0 {
+				continue
+			}
 			if fi, err := os.Stat(full); err != nil || !fi.IsDir() {
 				continue
 			}

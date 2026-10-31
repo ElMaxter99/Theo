@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -466,6 +467,47 @@ func TestFindRunningDoesNotFollowRedirects(t *testing.T) {
 	defer mu.Unlock()
 	if len(hits) != 0 {
 		t.Errorf("the redirect was followed and the control secret sent to another server: %v", hits)
+	}
+}
+
+// The directory browser lists directory names only, whatever links point at,
+// and never follows a UNC or device path.
+func TestFSBrowseLinksAndNetworkPaths(t *testing.T) {
+	e := newEnv(t)
+	root := t.TempDir()
+	outside := t.TempDir()
+	os.WriteFile(filepath.Join(outside, "TOPSECRET.txt"), []byte("TOPSECRET"), 0o600)
+	os.Mkdir(filepath.Join(outside, "inner"), 0o755)
+	if runtimeUnix() {
+		os.Symlink(outside, filepath.Join(root, "linkdir"))
+		os.Symlink(filepath.Join(outside, "TOPSECRET.txt"), filepath.Join(root, "linkfile"))
+		os.Symlink(filepath.Join(root, "nowhere"), filepath.Join(root, "dangling"))
+	}
+	os.WriteFile(filepath.Join(root, "plain.txt"), []byte("x"), 0o644)
+	st, body, _ := e.c.raw("GET", "/api/v1/fs/browse?path="+root, nil, nil)
+	if st != 200 {
+		t.Fatalf("browse = %d %s", st, body)
+	}
+	for _, leak := range []string{"TOPSECRET", "linkfile", "dangling", "plain.txt"} {
+		if strings.Contains(string(body), leak) {
+			t.Errorf("browse lists %q: %s", leak, body)
+		}
+	}
+	if runtimeUnix() {
+		if !strings.Contains(string(body), "linkdir") {
+			t.Errorf("a link to a directory is missing: %s", body)
+		}
+		// Through the link: names of directories only, no file.
+		_, body, _ = e.c.raw("GET", "/api/v1/fs/browse?path="+filepath.Join(root, "linkdir"), nil, nil)
+		if strings.Contains(string(body), "TOPSECRET") || !strings.Contains(string(body), "inner") {
+			t.Errorf("browse through a link: %s", body)
+		}
+	}
+	for _, p := range []string{`\\evil.example\share`, `\\.\pipe\docker_engine`, `\\?\UNC\evil.example\share`} {
+		var er apiErr
+		if st := e.c.call("GET", "/api/v1/fs/browse?path="+url.QueryEscape(p), nil, &er); st != 400 || !strings.Contains(er.Error.Message, "network") {
+			t.Errorf("browse %q = %d %+v, want 400 about network paths", p, st, er.Error)
+		}
 	}
 }
 

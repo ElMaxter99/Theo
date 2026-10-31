@@ -5,6 +5,36 @@ import (
 	"testing"
 )
 
+func TestNetworkPath(t *testing.T) {
+	for _, c := range []struct {
+		p, goos string
+		want    bool
+	}{
+		{`\\evil\share`, "windows", true},
+		{`\\evil\share\dir`, "windows", true},
+		{`//evil/share`, "windows", true},
+		{`\\.\pipe\docker_engine`, "windows", true},
+		{`\\.\C:`, "windows", true},
+		{`\\?\UNC\evil\share`, "windows", true},
+		{`\\?\GLOBALROOT\Device\x`, "windows", true},
+		{`\\?\C:\Users\ana`, "windows", false},
+		{`\\?\C:`, "windows", false},
+		{`\\wsl$\Ubuntu\home\ana`, "windows", false},
+		{`\\WSL.localhost\Ubuntu`, "windows", false},
+		{`C:\Users\ana`, "windows", false},
+		{`C:/Users/ana`, "windows", false},
+		{`//wsl$/Ubuntu/home`, "windows", false},
+		{`//tmp/x`, "linux", false}, // legal on POSIX
+		{`/home/ana`, "linux", false},
+		{`\\evil\share`, "linux", true},
+		{``, "windows", false},
+	} {
+		if got := networkPath(c.p, c.goos); got != c.want {
+			t.Errorf("networkPath(%q, %s) = %v, want %v", c.p, c.goos, got, c.want)
+		}
+	}
+}
+
 func TestRedactPaths(t *testing.T) {
 	for in, want := range map[string]string{
 		"/home/ana/.local/share/theo":                                    "<path>",
