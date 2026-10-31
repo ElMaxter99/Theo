@@ -299,6 +299,64 @@ func TestEveryRouteIsGuarded(t *testing.T) {
 	}
 }
 
+// The other layers apply to every route too, with a valid session: a foreign
+// Host (DNS rebinding), a foreign Origin, a cross-site fetch, a change without
+// the CSRF header or without a JSON content type. A route that skipped one of
+// them would pass TestEveryRouteIsGuarded and still be open to that attack.
+func TestEveryRouteEnforcesEveryLayer(t *testing.T) {
+	e := newEnv(t)
+	port := strconv.Itoa(e.srv.Port())
+	re := regexp.MustCompile(`\{[^}]+\}`)
+	routes := e.srv.Routes()
+	if len(routes) < 50 {
+		t.Fatalf("only %d routes registered", len(routes))
+	}
+	for _, rt := range routes {
+		path := "/api/v1" + re.ReplaceAllString(rt.Pattern, "x")
+		mut := rt.Method != "GET"
+		var body any
+		if mut {
+			body = map[string]string{}
+		}
+		name := rt.Method + " " + rt.Pattern
+		client := e.c
+		if rt.Public() { // /session and /launch: no cookie; /launch needs its secret
+			client = newBareClient(t, e.srv.Port())
+		}
+		with := func(h map[string]string) map[string]string {
+			if rt.Pattern == "/launch" {
+				h["X-Theo-Control"] = e.srv.ControlSecret()
+			}
+			return h
+		}
+		for layer, h := range map[string]map[string]string{
+			"Host":           {"Host": "evil.example:" + port},
+			"Host (no port)": {"Host": "127.0.0.1"},
+			"Origin":         {"Origin": "http://evil.example"},
+			"Origin null":    {"Origin": "null"},
+			"Sec-Fetch-Site": {"Sec-Fetch-Site": "cross-site"},
+		} {
+			if st, _, _ := client.raw(rt.Method, path, body, with(h)); st != 403 && !(layer == "Origin" && rt.Pattern == "/launch" && st == 401) && !(layer == "Origin null" && rt.Pattern == "/launch" && st == 401) {
+				t.Errorf("%s with a foreign %s = %d, want 403", name, layer, st)
+			}
+		}
+		if mut && !rt.Public() {
+			if st, _, _ := e.c.raw(rt.Method, path, body, map[string]string{"X-Theo-Csrf": ""}); st != 403 {
+				t.Errorf("%s without the CSRF header = %d, want 403", name, st)
+			}
+			if st, _, _ := e.c.raw(rt.Method, path, body, map[string]string{"X-Theo-Csrf": "wrong"}); st != 403 {
+				t.Errorf("%s with a wrong CSRF header = %d, want 403", name, st)
+			}
+			if st, _, _ := e.c.raw(rt.Method, path, body, map[string]string{"Content-Type": "text/plain"}); st != 400 {
+				t.Errorf("%s as text/plain = %d, want 400", name, st)
+			}
+			if st, _, _ := e.c.raw(rt.Method, path, body, map[string]string{"Content-Type": "application/x-www-form-urlencoded"}); st != 400 {
+				t.Errorf("%s as a form = %d, want 400", name, st)
+			}
+		}
+	}
+}
+
 // Handlers must be registered through Server.handle/stream, never straight
 // on the mux, or they would skip the guard.
 func TestNoRouteBypassesTheGuard(t *testing.T) {
@@ -467,6 +525,44 @@ func TestFindRunningDoesNotFollowRedirects(t *testing.T) {
 	defer mu.Unlock()
 	if len(hits) != 0 {
 		t.Errorf("the redirect was followed and the control secret sent to another server: %v", hits)
+	}
+}
+
+// A GET does not change Theo's records (contract 9.4). The generated Compose
+// overlay that GET .../config writes to ask Compose is a regenerable file, not
+// a record, and is left out.
+func TestGETsDoNotChangeRecords(t *testing.T) {
+	e := newEnv(t)
+	id := e.wtID(e.linked)
+	base := "/api/v1/projects/ubapp/worktrees/" + id
+	snapshot := func() map[string]string {
+		out := map[string]string{}
+		filepath.WalkDir(e.dataDir, func(p string, d os.DirEntry, err error) error {
+			if err == nil && !d.IsDir() && !strings.HasSuffix(p, ".lock") && !strings.Contains(p, string(filepath.Separator)+"overlays"+string(filepath.Separator)) {
+				b, _ := os.ReadFile(p)
+				out[p] = string(b)
+			}
+			return nil
+		})
+		return out
+	}
+	before := snapshot()
+	for _, p := range []string{"/ports?auto_ports=1", "/config?auto_ports=1", "/settings", "/services", "/env", "/volumes", "/history", "/logs"} {
+		if st, body, _ := e.c.raw("GET", base+p, nil, nil); st >= 500 {
+			t.Errorf("GET %s = %d %s", p, st, body)
+		}
+	}
+	for _, p := range []string{"/api/v1/projects", "/api/v1/projects/ubapp/overview?refresh=1", "/api/v1/reconcile", "/api/v1/health", "/api/v1/diagnostics", "/api/v1/doctor", "/api/v1/meta", "/api/v1/operations"} {
+		if st, body, _ := e.c.raw("GET", p, nil, nil); st >= 500 {
+			t.Errorf("GET %s = %d %s", p, st, body)
+		}
+	}
+	for p, v := range snapshot() {
+		if old, ok := before[p]; !ok {
+			t.Errorf("a GET created %s", p)
+		} else if old != v {
+			t.Errorf("a GET changed %s:\n--- before\n%s\n--- after\n%s", p, old, v)
+		}
 	}
 }
 
