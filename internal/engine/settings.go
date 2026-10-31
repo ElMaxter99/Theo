@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -187,13 +188,56 @@ func (inst *Instance) FixedContainerNames() map[string]string {
 const Mask = "********"
 
 // MaskSecrets replaces the values of the instance's secret variables in text.
+// It looks for the value as typed and for the ways `docker compose config`
+// and its errors print it: a literal $ doubled, quotes escaped for YAML or
+// JSON, and each line of a multi-line value (YAML prints those as a block of
+// separate lines).
 func MaskSecrets(text string, cfg instances.Config) string {
+	var forms []string
 	for _, v := range cfg.Env {
 		if v.Secret && v.Value != "" {
-			text = strings.ReplaceAll(text, v.Value, Mask)
+			forms = append(forms, secretForms(v.Value)...)
 		}
 	}
+	sort.Slice(forms, func(i, j int) bool { return len(forms[i]) > len(forms[j]) }) // a whole value before its pieces
+	for _, f := range forms {
+		text = strings.ReplaceAll(text, f, Mask)
+	}
 	return text
+}
+
+// minMaskedLine is the shortest line of a multi-line secret that is masked on
+// its own: shorter ones ("}", "--") say nothing and would blank the output.
+const minMaskedLine = 3
+
+// secretForms lists the texts under which a secret value can show up.
+func secretForms(v string) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(s string) {
+		if s != "" && !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	forms := func(s string) {
+		for _, x := range []string{s, strings.ReplaceAll(s, "$", "$$")} {
+			add(x)
+			add(strings.ReplaceAll(x, "'", "''")) // YAML single-quoted
+			if j, err := json.Marshal(x); err == nil {
+				add(string(j[1 : len(j)-1])) // JSON and YAML double-quoted
+			}
+		}
+	}
+	forms(v)
+	if strings.ContainsAny(v, "\r\n") {
+		for _, line := range strings.FieldsFunc(v, func(r rune) bool { return r == '\n' || r == '\r' }) {
+			if line = strings.TrimSpace(line); len(line) >= minMaskedLine {
+				forms(line)
+			}
+		}
+	}
+	return out
 }
 
 // ApplyInstance prepares an instance for `up`: it plans the host ports (see
@@ -203,6 +247,12 @@ func MaskSecrets(text string, cfg instances.Config) string {
 // with `docker compose config`, and from then on the instance runs with
 // them. Without changes the instance runs with the project's own files.
 func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []string, auto bool) (*PortPlan, error) {
+	return e.applyInstance(ctx, inst, profiles, auto, true)
+}
+
+// applyInstance is ApplyInstance; remember says whether the ports it
+// reassigns are recorded (up) or only proposed (a preview).
+func (e *Engine) applyInstance(ctx context.Context, inst *Instance, profiles []string, auto, remember bool) (*PortPlan, error) {
 	plan, state, err := e.planPorts(ctx, inst, profiles, auto)
 	if err != nil {
 		return nil, err
@@ -246,7 +296,7 @@ func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []s
 	inst.files, inst.instanceEnv, inst.generated = inst.selected, "", nil
 	overlayPath, envPath := e.instanceFile(inst, ".yaml"), e.instanceFile(inst, ".env")
 	if overlay.Empty() && len(env) == 0 {
-		if auto {
+		if auto && remember {
 			if err := e.savePorts(inst.Workspace, state); err != nil {
 				return nil, err
 			}
@@ -267,7 +317,7 @@ func (e *Engine) ApplyInstance(ctx context.Context, inst *Instance, profiles []s
 			return nil, fmt.Errorf("%w (generated file %s)", err, inst.generated[0])
 		}
 	}
-	if auto {
+	if auto && remember {
 		if err := e.savePorts(inst.Workspace, state); err != nil {
 			return nil, err
 		}
@@ -362,7 +412,18 @@ func renderEnvFile(env map[string]string) []byte {
 // `docker compose config` prints it, with secret values masked. It applies
 // the instance's generated files, but starts nothing.
 func (e *Engine) ResolvedConfig(ctx context.Context, inst *Instance, profiles []string, auto bool) (string, error) {
-	if _, err := e.ApplyInstance(ctx, inst, profiles, auto); err != nil {
+	return e.resolvedConfig(ctx, inst, profiles, auto, true)
+}
+
+// PreviewConfig is ResolvedConfig for a read-only caller (GET .../config): the
+// ports that auto reassigns are shown but not recorded, so asking changes no
+// reservation. The regenerable files Theo hands to Compose are still written.
+func (e *Engine) PreviewConfig(ctx context.Context, inst *Instance, profiles []string, auto bool) (string, error) {
+	return e.resolvedConfig(ctx, inst, profiles, auto, false)
+}
+
+func (e *Engine) resolvedConfig(ctx context.Context, inst *Instance, profiles []string, auto, remember bool) (string, error) {
+	if _, err := e.applyInstance(ctx, inst, profiles, auto, remember); err != nil {
 		return "", err
 	}
 	out, err := e.compose.ConfigText(ctx, inst.target())

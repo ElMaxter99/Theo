@@ -82,6 +82,14 @@ looks for changes made outside Theo every 5 seconds.
 - Operations are kept in memory (the last 50); the persistent record is the history (`theo history`).
 - The server exposes shared services, reconcile, health, diagnostics and paginated history (see `docs/api.md`, sections 9 to 11). Every protection of the CLI applies: stopping shared services that running instances use needs the typed text, purging their data is refused while any instance is linked to them, and reconcile only forgets Theo's own records, never containers, volumes or worktrees.
 - macOS and Windows are covered by CI only; nothing in the server is platform specific besides opening the browser.
+- Known security limits, accepted for now (see the security review notes in `docs/api.md`):
+  - **Cookie and other servers on `127.0.0.1`.** Browsers do not scope cookies by port, so another web server on
+    `http://127.0.0.1:<port>` receives the session cookie. Theo writes links to your containers as `localhost`, which is a
+    different cookie host, so following them from the interface does not leak it. Do not open Theo's own address
+    (`127.0.0.1:<port>`) in a browser profile that also visits untrusted local servers.
+  - **Launch link in the process list.** While the 60-second launch link is valid, `theo ui` passes it to the browser opener
+    as an argument, which other users of a shared machine can see with `ps`. On a single-user computer this does not matter;
+    on a shared one, start `theo serve --no-open --print-launch-url` and open the link yourself.
 
 ## Troubleshooting
 

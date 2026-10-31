@@ -133,10 +133,13 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, sess *sess
 	if !ok {
 		return errf(http.StatusInternalServerError, "internal", "streaming is not supported")
 	}
+	closeStream, err := s.openStream()
+	if err != nil {
+		return err
+	}
+	defer closeStream()
 	ch, unsub := s.hub.subscribe()
 	defer unsub()
-	s.sse.Add(1)
-	defer func() { s.sse.Add(-1); s.touch() }()
 	defer s.auth.setVisible(sess, false)
 
 	startSSE(w)
