@@ -37,7 +37,7 @@ func main() {
 		}
 	}
 	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "theo-desktop: %v\n", err)
+		desktop.ReportFatal(os.Stderr, err)
 		os.Exit(1)
 	}
 }

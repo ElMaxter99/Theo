@@ -16,6 +16,8 @@ theo ui --idle-timeout 30m             # stop after 30 minutes without use (defa
 
 Stop it with Ctrl+C. The resources it serves are documented in [../api.md](../api.md).
 
+Prefer a window of its own over a browser tab? The [desktop app](desktop.md) shows this same interface in a native window.
+
 ## How it starts
 
 1. It listens on `127.0.0.1` at a random port. It never listens on `0.0.0.0`, `localhost` or any other address,
@@ -47,8 +49,16 @@ The server controls Docker for you, so it is closed on purpose. All of these app
 
 What it does **not** protect against: another program running as your own user can already run `docker` itself.
 The trust boundary is "the same operating system user". Do not paste the launch URL anywhere before using it.
-The browser's own command line (`xdg-open`, `open`, `rundll32`) briefly shows the one-time URL; after the first use or
-60 seconds it is useless.
+
+### Known security limits
+
+- **The launch link is briefly visible in the process list.** `theo ui` hands the one-time URL to the browser's opener
+  (`xdg-open`, `open`, `rundll32`), so for a moment it appears in that process's command line, where any program of
+  your user can read it. After the first use or 60 seconds it is useless, and by then the page has already exchanged it
+  for a cookie. `theo serve --no-open` prints it instead, which only moves the exposure to your terminal.
+- **The desktop app does not have this limit.** [`theo-desktop`](desktop.md) asks the server for the URL inside its own
+  process and gives it to its window directly; it never goes through a command line, an environment variable or an
+  external opener. (The window's content process is still a program of your user; the trust boundary above is the same.)
 
 ## Long operations and shutdown
 
