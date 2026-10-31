@@ -178,8 +178,9 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request, _ *se
 	}
 	d := Diagnostics{Meta: meta, Doctor: doc, Projects: len(projects)}
 	var b strings.Builder
-	// No path of this machine (it carries the user name): the report is pasted into public issues.
-	fmt.Fprintf(&b, "Theo %s (API %s)\nPlatform: %s/%s\nProjects: %d\n", meta.TheoVersion, meta.APIVersion, runtime.GOOS, runtime.GOARCH, len(projects))
+	// The data directory is the one path the report shows, on purpose (docs/api.md: the page says so before
+	// copying). Every other path, in the details of the checks and in tool errors, is replaced.
+	fmt.Fprintf(&b, "Theo %s (API %s)\nPlatform: %s/%s\nData directory: %s\nProjects: %d\n", meta.TheoVersion, meta.APIVersion, runtime.GOOS, runtime.GOARCH, meta.DataDir, len(projects))
 	for _, t := range []struct {
 		name string
 		info ToolInfo

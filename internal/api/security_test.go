@@ -724,9 +724,14 @@ func TestDiagnosticsReportHasNoPaths(t *testing.T) {
 	if d.Report == "" {
 		t.Fatal("no report")
 	}
-	for _, p := range []string{e.dataDir, filepath.Dir(e.dataDir), e.main} {
-		if strings.Contains(d.Report, p) {
-			t.Errorf("the report carries the path %s:\n%s", p, d.Report)
+	// The data directory is shown once, on its own line, as docs/api.md says; no other path is.
+	if n := strings.Count(d.Report, e.dataDir); n != 1 || !strings.Contains(d.Report, "Data directory: "+e.dataDir+"\n") {
+		t.Errorf("the data directory should appear once, on its own line (%d times):\n%s", n, d.Report)
+	}
+	rest := strings.Replace(d.Report, e.dataDir, "", 1)
+	for _, p := range []string{filepath.Dir(e.dataDir), e.main} {
+		if strings.Contains(rest, p) {
+			t.Errorf("the report carries the path %s:\n%s", p, rest)
 		}
 	}
 	if strings.Contains(d.Report, "unix:///") || strings.Contains(d.Report, "/var/run") {
