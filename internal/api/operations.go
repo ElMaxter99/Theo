@@ -409,7 +409,11 @@ func (o *operations) finish(op *Operation, summary string, err error, wasCancell
 		res.Error = &Error{Code: "cancelled", Message: "the operation was cancelled", Status: http.StatusConflict}
 	default:
 		state = OpFailed
-		res.Error = fromEngine(err, &ResourceRef{Kind: "instance", Project: op.Project, Worktree: op.Worktree})
+		ref := &ResourceRef{Kind: "instance", Project: op.Project, Worktree: op.Worktree}
+		if strings.HasPrefix(op.Kind, "shared.") {
+			ref = &ResourceRef{Kind: "shared", Project: op.Project}
+		}
+		res.Error = fromEngine(err, ref)
 		if res.Summary == "" {
 			res.Summary = op.Kind + " failed"
 		}

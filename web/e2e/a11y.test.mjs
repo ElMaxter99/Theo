@@ -77,6 +77,8 @@ test("keyboard-only: the wizard and the destructive dialog return focus to their
   await page.keyboard.press("Enter");
   await page.waitForSelector("#wz-folder");
   assert.match(await page.locator(".wizard-heading").textContent(), /Step 2 of 4/);
+  // Focus moves to the heading a moment after the step renders; wait for it instead of reading it once.
+  await page.waitForFunction(() => document.activeElement?.className.includes("wizard-heading"), null, { timeout: 3000 }).catch(() => undefined);
   assert.equal(await page.evaluate(() => document.activeElement.className.includes("wizard-heading")), true, "focus moved to the step heading");
   await page.ctx.close();
 });

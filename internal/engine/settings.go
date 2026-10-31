@@ -404,6 +404,50 @@ func currentUser() string {
 // newest last. With a worktree it is limited to that worktree's instance.
 // limit 0 means all.
 func (e *Engine) History(ctx context.Context, project, worktree string, limit int) ([]instances.Event, error) {
+	page, err := e.HistoryPage(ctx, project, worktree, limit, -1)
+	if err != nil {
+		return nil, err
+	}
+	return page.Events, nil
+}
+
+// HistoryPageResult is one page of history.
+type HistoryPageResult struct {
+	// Events are at most limit events, oldest first, all older than Before.
+	Events []instances.Event
+	// Total is how many events match the project and worktree.
+	Total int
+	// Next is the cursor of the page before this one (pass it as before), or
+	// -1 when this page starts at the oldest event.
+	Next int
+}
+
+// HistoryPage is History in pages from the newest backwards. A cursor is a
+// position in the matching events, counted from the oldest one: the log is
+// only ever appended to, so a cursor stays valid. before < 0 starts at the
+// newest event; limit 0 means all the events older than before.
+func (e *Engine) HistoryPage(ctx context.Context, project, worktree string, limit, before int) (HistoryPageResult, error) {
+	out, err := e.projectHistory(ctx, project, worktree)
+	if err != nil {
+		return HistoryPageResult{}, err
+	}
+	end := len(out)
+	if before >= 0 && before < end {
+		end = before
+	}
+	start := 0
+	if limit > 0 && end-limit > 0 {
+		start = end - limit
+	}
+	next := -1
+	if start > 0 {
+		next = start
+	}
+	return HistoryPageResult{Events: out[start:end], Total: len(out), Next: next}, nil
+}
+
+// projectHistory returns the matching events, oldest first.
+func (e *Engine) projectHistory(ctx context.Context, project, worktree string) ([]instances.Event, error) {
 	p, err := e.Project(project)
 	if err != nil {
 		return nil, err
@@ -430,9 +474,6 @@ func (e *Engine) History(ctx context.Context, project, worktree string, limit in
 			continue
 		}
 		out = append(out, ev)
-	}
-	if limit > 0 && len(out) > limit {
-		out = out[len(out)-limit:]
 	}
 	return out, nil
 }

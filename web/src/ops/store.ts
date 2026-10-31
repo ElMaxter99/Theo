@@ -7,6 +7,7 @@ import type { Operation, Worktree } from "../api/types.ts";
 import { isActiveOp } from "../lib/status.ts";
 import { announce } from "../lib/live.ts";
 import { t } from "../strings.ts";
+import { normKind } from "./kind.ts";
 
 let ops: Operation[] = [];
 const subs = new Set<() => void>();
@@ -24,15 +25,15 @@ export function rememberWorktrees(list: Pick<Worktree, "id" | "branch" | "path" 
 export const nameOf = (id: string | undefined): string => (id && names.get(id)) || id || "";
 
 export function kindLabel(kind: string): string {
-  return t.ops.kind[kind] ?? kind;
+  return t.ops.kind[normKind(kind)] ?? kind;
 }
 
 export function upsertOp(op: Operation): void {
   const prev = ops.find((o) => o.id === op.id);
   const next = prev ? { ...prev, ...op } : op;
   ops = [next, ...ops.filter((o) => o.id !== op.id)].sort((a, b) => (b.started_at ?? "").localeCompare(a.started_at ?? "")).slice(0, 60);
-  const name = nameOf(next.worktree);
-  if (!prev && isActiveOp(next)) announce(t.ops.announceStarted(t.ops.kindProgress[next.kind] ?? kindLabel(next.kind), name));
+  const name = nameOf(next.worktree) || next.project || "";
+  if (!prev && isActiveOp(next)) announce(t.ops.announceStarted(t.ops.kindProgress[normKind(next.kind)] ?? kindLabel(next.kind), name));
   else if (prev && isActiveOp(prev) && !isActiveOp(next)) announce(t.ops.announceDone(kindLabel(next.kind), name, t.ops.state[next.state] ?? next.state));
   notify();
 }
@@ -84,4 +85,11 @@ export const activeOpFor = (worktreeId: string): Operation | undefined => ops.fi
 export async function cancelOperation(id: string): Promise<void> {
   await api.post(`/operations/${encodeURIComponent(id)}/cancel`, {});
   await loadOps();
+}
+
+/** Operations of the shared services of a project (no worktree). */
+export async function startSharedOperation(project: string, kind: "up" | "down", body: Record<string, unknown> = {}): Promise<Operation> {
+  const op = await api.post<Operation>(`/projects/${encodeURIComponent(project)}/shared/${kind}`, body, { idempotent: true });
+  upsertOp({ project, ...op });
+  return op;
 }

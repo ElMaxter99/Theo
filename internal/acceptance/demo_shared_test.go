@@ -103,9 +103,13 @@ func TestDemoGuideSharedAndData(t *testing.T) {
 	}
 
 	// Data and declaration are removed as separate, explicit steps.
-	must(t, "shared", "purge", proj, "--confirm", proj+"-shared")
+	// Purging is refused while instances are linked to the shared services.
+	if _, _, code := theo("shared", "purge", proj, "--confirm", proj+"-shared"); code == cli.ExitOK {
+		t.Errorf("purge with linked instances succeeded")
+	}
 	must(t, "shared", "unuse", proj, "-w", "main")
 	must(t, "shared", "unuse", proj, "-w", "feature/x")
+	must(t, "shared", "purge", proj, "--confirm", proj+"-shared")
 	must(t, "shared", "remove", proj)
 	testutil.GitClean(t, main)
 }

@@ -299,7 +299,7 @@ func (e *Engine) envNotes(ctx context.Context, p registry.Project, main, wt git.
 	note := fmt.Sprintf("Git does not copy ignored files: %s %s missing in the new worktree.", strings.Join(missing, ", "), plural(len(missing), "is", "are"))
 	switch env.Source {
 	case EnvFromFlag, EnvFromProject, EnvFromMain:
-		note += fmt.Sprintf(" Theo will use %s by reference (%s); nothing is copied.", env.Path, env.Source)
+		note += fmt.Sprintf(" Theo will use %s by reference (%s) for ${VAR} in the Compose files; nothing is copied. A service that declares `env_file:` reads it from the worktree itself: if it does, add the worktree with --copy (see `theo project set %s --copy-on-add`).", env.Path, env.Source, p.Name)
 	default:
 		note += " Set one for the project with `theo project set " + p.Name + " --env-file <path>`, or pass --env-file."
 	}

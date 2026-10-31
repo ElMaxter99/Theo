@@ -8,6 +8,8 @@ import { readTheme, saveTheme } from "../lib/theme.ts";
 import type { ThemePref } from "../lib/theme.ts";
 import { Banner } from "./ui.tsx";
 import { OpsIndicator } from "../ops/Operations.tsx";
+import { useHealth } from "../lib/health.ts";
+import { Icon } from "./Icon.tsx";
 
 export function Shell({ meta, onRefresh, children }: { meta: Meta | undefined; onRefresh: () => void; children: ComponentChildren }) {
   const route = useRoute();
@@ -25,11 +27,17 @@ export function Shell({ meta, onRefresh, children }: { meta: Meta | undefined; o
     return () => clearTimeout(id);
   }, [route.name, "project" in route ? route.project : "", "wt" in route ? route.wt : ""]);
 
+  useEffect(() => setTheme(readTheme()), [route.name]);
+
   const changeTheme = (v: string) => {
     const p = (v === "light" || v === "dark" ? v : "system") as ThemePref;
     setTheme(p);
     saveTheme(p);
   };
+
+  const health = useHealth();
+  const healthCount = health.summary?.findings;
+  const healthDocker = health.summary?.status === "docker_unavailable";
 
   const dockerDown = meta && !meta.docker.available;
   const gitDown = meta && !meta.git.available;
@@ -55,7 +63,16 @@ export function Shell({ meta, onRefresh, children }: { meta: Meta | undefined; o
       </header>
       <nav class="app-nav" aria-label={t.app.nav}>
         <ul>
-          <li><a href={href.projects()} aria-current={route.name !== "notfound" ? "page" : undefined}>{t.app.navProjects}</a></li>
+          <li><a href={href.projects()} aria-current={["projects", "add", "project", "wizard", "detail", "shared"].includes(route.name) ? "page" : undefined}>{t.app.navProjects}</a></li>
+          <li>
+            <a href={href.health()} aria-current={route.name === "health" ? "page" : undefined} data-testid="nav-health">
+              <Icon name={healthCount === undefined ? "dot" : healthCount > 0 ? "warn" : healthDocker ? "unknown" : "ok"} />
+              <span>{t.nav.health}</span>
+              {healthCount !== undefined ? <span class="count-pill" data-testid="health-count">{healthCount}<span class="sr-only"> {healthCount === 1 ? "finding" : "findings"}{healthDocker ? ", Docker unavailable" : ""}</span></span> : null}
+              {healthCount === undefined && health.error ? <span class="sr-only"> {t.reconcile.loadError}</span> : null}
+            </a>
+          </li>
+          <li><a href={href.settings()} aria-current={route.name === "settings" ? "page" : undefined}>{t.nav.settings}</a></li>
         </ul>
         {meta ? <p class="nav-foot">{t.app.version(meta.theo_version, meta.api_version)}<br />{t.app.footerLocal}</p> : null}
       </nav>

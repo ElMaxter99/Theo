@@ -98,6 +98,14 @@ func New(store Store, g Git, c Compose) *Engine {
 	return &Engine{store: store, git: g, compose: c, now: time.Now, portStore: &memPorts{}, settings: &memSettings{}, portFree: ports.Free, baseFiles: compose.DefaultFiles}
 }
 
+// WithDataDir sets where the engine keeps the Compose files it generates.
+// Open does it already; it is for engines built with New (interfaces whose
+// tests use fakes).
+func (e *Engine) WithDataDir(dir string) *Engine {
+	e.dataDir = dir
+	return e
+}
+
 // memPorts keeps port assignments in memory, for engines that are not given
 // a place to persist them.
 type memPorts struct {

@@ -10,14 +10,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/ElMaxter99/Theo/internal/compose"
 	"github.com/ElMaxter99/Theo/internal/engine"
 	"github.com/ElMaxter99/Theo/internal/execx"
-	"github.com/ElMaxter99/Theo/internal/instances"
 )
 
 // routesTable registers every route. Handlers are never mounted on the mux
@@ -63,6 +61,9 @@ func (s *Server) routesTable() {
 	s.handle("GET", "/projects/{p}/worktrees/{wt}/volumes", authSession, s.handleVolumes)
 	s.handle("POST", "/projects/{p}/worktrees/{wt}/volumes/purge", authSession, s.handlePurge)
 	s.handle("GET", "/projects/{p}/worktrees/{wt}/history", authSession, s.handleHistory)
+
+	s.sharedRoutes()
+	s.reconcileRoutes()
 
 	s.handle("GET", "/operations", authSession, s.handleOperations)
 	s.handle("GET", "/operations/{id}", authSession, s.handleOperation)
@@ -114,10 +115,15 @@ func (s *Server) handleFocus(w http.ResponseWriter, r *http.Request, sess *sessi
 // --- system ---
 
 func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request, _ *session) error {
+	return writeJSON(w, http.StatusOK, s.metaNow(r.Context()))
+}
+
+// metaNow is the answer of GET /meta, cached for 10 s.
+func (s *Server) metaNow(parent context.Context) Meta {
 	s.meta.mu.Lock()
 	defer s.meta.mu.Unlock()
 	if time.Since(s.meta.at) > 10*time.Second {
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 		defer cancel()
 		m := Meta{TheoVersion: engine.Version, APIVersion: APIVersion, OS: runtime.GOOS, Arch: runtime.GOARCH, DataDir: s.cfg.DataDir}
 		m.Docker = toolVersion(ctx, "docker", "version", "--format", "{{.Server.Version}}")
@@ -128,11 +134,12 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request, _ *session) 
 		} else {
 			m.Compose = ToolInfo{Error: "Docker is not available"}
 		}
+		m.Compose.MinVersion, m.Git.MinVersion = composeMin(), gitMin()
 		s.meta.data, s.meta.at = m, time.Now()
 	}
 	m := s.meta.data
 	m.Idle = IdleInfo{TimeoutSeconds: int(s.cfg.IdleTimeout / time.Second)}
-	return writeJSON(w, http.StatusOK, m)
+	return m
 }
 
 func toolVersion(ctx context.Context, name string, args ...string) ToolInfo {
@@ -743,20 +750,15 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request, _ *sessio
 	if err != nil {
 		return err
 	}
-	limit := 0
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if limit, err = strconv.Atoi(v); err != nil || limit < 0 {
-			return badRequest("limit must be a positive number")
-		}
-	}
-	events, err := s.eng.History(r.Context(), r.PathValue("p"), wt.Path, limit)
+	limit, before, err := historyParams(r)
 	if err != nil {
 		return err
 	}
-	if events == nil {
-		events = []instances.Event{}
+	page, err := s.eng.HistoryPage(r.Context(), r.PathValue("p"), wt.Path, limit, before)
+	if err != nil {
+		return err
 	}
-	return writeJSON(w, http.StatusOK, events)
+	return writeHistory(w, page)
 }
 
 // --- directory browser ---

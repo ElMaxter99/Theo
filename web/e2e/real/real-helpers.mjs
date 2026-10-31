@@ -64,7 +64,8 @@ func main() {
   execFileSync("go", ["build", "-o", path.join(dir, "server"), "."], { cwd: src, env: { ...process.env, CGO_ENABLED: "0", GOOS: "linux" } });
   writeFileSync(path.join(dir, "Dockerfile"), 'FROM scratch\nCOPY server /server\nENTRYPOINT ["/server"]\n');
   writeFileSync(path.join(dir, "compose.yaml"), `services:\n  web:\n    build: .\n    ports:\n      - "${port}:8080"\n    volumes:\n      - data:/data\nvolumes:\n  data:\n`);
-  writeFileSync(path.join(dir, ".gitignore"), "server\n");
+  // The built binary is committed so that every worktree has what the Dockerfile copies.
+  writeFileSync(path.join(dir, ".gitignore"), "*.log\n");
   sh("git", ["init", "-q", "-b", "main"], { cwd: dir });
   sh("git", ["config", "user.email", "uf@example.com"], { cwd: dir });
   sh("git", ["config", "user.name", "uf"], { cwd: dir });

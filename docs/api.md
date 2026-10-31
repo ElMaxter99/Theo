@@ -55,8 +55,8 @@ and optionally `hint`, `level` (2 or 3 for destructive actions), `resource`, `co
 | 400 | `invalid_request`, `invalid_name`, `unknown_field` | validation (unknown JSON fields are rejected) |
 | 401 | `unauthorized` | no session, wrong control secret, nonce used or expired |
 | 403 | `forbidden_origin`, `csrf` | Host/Origin/Sec-Fetch-Site or CSRF checks |
-| 404 | `project_not_found`, `worktree_not_found`, `operation_not_found`, `env_not_found`, `not_found` | |
-| 409 | `busy`, `confirmation_required`, `instance_has_containers`, `volume_in_use`, `project_has_containers`, `branch_checked_out`, `port_conflict`, `already_exists`, `cancelled`, `shared_in_use` | protections of the engine |
+| 404 | `project_not_found`, `worktree_not_found`, `operation_not_found`, `env_not_found`, `shared_not_configured`, `not_found` | |
+| 409 | `busy`, `confirmation_required`, `instance_has_containers`, `volume_in_use`, `project_has_containers`, `branch_checked_out`, `port_conflict`, `already_exists`, `cancelled`, `shared_in_use`, `shared_running` | protections of the engine |
 | 412 | `docker_unavailable`, `git_unavailable`, `compose_too_old`, `git_too_old` | |
 | 422 | `compose_invalid`, `engine_error` | the engine said no; `message` is its text; `original` has the rest |
 | 500 | `internal` | with `request_id`; details only in the local log |
@@ -73,7 +73,8 @@ Ids are computed from `git worktree list` on every request; nothing is stored. P
 ## 4. System
 
 ### `GET /meta`
-`docker`, `compose` and `git` say whether the tool works and its version. If Docker is down the rest of the
+`docker`, `compose` and `git` say whether the tool works and its version; `compose` and `git` also carry
+`min_version`, the oldest version Theo works with (NFR-041). If Docker is down the rest of the
 API still serves the registry (NFR-014). Cached for 10 s.
 ```json
 // HTTP 200 (meta)
@@ -88,11 +89,13 @@ API still serves the registry (NFR-014). Cached for 10 s.
   },
   "compose": {
     "available": true,
-    "version": "5.6.1"
+    "version": "5.6.1",
+    "min_version": "2.24.4"
   },
   "git": {
     "available": true,
-    "version": "2.43.0"
+    "version": "2.43.0",
+    "min_version": "2.17.0"
   },
   "data_dir": "/tmp/TestDumpExamples3241964665/003",
   "idle": {
@@ -572,8 +575,43 @@ the volumes in `affected` and the Compose project name in `confirm.expected`; wi
 }
 ```
 
-### `GET .../{wt}/history?limit=`
-Same JSON as `theo history --json` (oldest first). The engine records `up`, `down`, `restart` and `volumes purge`
+### `GET .../{wt}/history?limit=&before=` and `GET /projects/{p}/history?limit=&before=`
+Same JSON as `theo history --json` (oldest first); the project form covers every worktree of the project.
+Without parameters it is the whole log. With `limit=N` it is the newest N events, still oldest first.
+The body is always the plain array; the paging travels in response headers:
+
+- `Theo-History-Total`: how many events match.
+- `Theo-History-Next`: the cursor of the older page; pass it as `before=<cursor>` (with the same `limit`).
+  Absent on the oldest page. A cursor is a position counted from the oldest event; the log is only ever
+  appended to, so a cursor stays valid while the user keeps working. A `before` beyond the end means "from
+  the newest".
+
+A page of the project history (6 events in total, 2 asked):
+```json
+// HTTP 200 (project history, limit=2)
+// Theo-History-Total: 6
+// Theo-History-Next: 4
+[
+  {
+    "time": "2026-10-30T17:23:11.712275399Z",
+    "project": "ub5s761115p",
+    "workspace": "/tmp/TestDumpExamplesV540520354/001/app",
+    "compose_project": "ub5s761115",
+    "operation": "down",
+    "result": "ok"
+  },
+  {
+    "time": "2026-10-30T17:23:12.664766458Z",
+    "project": "ub5s761115p",
+    "workspace": "/tmp/TestDumpExamplesV540520354/001/app-feature",
+    "compose_project": "ub5s761115p-app-feature",
+    "operation": "down",
+    "result": "ok"
+  }
+]
+```
+
+The engine records `up`, `down`, `restart` and `volumes purge`
 exactly as the CLI does; the API keeps no history of its own.
 ```json
 // HTTP 200 (history)
@@ -702,13 +740,385 @@ data: {"at":"2026-10-30T06:53:06.295378551Z","line":"server ready","service":"we
 
 ```
 
-## 9. Differences from the design contract
+## 9. Shared services
+
+One Compose project, `<project>-shared`, runs the services a project shares; instances opt in with `use`.
+The engine's rules apply unchanged (docs/cli/shared.md). `up` of an instance that uses a shared service
+accepts `"start_shared": true` to start a stopped provider, exactly like `theo up --start-shared`.
+A project that shares nothing answers `404 shared_not_configured` on every route below except `POST /shared`.
+
+Shared operations are keyed per project, apart from the instances: a second `shared/up` or `shared/down`
+while one runs is `409 busy`. They appear in `GET /operations` with `kind` `shared.up` or `shared.down`, no
+`worktree`, and `error.resource.kind` `shared`.
+
+### `GET /projects/{p}/shared`
+Same JSON as `theo shared status <p> --json`: services with their state (`running`, `exited`, ...,
+`not created`), the consumers (instances linked to them; `active` means they have running containers) and
+`warnings` (for example when Docker could not be asked). With Docker down the registry data still comes back,
+with a warning.
+```json
+// HTTP 200 (status with two running consumers)
+{
+  "project": "ub5s761115p",
+  "compose_project": "ub5s761115p-shared",
+  "from": "/tmp/TestDumpExamplesV540520354/001/app",
+  "network": "theo-ub5s761115p-shared",
+  "publish_ports": false,
+  "services": [
+    {
+      "name": "db",
+      "state": "running"
+    }
+  ],
+  "consumers": [
+    {
+      "workspace": "/tmp/TestDumpExamplesV540520354/001/app",
+      "branch": "main",
+      "compose_project": "ub5s761115",
+      "services": [
+        "db"
+      ],
+      "active": true
+    },
+    {
+      "workspace": "/tmp/TestDumpExamplesV540520354/001/app-feature",
+      "branch": "feature/x",
+      "compose_project": "ub5s761115p-app-feature",
+      "services": [
+        "db"
+      ],
+      "active": true
+    }
+  ]
+}
+```
+
+### `POST /projects/{p}/shared` `{services[], from?, publish?}` -> 201
+Declares services as shared (`theo shared add`). `from` is the worktree whose Compose files define them
+(default: the main one); `publish: true` keeps the host ports the project publishes. Nothing runs or
+changes until `shared/up`. The answer is the status, as above. An unknown service is `422 engine_error`.
+```json
+// HTTP 201 (add)
+{
+  "project": "ub5s761115p",
+  "compose_project": "ub5s761115p-shared",
+  "from": "/tmp/TestDumpExamplesV540520354/001/app",
+  "network": "theo-ub5s761115p-shared",
+  "publish_ports": false,
+  "services": [
+    {
+      "name": "db",
+      "state": "not created"
+    }
+  ],
+  "consumers": []
+}
+```
+
+### `POST /projects/{p}/shared/up` -> 202 (operation)
+Creates the network if needed and starts the shared services (`Location` header and body as for the
+lifecycle operations; `Idempotency-Key` is honoured).
+```json
+// HTTP 202 (shared up)
+// Location: /api/v1/operations/op_T4xPZE1czdTM_9mg
+{
+  "id": "op_T4xPZE1czdTM_9mg",
+  "kind": "shared.up",
+  "project": "ub5s761115p",
+  "state": "queued",
+  "started_at": "2026-10-30T17:23:00.52853395Z",
+  "cancellable": true
+}
+```
+
+### `POST /projects/{p}/shared/down` `{confirm?}` -> 202 (operation)
+Stops the shared services; their volumes are kept. The protection is checked **before** the operation
+exists: while running instances use them and `confirm` is not the shared Compose project name, the answer is
+`409 confirmation_required` (level 2) with the consumers in `affected` and the text to type in
+`confirm.expected`; no operation starts and nothing is stopped. Send the same request with
+`{"confirm": "<expected>"}` to go on. The consumers lose the service until it is back.
+```json
+// HTTP 409 (down refused: two running consumers)
+{
+  "error": {
+    "code": "confirmation_required",
+    "message": "the shared services of \"ub5s761115p\" are used by 2 instance(s); nothing was changed:\n  main · /tmp/TestDumpExamplesV540520354/001/app (running): db\n  feature/x · /tmp/TestDumpExamplesV540520354/001/app-feature (running): db\n\nTo stop them anyway, pass --confirm ub5s761115p-shared. Those instances will lose the services.",
+    "level": 2,
+    "resource": {
+      "kind": "shared",
+      "project": "ub5s761115p"
+    },
+    "confirm": {
+      "expected": "ub5s761115p-shared",
+      "prompt": "Type the text shown to confirm"
+    },
+    "affected": [
+      {
+        "kind": "instance",
+        "name": "/tmp/TestDumpExamplesV540520354/001/app"
+      },
+      {
+        "kind": "instance",
+        "name": "/tmp/TestDumpExamplesV540520354/001/app-feature"
+      }
+    ]
+  }
+}
+```
+
+### `DELETE /projects/{p}/shared/services/{s}` -> 200
+Stops sharing one service (`theo shared remove <p> <s>`), never touching volumes. Refused with
+`409 shared_in_use` while instances are linked to it (`affected` lists them, no `confirm`: unlink them first)
+and with `409 shared_running` while the shared containers exist (stop them first). The answer says whether
+anything is still shared (`shared`) and, if so, the new `status`.
+```json
+// HTTP 409 (remove refused: linked instances)
+{
+  "error": {
+    "code": "shared_in_use",
+    "message": "the shared services of \"ub5s761115p\" are used by 2 instance(s); nothing was changed:\n  main · /tmp/TestDumpExamplesV540520354/001/app (running): db\n  feature/x · /tmp/TestDumpExamplesV540520354/001/app-feature (running): db\n\nStop using them first with `theo shared unuse`.",
+    "hint": "stop using the shared services in those instances first",
+    "resource": {
+      "kind": "shared",
+      "project": "ub5s761115p"
+    },
+    "affected": [
+      {
+        "kind": "instance",
+        "name": "/tmp/TestDumpExamplesV540520354/001/app"
+      },
+      {
+        "kind": "instance",
+        "name": "/tmp/TestDumpExamplesV540520354/001/app-feature"
+      }
+    ]
+  }
+}
+```
+```json
+// HTTP 200 (removed)
+{
+  "removed": true,
+  "service": "db",
+  "shared": false,
+  "volumes_kept": true
+}
+```
+
+### `POST /projects/{p}/shared/purge` `{confirm?}` -> 200
+Deletes the data (named volumes) of the shared services. Three protections, in this order:
+`409 shared_in_use` if **any** instance is linked to them (whatever `confirm` says; `affected` lists them);
+`409 instance_has_containers` if the shared containers exist; then the typed text (level 3):
+`409 confirmation_required` with the volumes in `affected` and `confirm.expected` (the shared Compose project
+name). Nothing is deleted until the text matches.
+```json
+// HTTP 409 (purge refused: linked instances)
+{
+  "error": {
+    "code": "shared_in_use",
+    "message": "the shared services of \"ub5s761115p\" are used by 2 instance(s); nothing was changed:\n  main · /tmp/TestDumpExamplesV540520354/001/app (running): db\n  feature/x · /tmp/TestDumpExamplesV540520354/001/app-feature (running): db\n\nStop using them first with `theo shared unuse`.",
+    "hint": "stop using the shared services in those instances first",
+    "resource": {
+      "kind": "shared",
+      "project": "ub5s761115p"
+    },
+    "affected": [
+      {
+        "kind": "instance",
+        "name": "/tmp/TestDumpExamplesV540520354/001/app"
+      },
+      {
+        "kind": "instance",
+        "name": "/tmp/TestDumpExamplesV540520354/001/app-feature"
+      }
+    ]
+  }
+}
+```
+```json
+// HTTP 409 (purge needs the text)
+{
+  "error": {
+    "code": "confirmation_required",
+    "message": "this deletes the data of 1 volume(s) of ub5s761115p-shared for good; nothing was deleted",
+    "level": 3,
+    "resource": {
+      "kind": "shared",
+      "project": "ub5s761115p"
+    },
+    "confirm": {
+      "expected": "ub5s761115p-shared",
+      "prompt": "Type the name of the shared Compose project to delete its data"
+    },
+    "affected": [
+      {
+        "kind": "volume",
+        "name": "ub5s761115p-shared_data",
+        "detail": "kept"
+      }
+    ],
+    "preserved": [
+      "external volumes",
+      "other instances",
+      "the branch and the worktree"
+    ]
+  }
+}
+```
+```json
+// HTTP 200 (purged)
+{
+  "compose_project": "ub5s761115p-shared",
+  "deleted": [
+    {
+      "name": "ub5s761115p-shared_data",
+      "volume": "data",
+      "status": "kept",
+      "created": true
+    }
+  ]
+}
+```
+
+### `PUT /projects/{p}/worktrees/{wt}/shared` `{use[], join?[]}` -> 200
+Makes the instance use the shared services instead of running its own copy, from its next `up`. `join` adds
+services of the instance to the shared network besides the ones that depended on a shared service.
+`use` is required; a service that is not shared (or that the instance does not have) is `422 engine_error`.
+```json
+// HTTP 200 (use)
+{
+  "applies_on": "next_up",
+  "join": [],
+  "shared": [
+    "db"
+  ]
+}
+```
+
+### `DELETE /projects/{p}/worktrees/{wt}/shared[/{s}]` -> 200
+Runs its own copy again from the next `up`: of the named service, or of all of them without `{s}`. Same
+answer as `PUT`. Not refused while the instance runs: nothing changes until its next `up`.
+
+## 10. Reconcile and health
+
+### `GET /reconcile[?project=]`
+Same JSON as `theo reconcile [<project>] --json`. It compares what Theo recorded with what exists in Git, on
+disk and in Docker, and **changes nothing**. `forgettable: true` marks Theo's own records (settings and port
+reservations of a worktree that no longer exists, and the files generated for it): the only thing that can
+be forgotten. Containers, volumes and worktrees are only reported, with a `fix` to run yourself. Each finding
+has an `id` that is stable between calls (a hash of kind, project, subject and worktree).
+When Docker cannot be asked the answer is still 200: `docker_error` has the cause and the findings that need
+Docker are missing from the list (the registry ones are there). `forgotten` is always 0 here.
+```json
+// HTTP 200 (two forgettable findings)
+{
+  "findings": [
+    {
+      "id": "fd_4fb84fa21fbf",
+      "kind": "stale settings",
+      "project": "ub5s761115p",
+      "subject": "/tmp/TestDumpExamplesV540520354/001/app-feature",
+      "detail": "settings for a worktree that no longer exists (1 variable(s))",
+      "fix": "`theo reconcile --apply` forgets them",
+      "forgettable": true
+    },
+    {
+      "id": "fd_d6c78e85278d",
+      "kind": "stale files",
+      "project": "ub5s761115p",
+      "subject": "/tmp/TestDumpExamplesV540520354/004/overlays/ub5s761115p-app-feature-a6e9d3.yaml",
+      "detail": "generated file of a worktree that no longer exists",
+      "fix": "`theo reconcile --apply` deletes it",
+      "forgettable": true
+    }
+  ],
+  "forgotten": 0
+}
+```
+
+### `POST /reconcile/apply` `{project?, ids[] | all: true}` -> 200
+Forgets Theo's own stale records. The server computes the report again and forgets only the findings that
+are `forgettable` **and** whose `id` the client sent (or all forgettable ones with `all: true`; `ids` and
+`all` are exclusive, one of them is required). An id that is not in the new report, or whose finding is not
+forgettable, is not an error: it is returned in `skipped`. The answer has the shape of
+`theo reconcile --apply --json` (`findings` are the ones found before forgetting, `forgotten` how many records
+went) plus `applied` (ids) and `skipped`. Nothing but Theo's own files and records is touched.
+```json
+// HTTP 200 (apply)
+{
+  "findings": [
+    {
+      "id": "fd_4fb84fa21fbf",
+      "kind": "stale settings",
+      "project": "ub5s761115p",
+      "subject": "/tmp/TestDumpExamplesV540520354/001/app-feature",
+      "detail": "settings for a worktree that no longer exists (1 variable(s))",
+      "fix": "`theo reconcile --apply` forgets them",
+      "forgettable": true
+    },
+    {
+      "id": "fd_d6c78e85278d",
+      "kind": "stale files",
+      "project": "ub5s761115p",
+      "subject": "/tmp/TestDumpExamplesV540520354/004/overlays/ub5s761115p-app-feature-a6e9d3.yaml",
+      "detail": "generated file of a worktree that no longer exists",
+      "fix": "`theo reconcile --apply` deletes it",
+      "forgettable": true
+    }
+  ],
+  "forgotten": 2,
+  "applied": [
+    "fd_4fb84fa21fbf",
+    "fd_d6c78e85278d"
+  ],
+  "skipped": []
+}
+```
+
+### `GET /health`
+What the indicator of the shell shows: the reconcile report of all projects, summarised. `status` is `ok`,
+`attention` (there are findings) or `docker_unavailable`. Cached for 5 s on the server; forgetting records
+refreshes it at once.
+```json
+// HTTP 200 (health)
+{
+  "status": "attention",
+  "findings": 2,
+  "forgettable": 2
+}
+```
+
+## 11. Diagnostics
+
+### `GET /diagnostics`
+Everything the settings screen shows, in one call: `meta` (as `GET /meta`, with the minimum versions),
+`doctor` (as `GET /doctor` = `theo doctor --json`), the number of `projects`, and `report`: a plain-text
+summary that is safe to paste into an issue (version, platform, data directory, tool versions, the doctor
+checks). It contains no environment variables, no secrets and no project contents. It does include local
+paths (the data directory); the page says so before copying.
+`doctor.ok` is false when a check failed; each check has `status` `ok`, `warn`, `fail` or `info`, and `fix`
+when there is something to do. A Compose older than `meta.compose.min_version` is a failed `docker-compose`
+check with the upgrade instructions in `fix`.
+```json
+// HTTP 200 (diagnostics, trimmed)
+{
+  "meta": { "theo_version": "0.0.0-dev", "compose": { "version": "5.6.1", "min_version": "2.24.4" }, "...": "..." },
+  "doctor": { "ok": true, "platform": "linux", "checks": [ { "id": "docker-compose", "status": "ok", "detail": "Docker Compose 5.6.1" } ] },
+  "projects": 1,
+  "report": "Theo 0.0.0-dev (API 1)\nPlatform: linux/amd64\nData directory: ...\nProjects: 1\nDocker: 29.9.2\nDocker Compose: 5.6.1 (Theo needs 2.24.4 or later)\n..."
+}
+```
+
+## 12. Differences from the design contract
 
 - `GET /projects/{p}/worktrees` items have `containers` as `{running,total}`; the detail uses `containers` for the
   raw array and `container_counts` for the numbers.
 - Secrets are masked as `********` (the CLI's mask), not `••••••`.
 - `env` is an array; the CLI's `env list --json` is a map.
 - `GET /session` was added; `POST /events/focus` as in the contract.
-- `reconcile`, `shared`, `doctor` screens (V5, V6) are not built; `GET /doctor` exists because it is one call.
+- Shared services, reconcile, health and diagnostics: see sections 9 to 11. Where they differ from the design contract:
+  `POST /reconcile/apply` replaces `POST /reconcile/forget` (it takes `ids`, or `all`); `GET /shared` answers the
+  same JSON as `theo shared status --json`; `use`/`unuse` answer `{shared, join, applies_on}`.
+- Findings carry an `id` (a hash of what they are about), also in `theo reconcile --json`.
 - Logs do not carry Docker's own timestamps (`LogOptions` has no `--timestamps`); `at` is the receive time.
 - Idle shutdown counts SSE streams (global events, operation events, logs) and operations.

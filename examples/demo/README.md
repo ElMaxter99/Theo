@@ -385,11 +385,7 @@ Copy the data of `main` into the second instance (the way to seed a new branch w
 theo volumes clone theo-demo --from main -w feature/x --volume data --replace --confirm theo-demo-feature-x
 ```
 
-The shared cache's data is deleted separately, and only when it is stopped:
-
-```sh
-theo shared purge theo-demo --confirm theo-demo-shared
-```
+Stop using the shared cache in both instances first (Theo refuses to delete data that instances are linked to), then delete its data, which is a separate step and only works when it is stopped:
 
 ```sh
 theo shared unuse theo-demo -w main
@@ -397,6 +393,10 @@ theo shared unuse theo-demo -w main
 
 ```sh
 theo shared unuse theo-demo -w feature/x
+```
+
+```sh
+theo shared purge theo-demo --confirm theo-demo-shared
 ```
 
 ```sh
