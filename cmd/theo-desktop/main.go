@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 
 	"github.com/ElMaxter99/Theo/internal/desktop"
 	"github.com/ElMaxter99/Theo/internal/engine"
@@ -42,6 +43,10 @@ func main() {
 }
 
 func run() error {
+	// Opened from Finder the app has a bare PATH: find git and docker anyway.
+	home, _ := os.UserHomeDir()
+	os.Setenv("PATH", desktop.AugmentPath(os.Getenv("PATH"), runtime.GOOS, home))
+
 	dir, err := registry.DefaultDir()
 	if err != nil {
 		return err
