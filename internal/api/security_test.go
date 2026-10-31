@@ -468,6 +468,25 @@ func TestFindRunningDoesNotFollowRedirects(t *testing.T) {
 	}
 }
 
+// Names that go to Git as arguments are never read as options.
+func TestCreateWorktreeRefusesOptionLikeNames(t *testing.T) {
+	e := newEnv(t)
+	for _, body := range []map[string]any{
+		{"branch": "--detach"},
+		{"branch": "-f"},
+		{"branch": "nb", "new": true, "from": "--force"},
+	} {
+		body["path"] = filepath.Join(t.TempDir(), "wt")
+		var er apiErr
+		if st := e.c.call("POST", "/api/v1/projects/ubapp/worktrees", body, &er); st != 400 || er.Error.Code != "invalid_request" {
+			t.Errorf("%v = %d %+v, want 400 invalid_request", body, st, er.Error)
+		}
+		if _, err := os.Stat(body["path"].(string)); err == nil {
+			t.Errorf("%v created %s", body, body["path"])
+		}
+	}
+}
+
 // The report is "safe to paste into an issue": no path of this machine in it.
 func TestDiagnosticsReportHasNoPaths(t *testing.T) {
 	e := newEnv(t)

@@ -355,6 +355,10 @@ func (s *Server) handleCreateWorktree(w http.ResponseWriter, r *http.Request, _ 
 	if strings.TrimSpace(req.Branch) == "" {
 		return badRequest("branch is required")
 	}
+	// Git would read these as options (--force, --detach...).
+	if strings.HasPrefix(req.Branch, "-") || strings.HasPrefix(req.From, "-") {
+		return badRequest("branch and from must not start with \"-\"")
+	}
 	added, err := s.eng.AddWorktree(r.Context(), project, req.Branch, engine.AddWorktreeOptions{NewBranch: req.New, Base: req.From, Path: req.Path, Copy: req.Copy})
 	if err != nil {
 		return fromEngine(err, &ResourceRef{Kind: "project", Project: project})

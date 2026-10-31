@@ -90,6 +90,12 @@ func (Git) Branches(ctx context.Context, dir string) ([]Branch, error) {
 // branch, which Git then tracks. Git itself refuses a branch that is already
 // checked out elsewhere: there is no --force.
 func (Git) AddWorktree(ctx context.Context, dir, path, branch string, newBranch bool, base string) error {
+	if err := checkRef("branch", branch); err != nil {
+		return err
+	}
+	if err := checkRef("base", base); err != nil {
+		return err
+	}
 	args := []string{"worktree", "add"}
 	if newBranch {
 		args = append(args, "-b", branch, path)
@@ -101,6 +107,16 @@ func (Git) AddWorktree(ctx context.Context, dir, path, branch string, newBranch 
 	}
 	_, err := execx.RunChange(ctx, dir, "git", args...)
 	return err
+}
+
+// checkRef refuses a branch or revision that Git would read as an option
+// (--force, --detach...) where this package passes it as a positional
+// argument. Git itself never allows a branch name to start with "-".
+func checkRef(what, ref string) error {
+	if strings.HasPrefix(ref, "-") {
+		return fmt.Errorf("invalid %s name %q: it must not start with \"-\"", what, ref)
+	}
+	return nil
 }
 
 // RemoveWorktree removes the worktree at path. Without force, Git refuses
