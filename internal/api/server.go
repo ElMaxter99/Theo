@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/ElMaxter99/Theo/internal/engine"
+	"github.com/ElMaxter99/Theo/internal/execx"
 )
 
 // APIVersion is the version of the HTTP interface (GET /meta).
@@ -50,6 +51,20 @@ type Config struct {
 	// PollInterval is how often the server looks for changes made outside
 	// Theo while a visible tab is connected (default 5 s).
 	PollInterval time.Duration
+	// CommandTimeout kills any external command of an overview, health or
+	// reconcile that runs longer (default 15 s). A command that times out
+	// also pauses new Docker commands for a few seconds, so a stuck daemon
+	// costs one timeout, not one per project.
+	CommandTimeout time.Duration
+	// WorkTimeout bounds one whole shared computation (default 60 s).
+	WorkTimeout time.Duration
+	// MaxProcesses is how many read commands run at once in the process
+	// (default 8).
+	MaxProcesses int
+	// ConfigCacheTTL is how long a `docker compose config` answer is reused for
+	// the panel's reads (overview, health, reconcile) while its files do not
+	// change (default 5 min; negative turns it off).
+	ConfigCacheTTL time.Duration
 	// Log receives one line per request (method and route pattern only, never
 	// paths, queries or bodies). Nil discards.
 	Log *log.Logger
@@ -97,6 +112,19 @@ type Server struct {
 	meta   *metaCache
 	health *healthCache
 
+	// workCtx is the parent of every shared computation (see work); it ends
+	// with the server. limits bound the commands they start.
+	workCtx    context.Context
+	cancelWork context.CancelFunc
+	limits     execx.Limits
+	snaps      snapCache
+	polled     pollMemo
+
+	ovFlight     flightGroup[*Overview]
+	snapFlight   flightGroup[*snapResult]
+	healthFlight flightGroup[Health]
+	repFlight    flightGroup[*engine.Report]
+
 	started time.Time
 	// sse counts open SSE streams; lastBusy is when there last was one, or
 	// an operation. Both feed the idle timer.
@@ -127,11 +155,24 @@ func New(cfg Config) (*Server, error) {
 	if cfg.IdleTimeout == 0 {
 		cfg.IdleTimeout = DefaultIdleTimeout
 	}
+	if cfg.CommandTimeout <= 0 {
+		cfg.CommandTimeout = defaultCommandTimeout
+	}
+	if cfg.WorkTimeout <= 0 {
+		cfg.WorkTimeout = defaultWorkTimeout
+	}
+	if cfg.ConfigCacheTTL == 0 {
+		cfg.ConfigCacheTTL = defaultConfigCacheTTL
+	}
 	s := &Server{cfg: cfg, eng: cfg.Engine, ln: ln, port: ln.Addr().(*net.TCPAddr).Port, mux: http.NewServeMux(),
 		auth: newAuth(), log: cfg.Log, assets: cfg.Assets, started: time.Now(), stopped: make(chan struct{})}
 	if s.log == nil {
 		s.log = log.New(io.Discard, "", 0)
 	}
+	s.workCtx, s.cancelWork = context.WithCancel(context.Background())
+	s.limits = execx.Limits{Timeout: cfg.CommandTimeout, Breaker: execx.NewBreaker(defaultBreakerPause)}
+	execx.SetMaxConcurrent(cfg.MaxProcesses)
+	s.eng.EnableConfigCache(cfg.ConfigCacheTTL)
 	s.hub = newHub()
 	s.ops = newOperations(s)
 	s.cache = newOverviewCache(2 * time.Second)
@@ -227,6 +268,7 @@ func (s *Server) idleFor() time.Duration {
 func (s *Server) Close() { s.stopOnce.Do(func() { close(s.stopped) }) }
 
 func (s *Server) shutdown() error {
+	s.cancelWork()
 	s.hub.close()
 	s.ops.cancelAll()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ElMaxter99/Theo/internal/engine"
@@ -115,6 +116,11 @@ type overviewCache struct {
 	ttl time.Duration
 	mu  sync.Mutex
 	m   map[string]cached
+	// gen changes whenever something that can alter what the panel shows
+	// happened (an operation ended, a record changed). Anything computed
+	// under an older generation is neither cached nor shared with newer
+	// requests.
+	gen atomic.Uint64
 }
 
 type cached struct {
@@ -126,6 +132,8 @@ func newOverviewCache(ttl time.Duration) *overviewCache {
 	return &overviewCache{ttl: ttl, m: map[string]cached{}}
 }
 
+func (c *overviewCache) generation() uint64 { return c.gen.Load() }
+
 func (c *overviewCache) get(p string) *Overview {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -135,44 +143,87 @@ func (c *overviewCache) get(p string) *Overview {
 	return nil
 }
 
-func (c *overviewCache) put(p string, ov *Overview) {
+// put stores an overview computed under generation gen, unless the state
+// changed since.
+func (c *overviewCache) put(p string, ov *Overview, gen uint64) {
 	c.mu.Lock()
+	defer c.mu.Unlock()
+	if gen != c.gen.Load() {
+		return
+	}
 	c.m[strings.ToLower(p)] = cached{time.Now(), ov}
-	c.mu.Unlock()
 }
 
 func (c *overviewCache) invalidateAll() {
 	c.mu.Lock()
+	c.gen.Add(1)
 	c.m = map[string]cached{}
 	c.mu.Unlock()
 }
 
 func (c *overviewCache) invalidate(p string) {
 	c.mu.Lock()
+	c.gen.Add(1)
 	delete(c.m, strings.ToLower(p))
 	c.mu.Unlock()
 }
 
-// overview builds the panel of a project with one pass over its worktrees:
-// the worktrees from Git, and for each one the containers (docker compose ps)
-// and the port plan. Worktrees are looked at in parallel. It never runs
-// `docker compose ls` per worktree. A failing Docker makes the states
-// unknown; the registry data is still returned.
+// overviewOpts tune one overview computation.
+type overviewOpts struct {
+	// fresh ignores the cached overview of the project.
+	fresh bool
+	// snap, when set, is the Docker read to use (the poller reads Docker once
+	// for all projects); otherwise the shared snapshot is asked for.
+	snap *snapResult
+}
+
 func (s *Server) overview(ctx context.Context, project string, fresh bool) (*Overview, error) {
+	return s.overviewWith(ctx, project, overviewOpts{fresh: fresh})
+}
+
+// overviewWith builds the panel of a project with one pass over its worktrees:
+// the worktrees from Git (listed once), and for each one the containers (all
+// instances share one read of Docker) and the port plan. Worktrees are looked
+// at in parallel. It never runs `docker compose ls` or `compose ps` per
+// worktree. A failing Docker makes the states unknown; the registry data is
+// still returned. Concurrent requests for the same project share one
+// computation.
+func (s *Server) overviewWith(ctx context.Context, project string, o overviewOpts) (*Overview, error) {
 	p, err := s.eng.Project(project)
 	if err != nil {
 		return nil, projectNotFound(project)
 	}
-	if !fresh {
+	if !o.fresh {
 		if ov := s.cache.get(p.Name); ov != nil {
 			return s.withBusy(ov), nil
 		}
 	}
-	list, err := s.eng.Worktrees(ctx, p.Name)
+	gen := s.cache.generation()
+	ov, _, err := s.ovFlight.do(ctx, strings.ToLower(p.Name), gen, func() (*Overview, error) {
+		wctx, cancel := s.work()
+		defer cancel()
+		ov, err := s.computeOverview(wctx, p.Name, p.Path, o)
+		if err == nil {
+			s.cache.put(p.Name, ov, gen)
+		}
+		return ov, err
+	})
 	if err != nil {
 		return nil, err
 	}
-	ov := &Overview{Project: p.Name, Path: p.Path, Docker: DockerInfo{Available: true}, Worktrees: make([]WorktreeView, len(list)), GeneratedAt: time.Now().UTC()}
+	return s.withBusy(ov), nil
+}
+
+func (s *Server) computeOverview(ctx context.Context, name, path string, o overviewOpts) (*Overview, error) {
+	list, err := s.eng.Worktrees(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	snap := o.snap
+	if snap == nil {
+		snap = s.dockerSnapshot(ctx, o.fresh)
+	}
+	ov := &Overview{Project: name, Path: path, Docker: DockerInfo{Available: true}, Worktrees: make([]WorktreeView, len(list)), GeneratedAt: time.Now().UTC()}
 	var dockerMu sync.Mutex
 	dockerDown := func(err error) {
 		dockerMu.Lock()
@@ -182,7 +233,7 @@ func (s *Server) overview(ctx context.Context, project string, fresh bool) (*Ove
 		dockerMu.Unlock()
 	}
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 4)
+	sem := make(chan struct{}, overviewParallelism)
 	for i, wt := range list {
 		v := WorktreeView{ID: worktreeID(wt.Path), Path: wt.Path, Branch: wt.Branch, Head: wt.Head, Detached: wt.Detached, Locked: wt.Locked,
 			Prunable: wt.Prunable, Bare: wt.Bare, Main: wt.Kind == engine.KindMain, Kind: wt.Kind, Owner: wt.Owner, Dirty: wt.Dirty,
@@ -200,13 +251,16 @@ func (s *Server) overview(ctx context.Context, project string, fresh bool) (*Ove
 		go func(i int, wt engine.Worktree) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			s.fillInstance(ctx, p.Name, wt, &ov.Worktrees[i], dockerDown)
+			s.fillInstance(ctx, name, wt, &ov.Worktrees[i], snap, dockerDown)
 		}(i, wt)
 	}
 	wg.Wait()
-	s.cache.put(p.Name, ov)
-	return s.withBusy(ov), nil
+	return ov, nil
 }
+
+// overviewParallelism is how many worktrees of one project are resolved at
+// once. The processes they start are also bounded process-wide (execx).
+const overviewParallelism = 4
 
 func firstLine(s string) string {
 	l, _, _ := strings.Cut(strings.TrimSpace(s), "\n")
@@ -230,7 +284,7 @@ func (s *Server) busyRef(project, id string) *BusyRef {
 	return nil
 }
 
-func (s *Server) fillInstance(ctx context.Context, project string, wt engine.Worktree, v *WorktreeView, dockerDown func(error)) {
+func (s *Server) fillInstance(ctx context.Context, project string, wt engine.Worktree, v *WorktreeView, snap *snapResult, dockerDown func(error)) {
 	warn := func(kind, msg string) {
 		v.Warnings = append(v.Warnings, engine.StatusWarning{Kind: kind, Message: msg})
 	}
@@ -243,7 +297,11 @@ func (s *Server) fillInstance(ctx context.Context, project string, wt engine.Wor
 	v.ComposeProject = inst.Compose
 	env := inst.EnvFile
 	v.EnvFile = &env
-	containers, err := s.eng.Containers(ctx, inst)
+	if snap.err != nil {
+		dockerDown(snap.err)
+		return
+	}
+	containers, err := s.eng.ContainersFrom(ctx, inst, snap.snap)
 	if err != nil {
 		dockerDown(err)
 		return
@@ -255,7 +313,7 @@ func (s *Server) fillInstance(ctx context.Context, project string, wt engine.Wor
 			v.Containers.Running++
 		}
 	}
-	plan, err := s.eng.PlanPorts(ctx, inst, nil, false)
+	plan, err := s.eng.PlanPortsWith(ctx, inst, nil, false, containers)
 	if err != nil {
 		return
 	}

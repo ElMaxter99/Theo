@@ -41,10 +41,27 @@ func (s *Server) reconcile(r *http.Request, project string) (*engine.Report, err
 	return s.eng.Reconcile(r.Context(), project)
 }
 
+// reconcileShared is reconcile for the read-only GET: concurrent requests for
+// the same scope share one computation, which runs with bounded commands and
+// timeouts and does not stop when one client leaves.
+func (s *Server) reconcileShared(r *http.Request, project string) (*engine.Report, error) {
+	if project != "" {
+		if _, err := s.eng.Project(project); err != nil {
+			return nil, projectNotFound(project)
+		}
+	}
+	rep, _, err := s.repFlight.do(r.Context(), strings.ToLower(project), s.cache.generation(), func() (*engine.Report, error) {
+		ctx, cancel := s.work()
+		defer cancel()
+		return s.eng.Reconcile(ctx, project)
+	})
+	return rep, err
+}
+
 // handleReconcile serves GET /reconcile[?project=]: the same JSON as
 // `theo reconcile --json`. It changes nothing.
 func (s *Server) handleReconcile(w http.ResponseWriter, r *http.Request, _ *session) error {
-	rep, err := s.reconcile(r, r.URL.Query().Get("project"))
+	rep, err := s.reconcileShared(r, r.URL.Query().Get("project"))
 	if err != nil {
 		return err
 	}
@@ -126,18 +143,31 @@ type Health struct {
 type healthCache struct {
 	mu   sync.Mutex
 	at   time.Time
+	gen  uint64
 	data Health
+	ok   bool
 }
 
-func (h *healthCache) invalidate() { h.mu.Lock(); h.at = time.Time{}; h.mu.Unlock() }
+func (h *healthCache) invalidate() { h.mu.Lock(); h.ok = false; h.mu.Unlock() }
+
+// healthTTL is how long an answer of GET /health is reused.
+const healthTTL = 5 * time.Second
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request, _ *session) error {
+	gen := s.cache.generation()
 	s.health.mu.Lock()
-	defer s.health.mu.Unlock()
-	if time.Since(s.health.at) > 5*time.Second {
-		rep, err := s.eng.Reconcile(r.Context(), "")
+	if s.health.ok && s.health.gen == gen && time.Since(s.health.at) < healthTTL {
+		h := s.health.data
+		s.health.mu.Unlock()
+		return writeJSON(w, http.StatusOK, h)
+	}
+	s.health.mu.Unlock()
+	h, _, err := s.healthFlight.do(r.Context(), "health", gen, func() (Health, error) {
+		ctx, cancel := s.work()
+		defer cancel()
+		rep, err := s.eng.Reconcile(ctx, "")
 		if err != nil {
-			return err
+			return Health{}, err
 		}
 		h := Health{Status: "ok", Findings: len(rep.Findings), DockerError: rep.DockerError}
 		for _, f := range rep.Findings {
@@ -151,9 +181,17 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request, _ *session
 		case h.Findings > 0:
 			h.Status = "attention"
 		}
-		s.health.data, s.health.at = h, time.Now()
+		s.health.mu.Lock()
+		if s.cache.generation() == gen {
+			s.health.data, s.health.at, s.health.gen, s.health.ok = h, time.Now(), gen, true
+		}
+		s.health.mu.Unlock()
+		return h, nil
+	})
+	if err != nil {
+		return err
 	}
-	return writeJSON(w, http.StatusOK, s.health.data)
+	return writeJSON(w, http.StatusOK, h)
 }
 
 // --- diagnostics ---
