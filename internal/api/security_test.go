@@ -468,6 +468,26 @@ func TestFindRunningDoesNotFollowRedirects(t *testing.T) {
 	}
 }
 
+// The report is "safe to paste into an issue": no path of this machine in it.
+func TestDiagnosticsReportHasNoPaths(t *testing.T) {
+	e := newEnv(t)
+	var d api.Diagnostics
+	if st := e.c.call("GET", "/api/v1/diagnostics", nil, &d); st != 200 {
+		t.Fatalf("diagnostics = %d", st)
+	}
+	if d.Report == "" {
+		t.Fatal("no report")
+	}
+	for _, p := range []string{e.dataDir, filepath.Dir(e.dataDir), e.main} {
+		if strings.Contains(d.Report, p) {
+			t.Errorf("the report carries the path %s:\n%s", p, d.Report)
+		}
+	}
+	if strings.Contains(d.Report, "unix:///") || strings.Contains(d.Report, "/var/run") {
+		t.Errorf("a socket path is in the report:\n%s", d.Report)
+	}
+}
+
 func mustPort(t *testing.T, a net.Addr) int {
 	t.Helper()
 	return a.(*net.TCPAddr).Port

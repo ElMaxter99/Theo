@@ -178,14 +178,15 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request, _ *se
 	}
 	d := Diagnostics{Meta: meta, Doctor: doc, Projects: len(projects)}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Theo %s (API %s)\nPlatform: %s/%s\nData directory: %s\nProjects: %d\n", meta.TheoVersion, meta.APIVersion, runtime.GOOS, runtime.GOARCH, meta.DataDir, len(projects))
+	// No path of this machine (it carries the user name): the report is pasted into public issues.
+	fmt.Fprintf(&b, "Theo %s (API %s)\nPlatform: %s/%s\nProjects: %d\n", meta.TheoVersion, meta.APIVersion, runtime.GOOS, runtime.GOARCH, len(projects))
 	for _, t := range []struct {
 		name string
 		info ToolInfo
 	}{{"Docker", meta.Docker}, {"Docker Compose", meta.Compose}, {"Git", meta.Git}} {
 		state := t.info.Version
 		if !t.info.Available {
-			state = "not available: " + t.info.Error
+			state = "not available: " + redactPaths(t.info.Error)
 		}
 		min := ""
 		if t.info.MinVersion != "" {
@@ -197,7 +198,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request, _ *se
 	for _, c := range doc.Checks {
 		fmt.Fprintf(&b, "- [%s] %s", c.Status, c.Name)
 		if c.Detail != "" {
-			b.WriteString(": " + firstLine(c.Detail))
+			b.WriteString(": " + redactPaths(firstLine(c.Detail)))
 		}
 		b.WriteString("\n")
 	}
