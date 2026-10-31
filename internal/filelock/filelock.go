@@ -85,7 +85,15 @@ func Lock(path string) (unlock func(), err error) {
 				m.Unlock()
 			}, nil
 		}
-		if !errors.Is(err, os.ErrExist) {
+		// On Windows, creating the file while another process is deleting it
+		// (its unlock) fails with "access denied" instead of "exists": retry
+		// until the deadline, and only then report it as the error it is.
+		busy := errors.Is(err, os.ErrExist) || errors.Is(err, os.ErrPermission)
+		if !busy {
+			m.Unlock()
+			return nil, fmt.Errorf("cannot lock %s: %w", path, err)
+		}
+		if errors.Is(err, os.ErrPermission) && time.Now().After(deadline) {
 			m.Unlock()
 			return nil, fmt.Errorf("cannot lock %s: %w", path, err)
 		}

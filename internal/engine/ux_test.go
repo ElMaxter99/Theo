@@ -311,3 +311,24 @@ func TestMissingWorktreeEnvFile(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+func TestWarnSharedComposeNames(t *testing.T) {
+	wt := func(cp string) WorktreeStatus {
+		return WorktreeStatus{Warnings: []StatusWarning{}, Instance: &InstanceStatus{ComposeProject: cp}}
+	}
+	report := &StatusReport{Projects: []ProjectStatus{
+		{Name: "a", Worktrees: []WorktreeStatus{wt("demo"), wt("a-feature")}},
+		{Name: "b", Worktrees: []WorktreeStatus{wt("demo")}},
+		{Name: "c", Worktrees: []WorktreeStatus{wt("other")}},
+	}}
+	warnSharedComposeNames(report)
+	if w := report.Projects[0].Worktrees[0].Warnings; len(w) != 1 || w[0].Kind != "shared-compose-name" || !strings.Contains(w[0].Message, "b") {
+		t.Errorf("a/main warnings = %+v", w)
+	}
+	if w := report.Projects[1].Worktrees[0].Warnings; len(w) != 1 || !strings.Contains(w[0].Message, "a") {
+		t.Errorf("b/main warnings = %+v", w)
+	}
+	if len(report.Projects[0].Worktrees[1].Warnings) != 0 || len(report.Projects[2].Worktrees[0].Warnings) != 0 {
+		t.Errorf("unique names must not warn: %+v", report.Projects)
+	}
+}

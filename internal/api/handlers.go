@@ -361,11 +361,18 @@ func (s *Server) handleCreateWorktree(w http.ResponseWriter, r *http.Request, _ 
 	}
 	s.cache.invalidate(project)
 	s.hub.publish("state.changed", map[string]string{"project": project})
+	notes := append([]string{}, added.Notes...)
+	if inst, err := s.eng.InstanceFor(r.Context(), project, added.Path, engine.InstanceOptions{}); err == nil {
+		if names := inst.FixedContainerNames(); len(names) > 0 {
+			notes = append(notes, fmt.Sprintf("%s set a fixed container_name, so this worktree cannot run at the same time as another one. Turn on \"Neutralize fixed container names\" in its Summary tab before starting it.",
+				strings.Join(compose.SortedKeys(names), ", ")))
+		}
+	}
 	return writeJSON(w, http.StatusCreated, struct {
 		ID string `json:"id"`
 		*engine.AddedWorktree
 		Notes []string `json:"notes"`
-	}{worktreeID(added.Path), added, append([]string{}, added.Notes...)})
+	}{worktreeID(added.Path), added, notes})
 }
 
 func (s *Server) handleRemoveWorktree(w http.ResponseWriter, r *http.Request, _ *session) error {
