@@ -25,6 +25,7 @@ const (
 
 const (
 	ringLines    = 5000             // events kept per operation for reconnections
+	ringBytes    = 2 << 20          // ...and at most this many bytes of them
 	maxLineBytes = 64 << 10         // longer lines are cut and marked truncated
 	idemTTL      = 10 * time.Minute // how long an Idempotency-Key is remembered
 	keepFinished = 50               // finished operations kept in memory
@@ -54,6 +55,7 @@ type Operation struct {
 	result     *opResult
 	cancel     context.CancelFunc
 	events     []opEvent
+	ringBytes  int // size of the data of events
 	firstID    int // id of events[0]
 	nextID     int
 	wake       chan struct{}
@@ -124,8 +126,15 @@ func (op *Operation) append(name string, data any) {
 	op.mu.Lock()
 	op.nextID++
 	op.events = append(op.events, opEvent{ID: op.nextID, Name: name, Data: raw})
-	if len(op.events) > ringLines {
-		drop := len(op.events) - ringLines
+	op.ringBytes += len(raw)
+	// The ring is bounded in lines and in bytes (a line can be 64 KiB); the
+	// newest event always stays.
+	drop := 0
+	for len(op.events)-drop > 1 && (len(op.events)-drop > ringLines || op.ringBytes > ringBytes) {
+		op.ringBytes -= len(op.events[drop].Data)
+		drop++
+	}
+	if drop > 0 {
 		op.events = append([]opEvent(nil), op.events[drop:]...)
 	}
 	op.firstID = op.events[0].ID
@@ -515,8 +524,11 @@ func (s *Server) handleOperationEvents(w http.ResponseWriter, r *http.Request, _
 			last = n
 		}
 	}
-	s.sse.Add(1)
-	defer func() { s.sse.Add(-1); s.touch() }()
+	closeStream, err := s.openStream()
+	if err != nil {
+		return err
+	}
+	defer closeStream()
 	startSSE(w)
 	fl.Flush()
 	keep := time.NewTicker(20 * time.Second)

@@ -43,6 +43,18 @@ test("the report for support has versions and checks but no paths", () => {
   assert.match(reportText(undefined, undefined), /Theo unknown/);
 });
 
+test("paths inside the details of a check never reach the report", () => {
+  const text = reportText(undefined, { ok: true, platform: "windows", data_dir: "C:\\Users\\Ana\\theo", checks: [
+    { id: "data-dir", name: "Theo data directory", status: "ok", detail: "/home/ana/.local/share/theo" },
+    { id: "w", name: "Windows long paths", status: "warn", detail: "the data directory path is long (C:\\Users\\Ana\\AppData\\Roaming\\theo)" },
+    { id: "m", name: "macOS file sharing", status: "warn", detail: "projects outside the folders: /opt/a, /srv/b" },
+    { id: "d", name: "Docker daemon", status: "fail", detail: "cannot reach the Docker daemon: unix:///var/run/docker.sock; see https://docs.docker.com/engine/install/" },
+  ] });
+  assert.doesNotMatch(text, /ana|Ana|\/opt|\/srv|docker\.sock/);
+  assert.match(text, /https:\/\/docs\.docker\.com\/engine\/install\//);
+  assert.match(text, /\[ok\] Theo data directory: <path>/);
+});
+
 test("operation kinds of the shared services get labels whatever the separator", () => {
   assert.equal(normKind("shared_up"), "shared-up");
   assert.equal(normKind("shared.down"), "shared-down");

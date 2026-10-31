@@ -1094,8 +1094,9 @@ refreshes it at once.
 Everything the settings screen shows, in one call: `meta` (as `GET /meta`, with the minimum versions),
 `doctor` (as `GET /doctor` = `theo doctor --json`), the number of `projects`, and `report`: a plain-text
 summary that is safe to paste into an issue (version, platform, data directory, tool versions, the doctor
-checks). It contains no environment variables, no secrets and no project contents. It does include local
-paths (the data directory); the page says so before copying.
+checks). It contains no environment variables, no secrets and no project contents. It does include one local
+path, the data directory; the page says so before copying. Every other path in it (in the details of a
+check, in a tool's error: project folders, the Docker socket) is replaced by `<path>`.
 `doctor.ok` is false when a check failed; each check has `status` `ok`, `warn`, `fail` or `info`, and `fix`
 when there is something to do. A Compose older than `meta.compose.min_version` is a failed `docker-compose`
 check with the upgrade instructions in `fix`.

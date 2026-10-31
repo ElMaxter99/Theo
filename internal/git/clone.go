@@ -48,6 +48,12 @@ func (Git) SetRemoteURL(ctx context.Context, dir, name, url string) error {
 // branch is created from base (the current HEAD when base is empty).
 // Otherwise branch must exist, locally or as a single remote-tracking branch.
 func (Git) Checkout(ctx context.Context, dir, branch string, newBranch bool, base string) error {
+	if err := checkRef("branch", branch); err != nil {
+		return err
+	}
+	if err := checkRef("base", base); err != nil {
+		return err
+	}
 	args := []string{"checkout", "-q"}
 	if newBranch {
 		args = append(args, "-b", branch)
@@ -63,6 +69,9 @@ func (Git) Checkout(ctx context.Context, dir, branch string, newBranch bool, bas
 
 // ResolvesTo reports whether rev names a commit in the repository at dir.
 func (Git) ResolvesTo(ctx context.Context, dir, rev string) bool {
+	if checkRef("revision", rev) != nil {
+		return false
+	}
 	_, err := execx.Run(ctx, dir, "git", "rev-parse", "--verify", "--quiet", rev+"^{commit}")
 	return err == nil
 }
