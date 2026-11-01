@@ -68,6 +68,8 @@ Run `theo help` for the full list. Every command that prints data supports `--js
 | Output formats | `--json` and friends | [output](docs/cli/output.md) |
 | Compose compatibility | supported Compose features and limits | [compose-compat](docs/cli/compose-compat.md) |
 | Env precedence | which value wins | [env-precedence](docs/cli/env-precedence.md) |
+| Web interface | `ui`, `serve` | [ui](docs/cli/ui.md) |
+| Desktop app | the same interface in a native window (`theo-desktop`) | [desktop](docs/cli/desktop.md) |
 
 ## Safety principles
 

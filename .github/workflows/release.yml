@@ -69,9 +69,62 @@ jobs:
             dist/*.zip
           if-no-files-found: error
 
+  desktop:
+    # Native builds of the desktop app (it needs cgo and the system web view, so
+    # it cannot be cross-compiled from the Linux runner like the CLI).
+    name: Desktop (${{ matrix.goos }}/${{ matrix.goarch }})
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { os: ubuntu-latest, goos: linux, goarch: amd64 }
+          - { os: macos-latest, goos: darwin, goarch: arm64 }
+          # Built on the arm64 runner with clang -arch x86_64; never run in CI.
+          - { os: macos-latest, goos: darwin, goarch: amd64 }
+          - { os: windows-latest, goos: windows, goarch: amd64 }
+    env:
+      CGO_ENABLED: "1"
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install WebKitGTK
+        if: matrix.goos == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-3-dev libwebkit2gtk-4.1-dev
+          echo "PKG_CONFIG_PATH=$(scripts/webkit40-shim.sh):${PKG_CONFIG_PATH:-}" >> "$GITHUB_ENV"
+      - name: Windows icon resource
+        if: matrix.goos == 'windows'
+        shell: bash
+        run: go run github.com/akavel/rsrc@v0.10.2 -ico web/public/brand/avatar-plum.ico -arch amd64 -o cmd/theo-desktop/rsrc_windows_amd64.syso
+      - name: Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          flags="-s -w -X github.com/ElMaxter99/Theo/internal/engine.Version=${TAG}"
+          [ "$GOOS" = windows ] && flags="$flags -H=windowsgui"
+          go build -tags desktop -trimpath -ldflags "$flags" -o theo-desktop-bin ./cmd/theo-desktop
+      - name: Package
+        shell: bash
+        run: scripts/package-desktop.sh "$GOOS" "$GOARCH" "$TAG" theo-desktop-bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: theo_desktop_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          if-no-files-found: error
+
   release:
     name: Publish release
-    needs: build
+    needs: [build, desktop]
     runs-on: ubuntu-latest
     permissions:
       contents: write

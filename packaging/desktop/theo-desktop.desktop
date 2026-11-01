@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Theo
+GenericName=Branch environments
+Comment=Isolated Docker Compose environments for your Git branches
+Exec=theo-desktop
+Icon=theo
+Terminal=false
+Categories=Development;
+StartupWMClass=theo-desktop
