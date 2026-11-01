@@ -123,14 +123,12 @@ func (s *Server) metaNow(parent context.Context) Meta {
 	s.meta.mu.Lock()
 	defer s.meta.mu.Unlock()
 	if time.Since(s.meta.at) > 10*time.Second {
-		ctx, cancel := context.WithTimeout(parent, 5*time.Second)
-		defer cancel()
 		m := Meta{TheoVersion: engine.Version, APIVersion: APIVersion, OS: runtime.GOOS, Arch: runtime.GOARCH, DataDir: s.cfg.DataDir}
-		m.Docker = toolVersion(ctx, "docker", "version", "--format", "{{.Server.Version}}")
-		m.Git = toolVersion(ctx, "git", "--version")
+		m.Docker = toolVersion(parent, "docker", "version", "--format", "{{.Server.Version}}")
+		m.Git = toolVersion(parent, "git", "--version")
 		m.Git.Version = strings.TrimPrefix(m.Git.Version, "git version ")
 		if m.Docker.Available {
-			m.Compose = toolVersion(ctx, "docker", "compose", "version", "--short")
+			m.Compose = toolVersion(parent, "docker", "compose", "version", "--short")
 		} else {
 			m.Compose = ToolInfo{Error: "Docker is not available"}
 		}
@@ -142,7 +140,11 @@ func (s *Server) metaNow(parent context.Context) Meta {
 	return m
 }
 
-func toolVersion(ctx context.Context, name string, args ...string) ToolInfo {
+// toolVersion asks one tool for its version. Each tool gets its own time limit: a docker CLI
+// that takes the whole allowance (no daemon, slow first start) must not make git look missing.
+func toolVersion(parent context.Context, name string, args ...string) ToolInfo {
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+	defer cancel()
 	out, err := execx.Run(ctx, "", name, args...)
 	if err != nil {
 		return ToolInfo{Error: firstLine(err.Error())}

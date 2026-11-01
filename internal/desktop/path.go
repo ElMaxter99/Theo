@@ -1,7 +1,7 @@
 package desktop
 
 import (
-	"path/filepath"
+	"path"
 	"strings"
 )
 
@@ -15,26 +15,26 @@ func darwinToolDirs(home string) []string {
 		"/Applications/Docker.app/Contents/Resources/bin",
 	}
 	if home != "" {
-		dirs = append(dirs, filepath.Join(home, ".docker", "bin"), filepath.Join(home, ".rd", "bin"))
+		dirs = append(dirs, path.Join(home, ".docker", "bin"), path.Join(home, ".rd", "bin"))
 	}
 	return dirs
 }
 
-// AugmentPath returns path with the usual tool directories of goos appended
+// AugmentPath returns pathEnv with the usual tool directories of goos appended
 // when they are missing. Only macOS needs it: an app opened from Finder does
 // not inherit the shell's PATH, so `docker` and `git` installed by Docker
 // Desktop or Homebrew would not be found. Directories already present keep
 // their position; nothing is prepended, so it never shadows a tool the user
 // already has first in PATH.
-func AugmentPath(path, goos, home string) string {
+func AugmentPath(pathEnv, goos, home string) string {
 	if goos != "darwin" {
 		return path
 	}
-	sep := string(filepath.ListSeparator)
+	const sep = ":" // macOS only: the separator does not depend on the machine that runs the tests
 	have := map[string]bool{}
 	var parts []string
-	if path != "" {
-		parts = strings.Split(path, sep)
+	if pathEnv != "" {
+		parts = strings.Split(pathEnv, sep)
 	}
 	for _, p := range parts {
 		have[p] = true
