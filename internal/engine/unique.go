@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
+
+	"github.com/ElMaxter99/Theo/internal/execx"
 )
 
 // InstanceRef is a registered instance and the Compose project name it uses.
@@ -40,9 +43,17 @@ func (e *Engine) registeredInstances(ctx context.Context, known *Instance) ([]In
 	if err != nil {
 		return nil, err
 	}
-	var out []InstanceRef
+	// Which instances there are comes from Git, cheap and memoized per
+	// request. The name of each main worktree needs `docker compose config`,
+	// the slow part: those are read a few at a time, and kept in order.
+	type slot struct {
+		ref  InstanceRef
+		main bool // its Compose name is asked from Compose
+		skip bool
+	}
+	var slots []*slot
 	for _, p := range projects {
-		list, err := e.git.Worktrees(ctx, p.Path)
+		list, err := e.gitWorktrees(ctx, p.Path)
 		if err != nil {
 			continue
 		}
@@ -51,22 +62,53 @@ func (e *Engine) registeredInstances(ctx context.Context, known *Instance) ([]In
 				continue
 			}
 			ref := InstanceRef{Project: p.Name, Workspace: wt.Path, Branch: wt.Branch}
-			if known != nil && samePath(wt.Path, known.Workspace) {
-				ref.Compose = known.Compose
-			} else if i == 0 {
-				inst, _, err := e.resolveInstance(ctx, p.Name, wt.Path, InstanceOptions{})
-				if err != nil {
-					continue
-				}
-				ref.Compose = inst.Compose
-			} else {
-				ref.Compose = instanceName(p.Name, "", wt, list)
+			sl := &slot{ref: ref}
+			switch {
+			case known != nil && samePath(wt.Path, known.Workspace):
+				sl.ref.Compose = known.Compose
+			case i == 0:
+				sl.main = true
+			default:
+				sl.ref.Compose = instanceName(p.Name, "", wt, list)
 			}
-			out = append(out, ref)
+			slots = append(slots, sl)
+		}
+	}
+	var wg sync.WaitGroup
+	par := registeredParallelism
+	if execx.Explaining() { // --explain lists the commands in a stable order
+		par = 1
+	}
+	sem := make(chan struct{}, par)
+	for _, sl := range slots {
+		if !sl.main {
+			continue
+		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(sl *slot) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			inst, _, err := e.resolveInstance(ctx, sl.ref.Project, sl.ref.Workspace, InstanceOptions{})
+			if err != nil {
+				sl.skip = true
+				return
+			}
+			sl.ref.Compose = inst.Compose
+		}(sl)
+	}
+	wg.Wait()
+	var out []InstanceRef
+	for _, sl := range slots {
+		if !sl.skip {
+			out = append(out, sl.ref)
 		}
 	}
 	return out, nil
 }
+
+// registeredParallelism is how many main worktrees are resolved at once.
+const registeredParallelism = 4
 
 // duplicateNames groups the instances that use the same Compose project
 // name. Only names used by two or more are returned.

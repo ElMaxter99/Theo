@@ -323,7 +323,7 @@ func (s *Server) handleWorktree(w http.ResponseWriter, r *http.Request, _ *sessi
 		Counts     ContainerCount      `json:"container_counts"`
 	}{WorktreeView: v, Containers: []compose.Container{}}
 	if !wt.Bare && !wt.Prunable {
-		s.fillInstance(r.Context(), project, wt, &out.WorktreeView, func(error) {})
+		s.fillInstance(r.Context(), project, wt, &out.WorktreeView, &snapResult{}, func(error) {})
 		if inst, err := s.eng.InstanceFor(r.Context(), project, wt.Path, engine.InstanceOptions{}); err == nil {
 			out.Settings = s.settingsView(inst)
 			if cs, err := s.eng.Containers(r.Context(), inst); err == nil && cs != nil {

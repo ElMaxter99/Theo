@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ElMaxter99/Theo/internal/compose"
+	"github.com/ElMaxter99/Theo/internal/execx"
 	"github.com/ElMaxter99/Theo/internal/filelock"
 	"github.com/ElMaxter99/Theo/internal/git"
 	"github.com/ElMaxter99/Theo/internal/instances"
@@ -80,6 +81,7 @@ type Engine struct {
 	baseFiles func(dir string) []string
 	renamers  []ProjectRenamer       // extra stores to migrate on `project rename`
 	lock      func() (func(), error) // makes read-modify-write of the state files exclusive across processes; nil: no lock
+	cfgCache  *configCache           // see EnableConfigCache; nil: every read asks Compose
 }
 
 // locked takes the lock that serialises writers of Theo's state files (the
@@ -312,18 +314,38 @@ func (e *Engine) Worktrees(ctx context.Context, project string) ([]Worktree, err
 		return nil, err
 	}
 	result := make([]Worktree, len(list))
+	errs := make([]error, len(list))
+	var wg sync.WaitGroup
+	par := dirtyParallelism
+	if execx.Explaining() { // --explain lists the commands in a stable order
+		par = 1
+	}
+	sem := make(chan struct{}, par)
 	for i, wt := range list {
 		result[i].Worktree = wt
 		result[i].Kind, result[i].Owner = workspaceKind(p, list, wt.Path), workspaceOwner(p, wt.Path)
 		if wt.Bare || wt.Prunable {
 			continue
 		}
-		if result[i].Dirty, err = e.git.Dirty(ctx, wt.Path); err != nil {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, path string) { // `git status` of a big worktree is slow: do not queue them one behind another
+			defer wg.Done()
+			defer func() { <-sem }()
+			result[i].Dirty, errs[i] = e.git.Dirty(ctx, path)
+		}(i, wt.Path)
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
 			return nil, err
 		}
 	}
 	return result, nil
 }
+
+// dirtyParallelism is how many worktrees Worktrees checks for changes at once.
+const dirtyParallelism = 4
 
 // Services is the resolved Compose configuration of one workspace.
 type Services struct {
