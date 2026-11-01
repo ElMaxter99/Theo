@@ -28,7 +28,7 @@ func darwinToolDirs(home string) []string {
 // already has first in PATH.
 func AugmentPath(pathEnv, goos, home string) string {
 	if goos != "darwin" {
-		return path
+		return pathEnv
 	}
 	const sep = ":" // macOS only: the separator does not depend on the machine that runs the tests
 	have := map[string]bool{}
