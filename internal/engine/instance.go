@@ -244,8 +244,10 @@ type WorktreeStacks struct {
 }
 
 // Overview returns, for each worktree of a project, the Compose projects
-// whose files live in it. A Compose project belongs to the innermost
-// worktree that contains its first config file.
+// Docker knows for it. A Compose project belongs to a worktree when it has
+// the worktree's instance name, or else when its first config file is in
+// the worktree (the innermost one, if worktrees are nested). So it also
+// finds a stack that was created from another copy of the files.
 func (e *Engine) Overview(ctx context.Context, project string) ([]WorktreeStacks, error) {
 	p, err := e.Project(project)
 	if err != nil {
@@ -260,6 +262,20 @@ func (e *Engine) Overview(ctx context.Context, project string) ([]WorktreeStacks
 		return nil, err
 	}
 
+	byName := map[string]int{}
+	for i, wt := range list {
+		if i > 0 && !wt.Bare {
+			byName[instanceName(p.Name, "", wt, list)] = i
+		}
+	}
+	// The main worktree's name comes from its Compose configuration; when it
+	// cannot be read, its stacks are still matched by path.
+	if len(list) > 0 && !list[0].Bare {
+		if main, _, err := e.instance(ctx, p.Name, list[0].Path, nil); err == nil && main.Compose != "" {
+			byName[main.Compose] = 0
+		}
+	}
+
 	result := make([]WorktreeStacks, len(list))
 	for i, wt := range list {
 		result[i].Worktree = wt
@@ -267,17 +283,17 @@ func (e *Engine) Overview(ctx context.Context, project string) ([]WorktreeStacks
 		result[i].Stacks = []compose.Stack{} // JSON: an empty list, not null
 	}
 	for _, s := range stacks {
-		first, _, _ := strings.Cut(s.ConfigFiles, ",")
-		if first == "" {
-			continue
-		}
-		best := -1
-		for i, wt := range list {
-			if wt.Bare || !isInside(wt.Path, filepath.Dir(first)) {
-				continue
-			}
-			if best < 0 || len(wt.Path) > len(list[best].Path) {
-				best = i
+		best, ok := byName[s.Name]
+		if !ok {
+			best = -1
+			first, _, _ := strings.Cut(s.ConfigFiles, ",")
+			for i, wt := range list {
+				if first == "" || wt.Bare || !isInside(wt.Path, filepath.Dir(first)) {
+					continue
+				}
+				if best < 0 || len(wt.Path) > len(list[best].Path) {
+					best = i
+				}
 			}
 		}
 		if best >= 0 {

@@ -524,3 +524,33 @@ func TestOverviewAssignsStacksToInnermostWorktree(t *testing.T) {
 		t.Errorf("overview = %v, want %v", got, want)
 	}
 }
+
+// A stack whose files were moved, or that was created from another copy of
+// the project, still shows under the worktree whose instance name it has.
+func TestOverviewMatchesStacksByInstanceName(t *testing.T) {
+	e, _, _, c := newEngine()
+	ctx := context.Background()
+	if _, err := e.AddProject(ctx, root, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	c.configs[root] = &compose.Project{Name: "app-dev"}
+	c.stacks = []compose.Stack{
+		{Name: "app-dev", Status: "exited(4)", ConfigFiles: abs("/old/place/compose.yaml")},
+		{Name: "app-app-feature", Status: "running(1)", ConfigFiles: abs("/somewhere/else/compose.yaml")},
+		{Name: "unrelated", Status: "running(1)", ConfigFiles: abs("/somewhere/else/compose.yaml")},
+	}
+	overview, err := e.Overview(ctx, "app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string][]string{}
+	for _, o := range overview {
+		for _, s := range o.Stacks {
+			got[o.Worktree.Path] = append(got[o.Worktree.Path], s.Name)
+		}
+	}
+	want := map[string][]string{root: {"app-dev"}, feature: {"app-app-feature"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("overview = %v, want %v", got, want)
+	}
+}
