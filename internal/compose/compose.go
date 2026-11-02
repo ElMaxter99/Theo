@@ -13,9 +13,63 @@ import (
 
 // Project is the part of the resolved Compose model that Theo uses.
 type Project struct {
-	Name     string                  `json:"name"`
-	Services map[string]Service      `json:"services"`
-	Volumes  map[string]VolumeConfig `json:"volumes"`
+	Name     string                   `json:"name"`
+	Services map[string]Service       `json:"services"`
+	Volumes  map[string]VolumeConfig  `json:"volumes"`
+	Networks map[string]NetworkConfig `json:"networks"`
+}
+
+// NetworkConfig is a top-level network of the resolved Compose model.
+type NetworkConfig struct {
+	Name     string          `json:"name"`
+	External json.RawMessage `json:"external"` // true, or an object in older versions; absent otherwise
+}
+
+// IsExternal reports whether Compose expects the network to exist already.
+func (n NetworkConfig) IsExternal() bool {
+	s := strings.TrimSpace(string(n.External))
+	return s != "" && s != "false" && s != "null"
+}
+
+// ExternalNetworksUsed returns the Docker names of the external networks that a service which will
+// start (no profile, or one of profiles) is attached to, sorted. Compose fails `up` when one is missing.
+func (p *Project) ExternalNetworksUsed(profiles []string) []string {
+	if p == nil {
+		return nil
+	}
+	enabled := map[string]bool{}
+	for _, pr := range profiles {
+		enabled[pr] = true
+	}
+	seen := map[string]bool{}
+	for _, svc := range p.Services {
+		if len(svc.Profiles) > 0 {
+			on := false
+			for _, pr := range svc.Profiles {
+				if enabled[pr] || pr == "*" {
+					on = true
+				}
+			}
+			if !on {
+				continue
+			}
+		}
+		for key := range svc.Networks {
+			if n, ok := p.Networks[key]; ok && n.IsExternal() {
+				name := n.Name
+				if name == "" {
+					name = key
+				}
+				seen[name] = true
+			}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for name := range seen {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // VolumeConfig is a top-level volume of the resolved Compose model.

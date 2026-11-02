@@ -3,6 +3,8 @@ package engine
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"io"
 	"path/filepath"
 	"reflect"
@@ -330,5 +332,49 @@ func TestWarnSharedComposeNames(t *testing.T) {
 	}
 	if len(report.Projects[0].Worktrees[1].Warnings) != 0 || len(report.Projects[2].Worktrees[0].Warnings) != 0 {
 		t.Errorf("unique names must not warn: %+v", report.Projects)
+	}
+}
+
+// netCompose is a fake Compose that also reports missing external networks.
+type netCompose struct {
+	*fakeCompose
+	missing []string
+}
+
+func (n *netCompose) MissingNetworks(_ context.Context, names []string) []string {
+	var out []string
+	for _, name := range names {
+		for _, m := range n.missing {
+			if m == name {
+				out = append(out, name)
+			}
+		}
+	}
+	return out
+}
+
+func TestUpExplainsAMissingExternalNetwork(t *testing.T) {
+	ext := json.RawMessage("true")
+	cfg := &compose.Project{
+		Name:     "app",
+		Services: map[string]compose.Service{"api": {Networks: map[string]json.RawMessage{"data": nil}}},
+		Networks: map[string]compose.NetworkConfig{"data": {Name: "gasolinaradar_data", External: ext}},
+	}
+	fc := &fakeCompose{}
+	e := &Engine{compose: &netCompose{fakeCompose: fc, missing: []string{"gasolinaradar_data"}}}
+	inst := &Instance{Compose: "app", config: cfg}
+	err := e.checkExternalNetworks(context.Background(), inst, nil)
+	var mn *MissingNetworkError
+	if !errors.As(err, &mn) || len(mn.Networks) != 1 || !strings.Contains(err.Error(), "docker network create gasolinaradar_data") {
+		t.Fatalf("err = %v", err)
+	}
+	// With the network present, or a Compose that cannot check, nothing is refused.
+	e.compose = &netCompose{fakeCompose: fc}
+	if err := e.checkExternalNetworks(context.Background(), inst, nil); err != nil {
+		t.Errorf("network exists: %v", err)
+	}
+	e.compose = fc
+	if err := e.checkExternalNetworks(context.Background(), inst, nil); err != nil {
+		t.Errorf("fake without the check: %v", err)
 	}
 }

@@ -204,6 +204,9 @@ func (e *Engine) Up(ctx context.Context, inst *Instance, opts compose.UpOptions,
 		return err
 	}
 	opts.Profiles = mergeProfiles(inst.Profiles, opts.Profiles)
+	if err := e.checkExternalNetworks(ctx, inst, opts.Profiles); err != nil {
+		return err
+	}
 	err := e.compose.Up(ctx, inst.target(), opts, stdout, stderr)
 	e.record(inst, "up", err)
 	return err
@@ -326,3 +329,32 @@ func missingWorktreeEnvFile(msg, worktree string) string {
 }
 
 var missingEnvFileRe = regexp.MustCompile(`env file (\S+) not found`)
+
+// checkExternalNetworks refuses to start an instance whose services need an external network that does
+// not exist, with the fix, instead of the bare Compose error.
+func (e *Engine) checkExternalNetworks(ctx context.Context, inst *Instance, profiles []string) error {
+	checker, ok := e.compose.(interface {
+		MissingNetworks(context.Context, []string) []string
+	})
+	if !ok {
+		return nil
+	}
+	missing := checker.MissingNetworks(ctx, inst.config.ExternalNetworksUsed(profiles))
+	if len(missing) == 0 {
+		return nil
+	}
+	return &MissingNetworkError{Networks: missing}
+}
+
+// MissingNetworkError is returned by Up when external Compose networks do not exist in Docker.
+type MissingNetworkError struct{ Networks []string }
+
+func (m *MissingNetworkError) Error() string {
+	if len(m.Networks) == 1 {
+		n := m.Networks[0]
+		return fmt.Sprintf("the Compose file uses the external network %q, which does not exist in Docker. "+
+			"Create it with `docker network create %s`, or start first the project that owns it", n, n)
+	}
+	return fmt.Sprintf("the Compose file uses the external networks %s, which do not exist in Docker. "+
+		"Create them with `docker network create <name>`, or start first the projects that own them", strings.Join(m.Networks, ", "))
+}
