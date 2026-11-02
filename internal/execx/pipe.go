@@ -21,9 +21,9 @@ func Pipe(ctx context.Context, stdin io.Reader, stdout io.Writer, name string, a
 		note("", name, args, true)
 		return nil
 	}
-	path, err := exec.LookPath(name)
+	path, err := lookPath(name)
 	if err != nil {
-		return fmt.Errorf("%s: %w", name, ErrNotFound)
+		return err
 	}
 	cmd := exec.CommandContext(ctx, path, args...)
 	prepare(cmd)

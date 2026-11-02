@@ -19,6 +19,9 @@ func TestHelperProcess(t *testing.T) {
 	var buf bytes.Buffer
 	buf.ReadFrom(os.Stdin)
 	os.Stdout.WriteString("got:" + buf.String())
+	if name := os.Getenv("THEO_EXECX_PRINTENV"); name != "" {
+		os.Stdout.WriteString(" " + name + "=" + os.Getenv(name))
+	}
 	os.Stderr.WriteString("err-output")
 	if os.Getenv("THEO_EXECX_EXIT") == "3" {
 		os.Exit(3)

@@ -89,6 +89,7 @@ Theo keeps its registry and data in `theo/` inside your user configuration direc
 - Linux: the reference platform for the Docker-based tests.
 - macOS and Windows: CI builds, vets and runs the tests that need no Docker daemon. Anything that starts containers is unverified there, so please report problems.
 - On Windows, use a Docker daemon running Linux containers (Docker Desktop with WSL 2). Paths with spaces and accents are supported.
+- Colima, OrbStack, Rancher Desktop (dockerd mode) and Podman (Docker's CLI on Podman's socket) are expected to work but untested; `theo doctor` names the engine and its differences. See [engines](docs/cli/engines.md).
 - `--auto-ports` and per-instance settings need Docker Compose 2.24.4 or later.
 
 ## Development

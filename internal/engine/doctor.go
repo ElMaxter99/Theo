@@ -35,6 +35,9 @@ type Check struct {
 	Status string `json:"status"`
 	Detail string `json:"detail,omitempty"`
 	Fix    string `json:"fix,omitempty"` // what to do, when the status is warn or fail
+	// Notes are further facts worth knowing, one sentence each (the
+	// differences of an alternative container engine).
+	Notes []string `json:"notes,omitempty"`
 }
 
 // DoctorReport is the result of Doctor.
@@ -43,6 +46,9 @@ type DoctorReport struct {
 	Platform string  `json:"platform"`
 	DataDir  string  `json:"data_dir"`
 	Checks   []Check `json:"checks"`
+	// Engine is the container engine behind the docker CLI, when docker is
+	// installed. See docs/cli/engines.md.
+	Engine *ContainerEngine `json:"engine,omitempty"`
 }
 
 // DoctorEnv is what the doctor looks at. Production code uses
@@ -53,6 +59,12 @@ type DoctorEnv struct {
 	// Projects are the paths of the registered projects, for notes about
 	// where they live.
 	Projects []string
+	// Home is the user's home directory, for the folders a macOS engine
+	// shares with its VM.
+	Home string
+	// Getenv reads an environment variable (DOCKER_HOST, DOCKER_CONTEXT,
+	// THEO_DOCKER). Nil reads none.
+	Getenv func(string) string
 	// Run runs a tool and returns its standard output. It returns an error
 	// wrapping execx.ErrNotFound when the tool is not installed.
 	Run func(ctx context.Context, name string, args ...string) (string, error)
@@ -60,13 +72,21 @@ type DoctorEnv struct {
 
 // RealDoctorEnv returns a DoctorEnv for this machine.
 func RealDoctorEnv(dataDir string, projects []string) DoctorEnv {
+	home, _ := os.UserHomeDir()
 	return DoctorEnv{
-		GOOS: runtime.GOOS, DataDir: dataDir, Projects: projects,
+		GOOS: runtime.GOOS, DataDir: dataDir, Projects: projects, Home: home, Getenv: os.Getenv,
 		Run: func(ctx context.Context, name string, args ...string) (string, error) {
 			out, err := execx.Run(ctx, "", name, args...)
 			return string(out), err
 		},
 	}
+}
+
+func (env DoctorEnv) getenv(name string) string {
+	if env.Getenv == nil {
+		return ""
+	}
+	return strings.TrimSpace(env.Getenv(name))
 }
 
 // Doctor checks that what Theo needs works on this machine.
@@ -88,20 +108,25 @@ func RunDoctor(ctx context.Context, env DoctorEnv) DoctorReport {
 	add(checkGit(ctx, env))
 	dockerCheck, haveDocker := checkDocker(ctx, env)
 	add(dockerCheck)
+	var eng ContainerEngine
 	if haveDocker {
-		daemon, osType := checkDaemon(ctx, env)
-		add(daemon)
-		if osType != "" {
-			add(checkEngineOS(env, osType))
+		probe := probeEngine(ctx, env, dockerCheck.Detail)
+		var engCheck Check
+		eng, engCheck = checkEngine(env, probe)
+		r.Engine = &eng
+		add(checkDaemon(env, probe, eng))
+		if probe.OSType != "" {
+			add(checkEngineOS(env, probe.OSType))
 		}
-		add(checkComposePlugin(ctx, env))
+		add(engCheck)
+		add(checkComposePlugin(ctx, env, eng))
 	} else {
 		add(Check{ID: "docker-daemon", Name: "Docker daemon", Status: StatusFail, Detail: "not checked: docker is not installed", Fix: dockerInstallHint(env.GOOS)})
 		add(Check{ID: "docker-compose", Name: "docker compose plugin", Status: StatusFail, Detail: "not checked: docker is not installed", Fix: dockerInstallHint(env.GOOS)})
 	}
 	add(checkDataDir(env))
 	add(checkStateFiles(env))
-	for _, c := range platformNotes(ctx, env) {
+	for _, c := range platformNotes(ctx, env, eng) {
 		add(c)
 	}
 
@@ -155,33 +180,31 @@ func checkDocker(ctx context.Context, env DoctorEnv) (Check, bool) {
 		c.Status = StatusFail
 		c.Detail = "docker is not installed or not in PATH"
 		c.Fix = dockerInstallHint(env.GOOS)
+		if alt := env.getenv(execx.EnvDocker); alt != "" {
+			c.Detail = execx.EnvDocker + "=" + alt + " cannot be run: " + lastLine(err.Error())
+			c.Fix = "set " + execx.EnvDocker + " to the absolute path of a docker CLI, or unset it to use docker from PATH"
+		}
 		return c, false
 	}
 	c.Status, c.Detail = StatusOK, strings.TrimSpace(out)
 	return c, true
 }
 
-// checkDaemon asks the daemon for its version and OS type in one call.
-func checkDaemon(ctx context.Context, env DoctorEnv) (Check, string) {
+// checkDaemon says whether the daemon answered the `docker info` the probe
+// ran; the same answer gives its version and OS type.
+func checkDaemon(env DoctorEnv, p engineProbe, e ContainerEngine) Check {
 	c := Check{ID: "docker-daemon", Name: "Docker daemon"}
-	out, err := env.Run(ctx, "docker", "info", "--format", "{{.ServerVersion}} {{.OSType}}")
-	fields := strings.Fields(out)
-	if err != nil || len(fields) < 2 {
+	if !p.InfoOK {
 		c.Status = StatusFail
 		c.Detail = "cannot reach the Docker daemon"
-		if err != nil {
-			c.Detail += ": " + lastLine(err.Error())
+		if p.InfoErr != "" {
+			c.Detail += ": " + p.InfoErr
 		}
-		switch env.GOOS {
-		case "linux":
-			c.Fix = "start it (`sudo systemctl start docker`) and, if the error is about permissions, add your user to the docker group (`sudo usermod -aG docker $USER`, then log in again)"
-		default:
-			c.Fix = "start Docker Desktop and wait until it says it is running"
-		}
-		return c, ""
+		c.Fix = daemonFix(env.GOOS, e, p.DockerHost)
+		return c
 	}
-	c.Status, c.Detail = StatusOK, "engine "+fields[0]
-	return c, fields[1]
+	c.Status, c.Detail = StatusOK, "engine "+p.Version
+	return c
 }
 
 func checkEngineOS(env DoctorEnv, osType string) Check {
@@ -200,9 +223,15 @@ func checkEngineOS(env DoctorEnv, osType string) Check {
 	return c
 }
 
-func checkComposePlugin(ctx context.Context, env DoctorEnv) Check {
+func checkComposePlugin(ctx context.Context, env DoctorEnv, eng ContainerEngine) Check {
 	c := Check{ID: "docker-compose", Name: "docker compose plugin"}
 	out, err := env.Run(ctx, "docker", "compose", "version", "--short")
+	if err == nil && strings.Contains(strings.ToLower(out), "podman-compose") {
+		c.Status = StatusFail
+		c.Detail = "`docker compose` runs podman-compose (" + shortLine(out) + "), which Theo does not support"
+		c.Fix = fmt.Sprintf("install Docker's Compose %s or later (the plugin, or the docker-compose v2 binary as Podman's compose provider); see docs/cli/engines.md", compose.MinVersion)
+		return c
+	}
 	if err != nil {
 		c.Status = StatusFail
 		c.Detail = "the `docker compose` plugin is not available"
@@ -222,8 +251,10 @@ func checkComposePlugin(ctx context.Context, env DoctorEnv) Check {
 	if !v.AtLeast(compose.MinVersion) {
 		c.Status = StatusFail
 		c.Detail = fmt.Sprintf("Docker Compose %s is too old: Theo needs %s or later (the !override and !reset tags of the files it generates)", v, compose.MinVersion)
-		switch env.GOOS {
-		case "linux":
+		switch {
+		case eng.Kind != "" && eng.Kind != EngineDockerEngine && eng.Kind != EngineDockerDesktop && eng.Kind != EngineUnknown:
+			c.Fix = "upgrade Docker's Compose plugin (or docker-compose v2 binary) to " + compose.MinVersion.String() + " or later: https://docs.docker.com/compose/install/"
+		case env.GOOS == "linux":
 			c.Fix = "upgrade the plugin: update the docker-compose-plugin package (`sudo apt-get install --only-upgrade docker-compose-plugin`, or your distribution's equivalent), or follow https://docs.docker.com/compose/install/linux/"
 		default:
 			c.Fix = "upgrade Docker Desktop to its latest release (it bundles Compose); " + compose.MinVersion.String() + " or later is needed"
@@ -314,15 +345,19 @@ func checkStateFiles(env DoctorEnv) Check {
 var macShared = []string{"/Users", "/Volumes", "/private", "/tmp", "/var/folders"}
 
 // platformNotes returns the notes that depend on the operating system.
-func platformNotes(ctx context.Context, env DoctorEnv) []Check {
+func platformNotes(ctx context.Context, env DoctorEnv, eng ContainerEngine) []Check {
 	switch env.GOOS {
 	case "darwin":
+		if eng.Remote {
+			return nil // the engine check already says bind mounts are on the other machine
+		}
+		shared, who, fix := macSharedFor(eng, env.Home)
 		c := Check{ID: "macos-file-sharing", Name: "macOS file sharing", Status: StatusInfo,
-			Detail: "Docker Desktop can only bind-mount folders it shares (by default " + strings.Join(macShared, ", ") + "); worktrees outside them start empty in the container"}
+			Detail: who + " can only bind-mount folders it shares (by default " + strings.Join(shared, ", ") + "); worktrees outside them start empty in the container"}
 		var outside []string
 		for _, p := range env.Projects {
 			ok := false
-			for _, s := range macShared {
+			for _, s := range shared {
 				if p == s || strings.HasPrefix(p, s+"/") {
 					ok = true
 				}
@@ -333,8 +368,8 @@ func platformNotes(ctx context.Context, env DoctorEnv) []Check {
 		}
 		if len(outside) > 0 {
 			c.Status = StatusWarn
-			c.Detail = "projects outside the folders Docker Desktop shares by default: " + strings.Join(outside, ", ")
-			c.Fix = "add them in Docker Desktop > Settings > Resources > File sharing, or keep the project (and its worktrees) under your home directory"
+			c.Detail = "projects outside the folders " + who + " shares by default: " + strings.Join(outside, ", ")
+			c.Fix = fix
 		}
 		return []Check{c}
 	case "windows":

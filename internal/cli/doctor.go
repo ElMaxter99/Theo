@@ -16,8 +16,10 @@ func init() {
 	registerHelp(40, `
   doctor [--json]                              Check that git, docker, the Docker daemon, the
                                                docker compose plugin (2.24.4 or later) and Theo's
-                                               data directory work, and say how to fix what does
-                                               not. Exit code 1 if something needed is missing
+                                               data directory work, name the container engine
+                                               behind docker (Docker Desktop, Colima, Podman...),
+                                               and say how to fix what does not. Exit code 1 if
+                                               something needed is missing
 `)
 }
 
@@ -57,6 +59,9 @@ func printDoctor(w io.Writer, r engine.DoctorReport) {
 	labels := map[string]string{engine.StatusOK: "ok", engine.StatusWarn: "warning", engine.StatusFail: "FAIL", engine.StatusInfo: "note"}
 	for _, c := range r.Checks {
 		fmt.Fprintf(w, "[%-7s] %s: %s\n", labels[c.Status], c.Name, c.Detail)
+		for _, n := range c.Notes {
+			fmt.Fprintf(w, "          - %s\n", n)
+		}
 		if c.Fix != "" {
 			fmt.Fprintf(w, "          fix: %s\n", c.Fix)
 		}
