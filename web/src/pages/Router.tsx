@@ -11,6 +11,7 @@ import { Health } from "./Health.tsx";
 import { Settings } from "./Settings.tsx";
 import { PageHead } from "../components/ui.tsx";
 import { href } from "../lib/router.ts";
+import { t } from "../strings.ts";
 
 export function setTitle(parts: string[]): void {
   document.title = [...parts.filter(Boolean), "Theo"].join(" · ");
@@ -31,11 +32,11 @@ export function Router({ route, meta, onRefreshMeta }: { route: Route; meta: Met
 }
 
 function NotFound() {
-  useEffect(() => setTitle(["Not found"]), []);
+  useEffect(() => setTitle([t.app.notFound]), []);
   return (
     <>
-      <PageHead title="Page not found" />
-      <p><a href={href.projects()}>Go to the projects</a></p>
+      <PageHead title={t.app.notFoundTitle} />
+      <p><a href={href.projects()}>{t.app.notFoundLink}</a></p>
     </>
   );
 }

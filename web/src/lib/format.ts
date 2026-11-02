@@ -1,4 +1,5 @@
 // Small pure helpers (unit-tested in test/lib.test.mjs).
+import { intlLocale } from "./locale.ts";
 
 // Terminal colour/cursor escape sequences are stripped from log lines: the viewer shows plain text.
 // eslint-disable-next-line no-control-regex
@@ -12,14 +13,14 @@ export function formatTime(iso: string | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "medium" });
+  return d.toLocaleString(intlLocale, { dateStyle: "medium", timeStyle: "medium" });
 }
 
 export function formatClock(iso: string | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString(undefined, { hour12: false });
+  return d.toLocaleTimeString(intlLocale, { hour12: false });
 }
 
 export function basename(p: string): string {

@@ -72,6 +72,15 @@ There is no reliable way to know that a browser tab was closed, so the server st
 operation. It never stops while an operation runs. Without any client it does not poll Docker at all; with a visible tab it
 looks for changes made outside Theo every 5 seconds.
 
+## Language
+
+The interface is available in English (the default, like the CLI) and in Spanish (Spain). On the first visit it follows the
+browser: a browser set to any Spanish variant (`es`, `es-ES`, `es-MX`...) gets Spanish, anything else gets English. The
+**Language** selector next to the theme selector (and in *Settings*) offers *System*, *English* and *Español*; the choice is
+stored only in this browser, like the theme, and changing it reloads the page. Numbers and dates follow the chosen language.
+Texts that come from the server or from Docker (error messages, `doctor` details, findings, log lines) stay in English, and
+so does the text copied by *Copy information for a report*, so that reports read the same for everyone.
+
 ## Limits
 
 - The interface reads the state of Docker through `docker compose`; with Docker stopped it still shows your projects and

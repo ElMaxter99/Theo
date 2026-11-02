@@ -59,7 +59,7 @@ export function InstanceDetail({ project, wt, tab }: { project: string; wt: stri
   const lastFailed = ops.find((o) => o.worktree === wt && !isActiveOp(o));
   const act = async (kind: LifecycleKind) => {
     setActionError(undefined);
-    announce(`${kind} ${name}`);
+    announce((kind === "up" ? t.panel.startedMsg : kind === "down" ? t.panel.stoppedMsg : t.panel.restartedMsg)(name));
     try { await startOperation(project, wt, kind, kind === "up" ? { auto_ports: true } : {}); }
     catch (e) { setActionError(e instanceof ApiError ? e : new ApiError(0, { code: "internal", message: String(e) })); }
   };
