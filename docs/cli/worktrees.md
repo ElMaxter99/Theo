@@ -234,3 +234,7 @@ listed as a local branch with that clone as `worktree`.
 - Clones copy objects with hard links when possible (`--local`), so they are
   cheap on one filesystem but not a free copy across filesystems.
 - Owner labels are not an access-control mechanism.
+- `worktree add` refuses a target directory that already exists and is not
+  empty, naming it. The usual cause is a worktree left by a removed project of
+  the same name: `theo project remove` deletes no files. Delete the directory
+  or pass `--path`. An empty directory is accepted, as Git does.
