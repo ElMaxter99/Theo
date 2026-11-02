@@ -126,6 +126,9 @@ func TestOpenComposeChangedAndStopAll(t *testing.T) {
 }
 
 func TestWorktreePruneMerged(t *testing.T) {
+	// Prune keeps a worktree whose containers it cannot check, so the
+	// removable cases need a reachable Docker daemon.
+	testutil.RequireDaemon(t)
 	main, linked := testutil.NewRepo(t, nil)
 	t.Setenv(registry.EnvHome, t.TempDir())
 	if _, stderr, code := run("project", "add", main, "--name", "prn"); code != ExitOK {
