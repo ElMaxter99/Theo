@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SseParser } from "../src/api/sse.ts";
-import { stateView, portStatusView, volumeStatusView, operationStateView, containerCounts, isActiveOp, opErrorText, busyLabel } from "../src/lib/status.ts";
+import { stateView, portStatusView, volumeStatusView, operationStateView, containerCounts, isActiveOp, opErrorText, opErrorOutput, busyLabel } from "../src/lib/status.ts";
 import { clashesForNewInstance, hasFixedPorts } from "../src/lib/ports.ts";
 import { LogStore, visibleRange, MAX_STORED } from "../src/lib/logstore.ts";
 import { parseHash, href } from "../src/lib/router.ts";
@@ -159,4 +159,12 @@ test("the string catalog has no empty texts", () => {
     }
   };
   walk(t, "t");
+});
+
+test("opErrorOutput returns what the tool printed, not the one-line message", () => {
+  const original = "docker compose -p x up --detach: exit status 1\n\nnetwork gasolinaradar_data declared as external, but could not be found";
+  assert.equal(opErrorOutput({ error: { message: "docker compose -p x up --detach: exit status 1", original } }), "network gasolinaradar_data declared as external, but could not be found");
+  assert.equal(opErrorOutput({ error: { message: "boom" } }), "");
+  assert.equal(opErrorOutput({ error: "plain" }), "");
+  assert.equal(opErrorOutput({}), "");
 });

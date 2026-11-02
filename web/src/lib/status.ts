@@ -96,3 +96,12 @@ export function opErrorText(op: Pick<Operation, "error">): string {
   if (!e) return "";
   return typeof e === "string" ? e : (e.message ?? e.code ?? "");
 }
+
+/** What the tool printed before it failed (the last lines of Docker's or Git's own output), if the server kept it. */
+export function opErrorOutput(op: Pick<Operation, "error">): string {
+  const e = op.error;
+  if (!e || typeof e === "string") return "";
+  const original = (e as { original?: string }).original ?? "";
+  const cut = original.indexOf("\n\n");
+  return cut >= 0 ? original.slice(cut + 2).trim() : "";
+}
