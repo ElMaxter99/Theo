@@ -139,8 +139,8 @@ func TestDefaultService(t *testing.T) {
 		{[]string{"admin", "mailhog"}, "admin"},
 		{nil, ""},
 	} {
-		if got := defaultService(c.names); got != c.want {
-			t.Errorf("defaultService(%v) = %q, want %q", c.names, got, c.want)
+		if got := DefaultService(c.names); got != c.want {
+			t.Errorf("DefaultService(%v) = %q, want %q", c.names, got, c.want)
 		}
 	}
 }

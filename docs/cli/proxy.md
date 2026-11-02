@@ -127,13 +127,41 @@ Windows and Safari rows are not verified by Theo's tests.
 
 ## With the web interface
 
-`theo ui` keeps showing each instance's `http://localhost:<port>` links; while
-the proxy runs, `theo status --json` (and so any tool built on it) has the
-names in `proxy_urls`. The two servers are separate: the interface listens on
+The interface (`theo ui` and `theo-desktop`) can run the proxy itself:
+**Settings → Local domains → Serve local domains**, with the port to use
+(7080 by default). It is the same proxy, on loopback only, in the
+interface's own process; it writes `proxy.json` like `theo proxy`, so
+`theo status`, `theo open` and MCP see it. The switch is remembered in
+`proxy-ui.json` in Theo's data directory and turned on again the next time
+the interface starts. While it is on, the interface does not stop by itself
+after the idle timeout, so the names keep answering with no tab open; switch
+it off, or stop the interface, to stop them.
+
+While any proxy runs (the interface's or one started with `theo proxy`), the
+project panel shows each running instance's local domains above its
+`localhost:<port>` links, and the Summary tab lists every name. A proxy
+started with `theo proxy` is shown in Settings but can only be stopped in its
+terminal.
+
+The two servers are separate: the interface listens on
 a random `127.0.0.1` port, the proxy on 7080. Browsers treat each
 `*.localhost` name as its own site, so cookies of `main.shop.localhost` do not
 leak to `feature-x.shop.localhost`, nor to the interface (cookies are not
 scoped by port, so they would on bare `localhost`).
+
+## `theo open`
+
+```
+theo open <project> [-w <w>] [service] [--print]
+```
+
+opens a running service of an instance in the default browser: its local
+domain while a proxy runs (`http://<instance>.<project>.localhost:7080`
+without a service, `http://<service>.<instance>.<project>.localhost:7080`
+with one), else `http://localhost:<port>`. Without a service it picks web,
+app, api or frontend, else the first service with a running TCP port.
+`--print` only prints the address. It fails, with the `theo up` command,
+when the service publishes no running port.
 
 ## With agents
 

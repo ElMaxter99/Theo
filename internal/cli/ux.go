@@ -31,6 +31,8 @@ Single services, recreate, and a shell inside a container:
                                                     named volumes are kept
   stop <project> [-w <w>] [service...]              Stop those services (all when none are named);
                                                     the others keep running, nothing is removed
+  stop --all [project]                              Stop every running instance of every project (or
+                                                    of one); containers and volumes are kept
   start <project> [-w <w>] [service...]             Start containers that exist and are stopped
   restart <project> [-w <w>] [service...]           Restart those services (all when none are named)
   recreate <project> [-w <w>] [service...] [--build] [--profile <p>] [--auto-ports]
@@ -77,6 +79,24 @@ func runControl(e *engine.Engine, verb string, args []string, stdout, stderr io.
 	fs := flag.NewFlagSet(verb, flag.ContinueOnError)
 	var sel instanceFlags
 	sel.register(fs)
+	var all *bool
+	if verb == "stop" {
+		all = fs.Bool("all", false, "stop every running instance")
+	}
+	if all != nil && hasFlag(args, "--all") {
+		pos, err := parse(fs, args)
+		if err != nil {
+			return err
+		}
+		if len(pos) > 1 || sel.worktree != "" || len(sel.envFiles) > 0 {
+			return usageErrorf("stop --all takes at most a project name, and no -w, --env-file or services")
+		}
+		project := ""
+		if len(pos) == 1 {
+			project = pos[0]
+		}
+		return stopAll(context.Background(), e, project, stdout, stderr)
+	}
 	project, services, err := serviceArgs(verb, fs, args)
 	if err != nil {
 		return err
@@ -204,4 +224,87 @@ func runExecLike(e *engine.Engine, cmd string, args []string, stdout, stderr io.
 		return &exitCodeError{ee.Code}
 	}
 	return err
+}
+
+// hasFlag reports whether args hold the boolean flag name (as -name or
+// --name, alone or =true).
+func hasFlag(args []string, name string) bool {
+	bare := strings.TrimLeft(name, "-")
+	for _, a := range args {
+		if a == "--" {
+			return false
+		}
+		a = strings.TrimLeft(a, "-")
+		if a == bare || a == bare+"=true" {
+			return true
+		}
+	}
+	return false
+}
+
+// stopAll stops the instances that have running containers, in every
+// project or in one. Nothing is removed.
+func stopAll(ctx context.Context, e *engine.Engine, project string, stdout, stderr io.Writer) error {
+	var names []string
+	if project != "" {
+		p, err := e.Project(project)
+		if err != nil {
+			return err
+		}
+		names = []string{p.Name}
+	} else {
+		projects, err := e.Projects()
+		if err != nil {
+			return err
+		}
+		for _, p := range projects {
+			names = append(names, p.Name)
+		}
+	}
+	var stopped []string
+	var failed []string
+	for _, name := range names {
+		overview, err := e.Overview(ctx, name)
+		if err != nil {
+			failed = append(failed, fmt.Sprintf("%s: %s", name, firstLine(err.Error())))
+			continue
+		}
+		for _, o := range overview {
+			if !anyRunning(o.Stacks) {
+				continue
+			}
+			inst, err := e.Instance(ctx, name, o.Worktree.Path, nil)
+			if err != nil {
+				failed = append(failed, fmt.Sprintf("%s %s: %s", name, o.Worktree.Path, firstLine(err.Error())))
+				continue
+			}
+			describe(stderr, inst)
+			if err := e.Stop(ctx, inst, nil, stdout, stderr); err != nil {
+				failed = append(failed, fmt.Sprintf("%s: %s", inst.Compose, firstLine(err.Error())))
+				continue
+			}
+			stopped = append(stopped, inst.Compose)
+		}
+	}
+	switch {
+	case len(stopped) == 0 && len(failed) == 0:
+		fmt.Fprintln(stdout, "No instance is running.")
+	case len(stopped) > 0:
+		fmt.Fprintf(stdout, "Stopped %d instance(s): %s. Their containers and volumes were kept; `theo start <project> -w <worktree>` starts one again.\n", len(stopped), strings.Join(stopped, ", "))
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("could not stop %d instance(s):\n  %s", len(failed), strings.Join(failed, "\n  "))
+	}
+	return nil
+}
+
+// anyRunning reports whether one of the Compose projects has a running
+// container ("running(2)", "running(1), exited(1)").
+func anyRunning(stacks []compose.Stack) bool {
+	for _, s := range stacks {
+		if strings.Contains(s.Status, "running") {
+			return true
+		}
+	}
+	return false
 }

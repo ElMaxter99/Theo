@@ -62,14 +62,15 @@ The trust boundary is "the same operating system user". Do not paste the launch 
 
 ## Long operations and shutdown
 
-`up`, `down` and `restart` run as jobs in the server, so closing the browser tab does not interrupt them; open the page
+`up`, `down`, `restart` and `stop` (the panel's **Pause all**) run as jobs in the server, so closing the browser tab does not interrupt them; open the page
 again and the operation is still listed. At most 4 run at once (the rest wait), and only one change per instance
 at a time. Cancelling stops the `docker compose` process and **does not undo** what it already did: an interrupted `up` can
 leave the instance partially started, and the interface says so.
 
 There is no reliable way to know that a browser tab was closed, so the server stops by itself only after
 `--idle-timeout` (default 15 minutes) with no open stream (live updates, logs, operation output) **and** no running
-operation. It never stops while an operation runs. Without any client it does not poll Docker at all; with a visible tab it
+operation. It never stops while an operation runs, nor while it serves the local domains (Settings → Local domains, see
+[proxy](proxy.md#with-the-web-interface)). Without any client it does not poll Docker at all; with a visible tab it
 looks for changes made outside Theo every 5 seconds.
 
 ## Language

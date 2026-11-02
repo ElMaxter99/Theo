@@ -179,7 +179,7 @@ func BuildTable(targets []Target, port int) *Table {
 			names = append(names, name)
 		}
 		sort.Strings(names)
-		def := defaultService(names)
+		def := DefaultService(names)
 		instNames := append([]string{in.label}, in.aliases...)
 		route := func(t Target, isDefault bool) Route {
 			host := HostLabel(t.Service) + "." + in.label + "." + in.project + "." + Suffix
@@ -224,9 +224,9 @@ func pickPorts(targets []Target) map[string]Target {
 	return out
 }
 
-// defaultService is the service of the short form: web, app, api or
+// DefaultService is the service of the short form: web, app, api or
 // frontend, in that order, else the first service by name. names is sorted.
-func defaultService(names []string) string {
+func DefaultService(names []string) string {
 	for _, want := range preferredDefaults {
 		for _, n := range names {
 			if n == want {

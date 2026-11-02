@@ -188,13 +188,28 @@ t ok   "proxy: web.main.$P.localhost reaches web" proxy_get "web.main.$P.localho
 t ok   "proxy: unknown host lists the routes (404)" bash -c "test \"\$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: nope.$P.localhost' localhost:$PX/)\" = 404"
 t ok   "proxy routes --json" theo proxy routes "$P" --port "$PX" --json
 t ok   "proxy routes --hosts" theo proxy routes "$P" --port "$PX" --hosts
+open_is() { test "$(theo open "$P" --print)" = "$1"; }
+t ok   "open --print gives the local domain while the proxy runs" open_is "http://main.$P.localhost:$PX"
 kill "$PROXY_PID" 2>/dev/null; wait "$PROXY_PID" 2>/dev/null
+t ok   "open --print gives localhost without the proxy" open_is "http://localhost:8080"
 t fail "proxy refuses a non-loopback address" theo proxy --addr 0.0.0.0 --port "$PX"
 mcp_list() { printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"1"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"status","arguments":{"project":"'"$P"'"}}}' | theo mcp --read-only; }
 mcp_ok() { local o; o="$(mcp_list 2>&1)"; echo "$o" | head -c 2000; grep -q '"list_projects"' <<<"$o" && ! grep -q '"name":"up"' <<<"$o" && grep -q '"id":3' <<<"$o" && grep -q "$P" <<<"$o"; }
 t ok   "mcp --read-only: tools/list and status" mcp_ok
 engine_ok() { theo doctor --json | grep -q '"engine"'; }
 t ok   "doctor --json identifies the engine" engine_ok
+t ok   "mcp install --json" theo mcp install --json
+changed_warns() { theo status "$P" --json | grep -q '"compose-changed"'; }
+t fail "no compose-changed right after up" changed_warns
+sed -i.bak 's/^GREETING=.*/GREETING=Hello again from Theo/' .env && rm -f .env.bak
+t ok   "status warns compose-changed after editing .env" changed_warns
+t ok   "up applies the change" theo up "$P"
+web 8080 "Hello again"
+t fail "no compose-changed after up" changed_warns
+t ok   "stop --all" theo stop --all "$P"
+t fail "stopped instance does not answer" curl -sf --max-time 5 localhost:8080/
+t ok   "start after stop --all" theo start "$P"
+web 8080 greeting
 
 section "C. Worktrees and clones"
 t ok   "project set --copy-on-add .env" theo project set "$P" --copy-on-add .env
@@ -268,6 +283,8 @@ echo change > "$fc/uncommitted.txt"
 t fail "worktree remove with changes (refused)" theo worktree remove "$P" feature/c
 t ok   "worktree remove --discard-changes" theo worktree remove "$P" feature/c --discard-changes --confirm "$(basename "$fc")"
 t ok   "volumes purge feature/x" theo volumes purge "$P" -w feature/x --confirm "$P-feature-x"
+t ok   "worktree prune --merged (dry run)" theo worktree prune "$P" --merged
+t ok   "dry run removed nothing" test -d "$fx"
 rm -rf "$fx"
 t ok   "reconcile (reports only)" theo reconcile "$P"
 t ok   "reconcile --apply" theo reconcile "$P" --apply

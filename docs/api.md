@@ -115,6 +115,16 @@ Events carry an `id` but are not replayed: after a reconnect the client refetche
 The server also polls Docker every 5 s for changes made outside Theo, **only** while a client is connected
 and a tab said it is visible: `POST /events/focus` with `{"visible": true|false}` (204).
 
+### `GET /proxy`, `POST /proxy/start` `{port?}`, `POST /proxy/stop`
+The interface's own `theo proxy` (see docs/cli/proxy.md). `GET` answers
+`{running, managed, port, url?, pid?, autostart, error?}`: `running` is true while any proxy listens (this server's,
+or one started with `theo proxy`, read from `proxy.json`), `managed` only for this server's, which it can stop.
+`start` listens on `127.0.0.1:{port}` (default 7080) and turns `autostart` on, so the next server starts it again;
+409 `proxy_running` when `theo proxy` already runs (it is used as it is), 409 `port_in_use` when the port is taken.
+`stop` stops this server's proxy and turns `autostart` off; 409 `proxy_external` for a proxy started with
+`theo proxy`. Both answer the new status and emit `state.changed` with `{}`. While its proxy runs the server does not
+stop on the idle timeout.
+
 ### `GET /fs/browse?path=&hidden=1`
 Directory picker for "add project" (decision for Q-027: server side listing, directories only).
 Never returns file names or contents; default path is the user's home; any absolute path may be asked
@@ -173,7 +183,10 @@ containers. There is no `yes`/force parameter.
 One call for the panel. For every worktree: the Git data, the instance `state`
 (`running`, `partial`, `unhealthy`, `stopped`, `absent`, `unknown`, from `engine.InstanceState`),
 `containers {running,total}`, `ports[]` (with `url`, `status` of `theo ports`), `warnings[]`
-(for instance `port-conflict`) and `busy` (`null` or `{operation_id, kind}`).
+(for instance `port-conflict`, or `compose-changed` with its `fix`), `owner` when the worktree has one,
+`proxy_urls[]` (`{service, url, default?, running}`) only while a proxy runs (section 4, `GET /proxy`), and `busy`
+(`null` or `{operation_id, kind}`). `GET .../worktrees` and `GET .../worktrees/{wt}` carry the same `owner` and
+`proxy_urls`.
 Docker is read once for all the instances of the request (two commands: the containers carrying a Compose label,
 then one `docker inspect` of them; see section 13), never `docker compose ps` per worktree and never
 `docker compose ls`; the answer is cached 2 s per project, and concurrent requests for a project share one
@@ -418,7 +431,9 @@ and the branch are never removed. There is no generic `force`.
 
 ### Lifecycle operations
 `POST .../{wt}/up` `{build?, profiles?, auto_ports?, env_files?, start_shared?}`, `POST .../{wt}/down`,
-`POST .../{wt}/restart` -> **202** with the operation and `Location: /api/v1/operations/{id}`.
+`POST .../{wt}/restart`, `POST .../{wt}/stop` -> **202** with the operation and `Location: /api/v1/operations/{id}`.
+`stop` stops the containers and keeps them, like `theo stop` (the panel's *Pause all* sends one per running
+instance).
 `up` does what `theo up` does (shared services, ports with optional `auto_ports` that is remembered by the
 instance, generated overlay, `docker compose up --detach`). Send `Idempotency-Key: <uuid>`: the same key from the
 same session within 10 minutes returns the same operation. A second change on the same instance answers 409 `busy`
