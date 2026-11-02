@@ -34,6 +34,31 @@ jobs:
         run: |
           go test -count=1 -v ./internal/acceptance 2>&1 | grep -E '^\s*(---|[a-z_]+_test.go:[0-9]+:)'
 
+  smoke:
+    # The whole examples/demo walk-through (scripts/smoke.sh) against the
+    # runner's real Docker daemon: about 100 checks, from project add to
+    # project remove --delete-worktrees, then no container or volume left.
+    # The same sequence then runs as scripts/smoke.ps1 under PowerShell 7
+    # (preinstalled on the runner); Windows PowerShell 5.1 is not covered.
+    name: Smoke (demo, real Docker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go build -o theo-bin ./cmd/theo
+      - run: docker version && docker compose version
+      - name: scripts/smoke.sh
+        # Keep the demo's images so the PowerShell run below reuses them.
+        env:
+          THEO_SMOKE_KEEP_IMAGES: "1"
+        run: scripts/smoke.sh ./theo-bin
+      - name: scripts/smoke.ps1 (PowerShell 7)
+        shell: pwsh
+        run: ./scripts/smoke.ps1 -Theo ./theo-bin
+
   web:
     name: Web interface (build is up to date)
     runs-on: ubuntu-latest

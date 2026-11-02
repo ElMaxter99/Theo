@@ -29,6 +29,15 @@ go test ./...
 
 Theo also runs on Windows and macOS, so check `GOOS=windows go vet ./...` and `GOOS=darwin go vet ./...` too, use `filepath` for paths, and never assume a shell: call `git` and `docker` directly.
 
+### Testing
+
+There are four kinds of tests; [docs/testing.md](docs/testing.md) explains each and what it needs:
+
+- **Unit**: `go test ./...` (fakes for Git and Compose, real temporary Git repositories in the CLI tests).
+- **Acceptance**: `go test -count=1 -v ./internal/acceptance`, the use cases and the demo guide against a real Docker daemon.
+- **Web interface**: `cd web && npm test`, `npm run test:e2e` (Playwright against the mock) and `npm run test:e2e:real` (against the real `theo serve`).
+- **Smoke battery**: `scripts/smoke.sh ./theo` (or `.\scripts\smoke.ps1 -Theo .\theo.exe` on Windows) walks `examples/demo` through every feature, about 100 checks, with an isolated `THEO_HOME` and full cleanup. It needs a Docker daemon and free host ports 8080 and 8081. CI runs it on Linux.
+
 Tests that start containers share one Docker daemon. Give your Theo project, Compose project and volume names a unique prefix, take host ports from `testutil.FreePort`, and always clean up in `t.Cleanup`.
 
 ## Layout
