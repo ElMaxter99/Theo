@@ -217,7 +217,7 @@ func TestOverviewFromTheSnapshotEqualsTheOnePerInstanceRead(t *testing.T) {
 		// The linked worktree runs; the main one does not.
 		e.c.raw("POST", "/api/v1/projects/ubapp/worktrees/"+e.wtID(e.linked)+"/up", nil, nil)
 		deadline := time.Now().Add(5 * time.Second)
-		for time.Now().Before(deadline) && !strings.Contains(overviewShape(t, e, "ubapp"), `"running"`) {
+		for time.Now().Before(deadline) && !strings.Contains(overviewShape(t, e, "ubapp"), `"state":"running"`) {
 			time.Sleep(50 * time.Millisecond)
 		}
 		psBefore := pc.ps.Load() // the operation itself may read the containers
