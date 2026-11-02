@@ -18,18 +18,38 @@ func FromStatus(r *engine.StatusReport) []Target {
 			if wt.Instance == nil {
 				continue
 			}
-			for _, port := range wt.Instance.Ports {
-				if port.Protocol != "tcp" || port.HostPort <= 0 {
-					continue
-				}
-				out = append(out, Target{
-					Project: p.Name, Worktree: wt.Path, Branch: wt.Branch, Main: wt.Kind == engine.KindMain,
-					ComposeProject: wt.Instance.ComposeProject, Service: port.Service,
-					ContainerPort: port.ContainerPort, HostIP: urlHost(port.URL), HostPort: port.HostPort,
-					Running: port.Status == engine.PortRunning,
-				})
-			}
+			out = append(out, InstanceTargets(Instance{
+				Project: p.Name, Worktree: wt.Path, Branch: wt.Branch, Main: wt.Kind == engine.KindMain,
+				ComposeProject: wt.Instance.ComposeProject,
+			}, wt.Instance.Ports)...)
 		}
+	}
+	return out
+}
+
+// Instance names one instance for InstanceTargets.
+type Instance struct {
+	Project        string // registered project name
+	Worktree       string // worktree path
+	Branch         string
+	Main           bool
+	ComposeProject string
+}
+
+// InstanceTargets lists the TCP ports of one instance as targets, from the
+// ports `theo status`, the web interface and MCP report.
+func InstanceTargets(in Instance, ports []engine.PortStatus) []Target {
+	var out []Target
+	for _, port := range ports {
+		if port.Protocol != "tcp" || port.HostPort <= 0 {
+			continue
+		}
+		out = append(out, Target{
+			Project: in.Project, Worktree: in.Worktree, Branch: in.Branch, Main: in.Main,
+			ComposeProject: in.ComposeProject, Service: port.Service,
+			ContainerPort: port.ContainerPort, HostIP: urlHost(port.URL), HostPort: port.HostPort,
+			Running: port.Status == engine.PortRunning,
+		})
 	}
 	return out
 }
@@ -83,4 +103,36 @@ func AddURLs(r *engine.StatusReport, port int) {
 			wt.Instance.ProxyURLs = urls
 		}
 	}
+}
+
+// Link is an address the proxy serves a service of an instance on.
+type Link struct {
+	Service string `json:"service"`
+	URL     string `json:"url"`
+	Default bool   `json:"default,omitempty"` // also reachable as <instance>.<project>
+	Running bool   `json:"running"`
+}
+
+// Links returns the proxy addresses of the instances in targets, for a
+// proxy on port, grouped by worktree path. The short form comes first, then
+// one link per service.
+func Links(targets []Target, port int) map[string][]Link {
+	out := map[string][]Link{}
+	for _, rt := range BuildTable(targets, port).Routes {
+		out[rt.Worktree] = append(out[rt.Worktree], Link{Service: rt.Service, URL: rt.URL, Default: rt.Default, Running: rt.Running})
+	}
+	return out
+}
+
+// RunningPort returns the port of the proxy recorded in Theo's data
+// directory dir, if one is listening there now.
+func RunningPort(dir string) (int, bool) {
+	if dir == "" {
+		return 0, false
+	}
+	s, ok := Running(dir)
+	if !ok {
+		return 0, false
+	}
+	return s.Port, true
 }

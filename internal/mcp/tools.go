@@ -14,6 +14,8 @@ import (
 	"github.com/ElMaxter99/Theo/internal/engine"
 	"github.com/ElMaxter99/Theo/internal/execx"
 	"github.com/ElMaxter99/Theo/internal/instances"
+	"github.com/ElMaxter99/Theo/internal/proxy"
+	"github.com/ElMaxter99/Theo/internal/registry"
 )
 
 // Parameters shared by several tools.
@@ -147,6 +149,13 @@ func allTools() []*tool {
 			description: "Every project (or one) and its worktrees: branch, kind, uncommitted changes, instance state and services, ports with URLs, settings, and warnings.",
 			params:      []param{{name: "project", kind: "string", description: "Only this project. Empty: all of them."}},
 			run:         runStatus,
+		},
+		{
+			name: "proxy_routes", title: "Local domains", readOnly: true,
+			description: "The names `theo proxy` serves each instance on (http://<service>.<instance>.<project>.localhost:7080, and <instance>.<project> for its web, app, api or frontend service), " +
+				"with the host port behind each one and whether it runs. The names never change while the worktree exists, unlike host ports. proxy_running says whether a proxy is listening now; the user starts it with `theo proxy` or from the web interface.",
+			params: []param{{name: "project", kind: "string", description: "Only this project. Empty: all of them."}},
+			run:    runProxyRoutes,
 		},
 		{
 			name: "env_list", title: "List instance variables", readOnly: true,
@@ -485,11 +494,14 @@ func runPorts(ctx context.Context, s *Server, a args) (*result, error) {
 			summary += fmt.Sprintf("\n%d port(s) in use: up with auto_ports=true uses other ones.", n)
 		}
 	}
+	links := s.proxyLinks(inst, views)
+	summary += linksText(links)
 	return ok(summary, struct {
 		*engine.Instance
-		Ports   []portView `json:"ports"`
-		Overlay string     `json:"overlay,omitempty"`
-	}{inst, views, plan.Overlay}), nil
+		Ports     []portView   `json:"ports"`
+		ProxyURLs []proxy.Link `json:"proxy_urls,omitempty"`
+		Overlay   string       `json:"overlay,omitempty"`
+	}{inst, views, links, plan.Overlay}), nil
 }
 
 func runPS(ctx context.Context, s *Server, a args) (*result, error) {
@@ -579,6 +591,9 @@ func runStatus(ctx context.Context, s *Server, a args) (*result, error) {
 	if err != nil {
 		return nil, err
 	}
+	if port, running := s.proxyPort(); running {
+		proxy.AddURLs(report, port)
+	}
 	var lines []string
 	for _, p := range report.Projects {
 		for _, wt := range p.Worktrees {
@@ -590,7 +605,16 @@ func runStatus(ctx context.Context, s *Server, a args) (*result, error) {
 			if ref == "" {
 				ref = wt.Path
 			}
-			lines = append(lines, fmt.Sprintf("- %s · %s: %s", p.Name, ref, state))
+			line := fmt.Sprintf("- %s · %s: %s", p.Name, ref, state)
+			if wt.Instance != nil && len(wt.Instance.ProxyURLs) > 0 {
+				line += " (" + wt.Instance.ProxyURLs[0] + ")"
+			}
+			for _, w := range wt.Warnings {
+				if w.Kind == engine.WarnComposeChanged {
+					line += "; " + w.Message
+				}
+			}
+			lines = append(lines, line)
 		}
 	}
 	summary := "No projects registered."
@@ -880,6 +904,8 @@ func runUp(ctx context.Context, s *Server, a args) (*result, error) {
 				summary += "\nPorts:\n" + portLines(views)
 			}
 		}
+		links := s.proxyLinks(inst, views)
+		summary += linksText(links)
 		for _, n := range rep.notes {
 			summary += "\nNote: " + n
 		}
@@ -892,7 +918,7 @@ func runUp(ctx context.Context, s *Server, a args) (*result, error) {
 		}
 		return ok(summary, map[string]any{
 			"project": inst.Project, "workspace": inst.Workspace, "branch": inst.Branch, "compose_project": inst.Compose,
-			"state": state, "ports": nonNil(views), "warnings": nonNil(rep.warnings), "notes": nonNil(rep.notes),
+			"state": state, "ports": nonNil(views), "proxy_urls": nonNil(links), "warnings": nonNil(rep.warnings), "notes": nonNil(rep.notes),
 		}), nil
 	})
 }
@@ -1058,4 +1084,78 @@ func nonNil[T any](list []T) []T {
 		return []T{}
 	}
 	return list
+}
+
+// --- local domains ---
+
+// proxyPort is the port of the running `theo proxy`, if one runs.
+func (s *Server) proxyPort() (int, bool) {
+	if s.opts.ProxyPort != nil {
+		return s.opts.ProxyPort()
+	}
+	dir, err := registry.DefaultDir()
+	if err != nil {
+		return 0, false
+	}
+	return proxy.RunningPort(dir)
+}
+
+// proxyLinks are the proxy addresses of an instance while a proxy runs; nil
+// otherwise.
+func (s *Server) proxyLinks(inst *engine.Instance, views []portView) []proxy.Link {
+	port, running := s.proxyPort()
+	if !running || len(views) == 0 {
+		return nil
+	}
+	statuses := make([]engine.PortStatus, 0, len(views))
+	for _, v := range views {
+		host := v.Running
+		if host == 0 {
+			host = v.Effective
+		}
+		statuses = append(statuses, engine.PortStatus{Service: v.Service, ContainerPort: v.Target, Protocol: v.Protocol, HostPort: host, URL: v.URL, Status: v.Status})
+	}
+	targets := proxy.InstanceTargets(proxy.Instance{
+		Project: inst.Project, Worktree: inst.Workspace, Branch: inst.Branch, Main: inst.Main, ComposeProject: inst.Compose,
+	}, statuses)
+	return proxy.Links(targets, port)[inst.Workspace]
+}
+
+func linksText(links []proxy.Link) string {
+	if len(links) == 0 {
+		return ""
+	}
+	var lines []string
+	for _, l := range links {
+		lines = append(lines, fmt.Sprintf("- %s %s", l.Service, l.URL))
+	}
+	return "\nLocal domains (theo proxy):\n" + strings.Join(lines, "\n")
+}
+
+func runProxyRoutes(ctx context.Context, s *Server, a args) (*result, error) {
+	port, running := s.proxyPort()
+	if !running {
+		port = proxy.DefaultPort
+	}
+	targets, err := proxy.EngineSource(s.opts.Engine, a.str("project"))(ctx)
+	if err != nil {
+		return nil, err
+	}
+	routes := proxy.BuildTable(targets, port).Routes
+	var lines []string
+	for _, r := range routes {
+		state := "stopped"
+		if r.Running {
+			state = "running"
+		}
+		lines = append(lines, fmt.Sprintf("- %s -> %s (%s · %s · %s, %s)", r.URL, r.Target, r.Project, r.Instance, r.Service, state))
+	}
+	summary := "No routes: no instance publishes a TCP port on the host."
+	if len(lines) > 0 {
+		summary = "Routes:\n" + strings.Join(lines, "\n")
+	}
+	if !running {
+		summary = fmt.Sprintf("No proxy is running, so these names do not answer yet; the user starts it with `theo proxy` (port %d) or from the web interface.\n", port) + summary
+	}
+	return ok(summary, map[string]any{"port": port, "proxy_running": running, "routes": nonNil(routes)}), nil
 }

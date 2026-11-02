@@ -160,7 +160,7 @@ func TestToolsListAndAnnotations(t *testing.T) {
 	tools := toolsByName(t, New(Options{}))
 	for _, name := range []string{"list_projects", "project_show", "list_worktrees", "list_branches", "add_worktree", "remove_worktree",
 		"services", "ports", "up", "down", "restart", "stop", "start", "ps", "logs", "status", "env_list", "env_set", "env_unset",
-		"instance_show", "instance_config", "history", "reconcile", "volumes_list", "explain"} {
+		"instance_show", "instance_config", "history", "reconcile", "volumes_list", "explain", "proxy_routes"} {
 		tl, ok := tools[name]
 		if !ok {
 			t.Errorf("missing tool %s", name)
