@@ -45,6 +45,7 @@ document, indented, followed by a newline.
 | `volumes purge` | `{"compose_project", "deleted": […]}` |
 | `instance config` | the instance and `"config"`: the resolved Compose configuration as text |
 | `status` | see [status.md](status.md) |
+| `proxy routes` | `{"port", "proxy_running", "routes": […]}`, see [proxy.md](proxy.md) |
 
 Rules:
 

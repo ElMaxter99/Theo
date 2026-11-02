@@ -73,6 +73,9 @@ Fields marked *optional* are left out when they do not apply.
                 "url": "http://localhost:8080", // optional: TCP ports with a known host port
                 "status": "running"       //   as in `theo ports`: free | running | in use | kept | reassigned | random | range
               }
+            ],
+            "proxy_urls": [               //   optional: only while `theo proxy` runs (see proxy.md)
+              "http://main.shop.localhost:7080", "http://api.main.shop.localhost:7080"
             ]
           },
           "settings": {                   // optional: same condition as "instance"
