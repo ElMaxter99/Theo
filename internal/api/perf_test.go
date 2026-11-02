@@ -198,6 +198,12 @@ func overviewShape(t *testing.T, e *env, project string) string {
 	}
 	for i := range ov.Worktrees {
 		ov.Worktrees[i].Compose = ""
+		// Whether a host port is free depends on the machine running the test (another process may hold it),
+		// not on how Docker is read, which is what is compared here.
+		for j := range ov.Worktrees[i].Ports {
+			ov.Worktrees[i].Ports[j].Status = ""
+		}
+		ov.Worktrees[i].Warnings = nil
 	}
 	b, _ := json.Marshal(ov)
 	return string(b)
