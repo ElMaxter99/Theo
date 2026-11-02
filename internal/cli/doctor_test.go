@@ -31,6 +31,16 @@ func TestDoctorReportAndExitCode(t *testing.T) {
 			t.Errorf("no %s check in %v", id, ids)
 		}
 	}
+	// With docker installed, the engine behind it is named, even when the daemon is down.
+	var dockerOK bool
+	for _, c := range report.Checks {
+		if c.ID == "docker" && c.Status == engine.StatusOK {
+			dockerOK = true
+		}
+	}
+	if dockerOK && (!ids["engine"] || report.Engine == nil || report.Engine.Kind == "") {
+		t.Errorf("docker is installed but no engine: %v %+v", ids, report.Engine)
+	}
 	if (code == ExitOK) != report.OK {
 		t.Errorf("exit code %d but ok = %v (%s)", code, report.OK, stderr)
 	}

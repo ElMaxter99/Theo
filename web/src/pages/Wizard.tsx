@@ -252,7 +252,7 @@ export function Wizard({ project }: { project: string }) {
           <ul class="summary-list">
             <li>{t.wizard.doCreate(chosen, mode === "new", from || "HEAD")}</li>
             <li>{folder.trim() ? t.wizard.doFolder(folder.trim()) : t.wizard.doFolderAuto}</li>
-            {startNow ? <li>{t.wizard.doPorts.replace("automatically", portChoice === "auto" ? "automatically" : "only when needed")}</li> : null}
+            {startNow ? <li>{portChoice === "auto" ? t.wizard.doPorts : t.wizard.doPortsIfNeeded}</li> : null}
             {neutralize && fixedNames.length > 0 ? <li>{t.wizard.doNeutralize}</li> : null}
             <li>{endsWithStart ? t.wizard.doStart : t.wizard.doNoStart}</li>
           </ul>

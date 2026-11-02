@@ -7,7 +7,7 @@ import (
 
 func TestAugmentPath(t *testing.T) {
 	got := AugmentPath("/usr/bin:/bin", "darwin", "/Users/a")
-	for _, want := range []string{"/opt/homebrew/bin", "/usr/local/bin", "/Users/a/.docker/bin", "/Applications/Docker.app/Contents/Resources/bin"} {
+	for _, want := range []string{"/opt/homebrew/bin", "/usr/local/bin", "/Users/a/.docker/bin", "/Users/a/.orbstack/bin", "/Applications/Docker.app/Contents/Resources/bin"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %s in %s", want, got)
 		}

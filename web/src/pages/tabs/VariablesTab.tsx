@@ -115,8 +115,8 @@ function VarForm({ base, existing, onClose, onSaved }: { base: string; existing:
   });
   const submit = (e: Event) => {
     e.preventDefault();
-    if (!name.trim()) { setNameErr(t.vars.nameRequired); return; }
-    if (!validEnvName(name)) { setNameErr(t.vars.nameInvalid); return; }
+    const problem = !name.trim() ? t.vars.nameRequired : !validEnvName(name) ? t.vars.nameInvalid : "";
+    if (problem) { setNameErr(problem); document.getElementById("var-name")?.focus(); return; }
     setNameErr("");
     void save.run();
   };

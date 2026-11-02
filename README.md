@@ -58,6 +58,7 @@ Run `theo help` for the full list. Every command that prints data supports `--js
 | Compose files | which files and env files are used | [compose-files](docs/cli/compose-files.md) |
 | Worktrees | `worktrees`, `branches`, `worktree add\|remove`, `up`, `down`, `restart`, `ps`, `logs` | [worktrees](docs/cli/worktrees.md) |
 | Host ports | `ports`, `up --auto-ports` | [ports](docs/cli/ports.md) |
+| Local domains | `proxy`, `proxy routes`: `http://<service>.<instance>.<project>.localhost:7080` | [proxy](docs/cli/proxy.md) |
 | Instance settings | `env set\|unset\|list`, `instance set\|show\|config`, `history` | [instance-settings](docs/cli/instance-settings.md) |
 | Volumes | `volumes`, `volumes purge\|backup\|restore\|clone` | [volumes](docs/cli/volumes.md) |
 | Shared services | `shared add\|use\|up\|status\|down` | [shared](docs/cli/shared.md) |
@@ -70,6 +71,7 @@ Run `theo help` for the full list. Every command that prints data supports `--js
 | Env precedence | which value wins | [env-precedence](docs/cli/env-precedence.md) |
 | Web interface | `ui`, `serve` | [ui](docs/cli/ui.md) |
 | Desktop app | the same interface in a native window (`theo-desktop`) | [desktop](docs/cli/desktop.md) |
+| AI agents (MCP) | `mcp [--read-only] [--owner <name>]` | [mcp](docs/cli/mcp.md) |
 
 ## Safety principles
 
@@ -87,6 +89,7 @@ Theo keeps its registry and data in `theo/` inside your user configuration direc
 - Linux: the reference platform for the Docker-based tests.
 - macOS and Windows: CI builds, vets and runs the tests that need no Docker daemon. Anything that starts containers is unverified there, so please report problems.
 - On Windows, use a Docker daemon running Linux containers (Docker Desktop with WSL 2). Paths with spaces and accents are supported.
+- Colima, OrbStack, Rancher Desktop (dockerd mode) and Podman (Docker's CLI on Podman's socket) are expected to work but untested; `theo doctor` names the engine and its differences. See [engines](docs/cli/engines.md).
 - `--auto-ports` and per-instance settings need Docker Compose 2.24.4 or later.
 
 ## Development

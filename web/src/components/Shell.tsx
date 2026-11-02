@@ -10,16 +10,24 @@ import { Banner } from "./ui.tsx";
 import { OpsIndicator } from "../ops/Operations.tsx";
 import { useHealth } from "../lib/health.ts";
 import { Icon } from "./Icon.tsx";
+import { LanguageSelect } from "./LanguageSelect.tsx";
+import { startFocusGuard } from "../lib/focusguard.ts";
 
 export function Shell({ meta, onRefresh, children }: { meta: Meta | undefined; onRefresh: () => void; children: ComponentChildren }) {
   const route = useRoute();
   const [theme, setTheme] = useState<ThemePref>(readTheme());
   const first = useRef(true);
+  const appRef = useRef<HTMLDivElement>(null);
+  useEffect(() => (appRef.current ? startFocusGuard(appRef.current) : undefined), []);
 
   // After a navigation, move focus to the page heading so keyboard and screen-reader users land on the new content.
   useEffect(() => {
     if (first.current) { first.current = false; return; }
+    const before = document.activeElement;
     const id = window.setTimeout(() => {
+      // The user already moved on with the keyboard (Tab right after the page appeared): do not pull focus back.
+      const now = document.activeElement;
+      if (now && now !== before && now !== document.body && now.isConnected) return;
       const h = document.querySelector<HTMLElement>("main h1");
       if (h) h.focus();
       else document.getElementById("main")?.focus();
@@ -43,7 +51,7 @@ export function Shell({ meta, onRefresh, children }: { meta: Meta | undefined; o
   const gitDown = meta && !meta.git.available;
 
   return (
-    <div class="app">
+    <div class="app" ref={appRef}>
       <a class="skip-link" href="#main" onClick={(e) => { e.preventDefault(); document.getElementById("main")?.focus(); }}>{t.app.skip}</a>
       <header class="app-header">
         <a class="brand" href={href.projects()}>
@@ -60,6 +68,10 @@ export function Shell({ meta, onRefresh, children }: { meta: Meta | undefined; o
             <option value="dark">{t.app.themeDark}</option>
           </select>
         </div>
+        <div class="row">
+          <label for="lang-select" class="small">{t.app.language}</label>
+          <LanguageSelect id="lang-select" />
+        </div>
       </header>
       <nav class="app-nav" aria-label={t.app.nav}>
         <ul>
@@ -68,7 +80,7 @@ export function Shell({ meta, onRefresh, children }: { meta: Meta | undefined; o
             <a href={href.health()} aria-current={route.name === "health" ? "page" : undefined} data-testid="nav-health">
               <Icon name={healthCount === undefined ? "dot" : healthCount > 0 ? "warn" : healthDocker ? "unknown" : "ok"} />
               <span>{t.nav.health}</span>
-              {healthCount !== undefined ? <span class="count-pill" data-testid="health-count">{healthCount}<span class="sr-only"> {healthCount === 1 ? "finding" : "findings"}{healthDocker ? ", Docker unavailable" : ""}</span></span> : null}
+              {healthCount !== undefined ? <span class="count-pill" data-testid="health-count">{healthCount}<span class="sr-only"> {t.nav.healthPillSr(healthCount, !!healthDocker)}</span></span> : null}
               {healthCount === undefined && health.error ? <span class="sr-only"> {t.reconcile.loadError}</span> : null}
             </a>
           </li>

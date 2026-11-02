@@ -224,6 +224,14 @@ func (e *Engine) AddWorktree(ctx context.Context, project, branch string, opts A
 	if inside := containing(list, path); inside != "" {
 		return nil, fmt.Errorf("%s is inside the worktree %s; choose a directory outside the project's worktrees", path, inside)
 	}
+	if leftover, err := os.ReadDir(path); err == nil && len(leftover) > 0 {
+		// Git refuses a non-empty target with a bare "already exists". The usual
+		// cause is a worktree of a removed project with the same name: removing a
+		// project never deletes its worktrees.
+		return nil, fmt.Errorf("%s already exists and is not empty, so Git cannot create the worktree there. "+
+			"It is usually left from an earlier worktree of a project named %q that was removed (`theo project remove` deletes no files). "+
+			"Delete that directory if you no longer need it, or choose another one with --path", path, p.Name)
+	}
 	if !execx.Explaining() { // explaining creates nothing, not even the parent directory
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return nil, err

@@ -1,9 +1,13 @@
-// All user-visible text lives here (i18n-ready, Q-029). Texts are English for now, like the CLI.
-// Functions are used for texts with parameters; plurals are handled by `plural`.
+// All user-visible text lives here (Q-029). English is the default catalog (`en`, below); the Spanish catalog is
+// strings.es.ts and must have exactly the same shape (`Catalog`): a missing or extra key fails `npm run check`.
+// Functions are used for texts with parameters; plurals are handled by `plural`, numbers by `num` (both lib/locale.ts).
+// `t` is the catalog of the language resolved when the page loaded; changing the language reloads the page.
+import { lang, num, plural } from "./lib/locale.ts";
+import { es } from "./strings.es.ts";
 
-export const plural = (n: number, one: string, many: string = one + "s"): string => `${n} ${n === 1 ? one : many}`;
+export { plural };
 
-export const t = {
+const en = {
   app: {
     name: "Theo",
     skip: "Skip to content",
@@ -41,6 +45,16 @@ export const t = {
     serverGoneBody: "The local server may have stopped (it closes by itself after 15 minutes without use). Run the command below to start it again.",
     liveRegion: "Status messages",
     copied: "Copied",
+    unreachable: "Theo is not reachable.",
+    breadcrumb: "Breadcrumb",
+    notFound: "Not found",
+    notFoundTitle: "Page not found",
+    notFoundLink: "Go to the projects",
+    language: "Language",
+    langSystem: "System",
+    langEn: "English",
+    langEs: "Español",
+    languageHint: "Changing the language reloads the page.",
   },
   banner: {
     dockerTitle: "Docker is not available",
@@ -68,7 +82,7 @@ export const t = {
     add: "Add project",
     open: "Open",
     worktrees: (n: number) => plural(n, "worktree"),
-    running: (n: number) => `${n} running`,
+    running: (n: number) => `${num(n)} running`,
     noInstances: "none running",
     settings: "Project settings",
     unregister: "Unregister",
@@ -263,7 +277,7 @@ export const t = {
     resume: "Resume",
     clear: "Clear",
     download: "Download",
-    lines: (shown: number, total: number) => (shown === total ? `${plural(total, "line")}` : `${shown} of ${plural(total, "line")} match`),
+    lines: (shown: number, total: number) => (shown === total ? plural(total, "line") : `${num(shown)} of ${plural(total, "line")} match`),
     connecting: "Connecting…",
     live: "Live",
     paused: "Paused: new lines are kept but not shown.",
@@ -334,6 +348,7 @@ export const t = {
     healthCount: (n: number) => (n === 0 ? "Health: no findings" : `Health: ${plural(n, "finding")}`),
     healthDocker: "Health: Docker unavailable",
     healthUnknown: "Health",
+    healthPillSr: (n: number, docker: boolean) => `${n === 1 ? "finding" : "findings"}${docker ? ", Docker unavailable" : ""}`,
     settings: "Settings",
   },
   shared: {
@@ -429,8 +444,8 @@ export const t = {
     dockerTitle: "Docker could not be asked",
     dockerBody: "The findings that need Docker are missing from this list.",
     none: "No differences found. What Theo recorded matches what exists.",
-    summary: (n: number) => (n === 0 ? "No findings" : `${n} ${n === 1 ? "finding" : "findings"}`),
-    group: (kind: string, n: number) => `${kind} (${n})`,
+    summary: (n: number) => (n === 0 ? "No findings" : plural(n, "finding")),
+    group: (kind: string, n: number) => `${kind} (${num(n)})`,
     colSubject: "What",
     colDetail: "Detail",
     colFix: "What to do",
@@ -466,7 +481,7 @@ export const t = {
     loadError: "Could not load the diagnostics",
     doctorTitle: "Checks",
     doctorIntro: "What Theo needs to work, and how to fix what is wrong.",
-    overall: (ok: boolean) => (ok ? "Everything Theo needs works." : "Something Theo needs does not work."),
+    overall: (ok: boolean): string => (ok ? "Everything Theo needs works." : "Something Theo needs does not work."),
     colCheck: "Check",
     colStatus: "Status",
     colDetail: "Detail",
@@ -518,7 +533,7 @@ export const t = {
     error: "Failed",
     none: "Nothing recorded yet.",
     more: "Show more",
-    shown: (a: number, b: number) => `Showing ${a} of ${b}`,
+    shown: (a: number, b: number) => `Showing ${num(a)} of ${num(b)}`,
   },
   ops: {
     indicator: (n: number) => (n === 0 ? "No operations running" : `${plural(n, "operation")} running`),
@@ -591,6 +606,7 @@ export const t = {
     doFolder: (p: string) => `Put it in ${p}`,
     doFolderAuto: "Let Theo choose the folder",
     doPorts: "Assign free ports automatically",
+    doPortsIfNeeded: "Assign free ports only when needed",
     doStart: "Start the instance",
     doNoStart: "Do not start the instance now",
     startNow: "Start the instance now",
@@ -633,3 +649,11 @@ export const t = {
     cancelDefault: "Cancel is the safe choice. Press Escape to cancel.",
   },
 };
+
+/** The shape every catalog must have. */
+export type Catalog = typeof en;
+
+export { en };
+
+/** The catalog of the active language. */
+export const t: Catalog = lang === "es" ? es : en;

@@ -76,6 +76,9 @@ type InstanceStatus struct {
 	Counts   ServiceCounts   `json:"counts"`
 	Services []ServiceStatus `json:"services"`
 	Ports    []PortStatus    `json:"ports"`
+	// ProxyURLs are the addresses `theo proxy` serves the instance on. Only
+	// set while a proxy runs (see docs/cli/proxy.md); absent otherwise.
+	ProxyURLs []string `json:"proxy_urls,omitempty"`
 }
 
 // ServiceCounts counts the services of an instance by state. Total is the

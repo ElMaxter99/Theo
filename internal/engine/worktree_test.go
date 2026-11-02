@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -67,6 +68,34 @@ func TestAddWorktreeUsesTheProjectDirectoryAndRefusesCheckedOutBranches(t *testi
 
 	if _, err := e.AddWorktree(ctx, "app", "x", AddWorktreeOptions{Path: filepath.Join(feature, "sub")}); err == nil || !strings.Contains(err.Error(), "inside the worktree") {
 		t.Errorf("a path inside another worktree must be refused: %v", err)
+	}
+}
+
+func TestAddWorktreeRefusesALeftoverDirectory(t *testing.T) {
+	e, g, _ := worktreeFixture(t)
+	ctx := context.Background()
+	// An empty directory is fine for Git, so Theo lets it through.
+	empty := filepath.Join(e.dataDir, "worktrees", "app", "feature-y")
+	if err := os.MkdirAll(empty, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.AddWorktree(ctx, "app", "feature/y", AddWorktreeOptions{NewBranch: true}); err != nil {
+		t.Fatalf("an empty target must be accepted: %v", err)
+	}
+	left := filepath.Join(e.dataDir, "worktrees", "app", "feature-x")
+	if err := os.MkdirAll(left, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(left, "compose.yaml"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	g.calls = nil
+	_, err := e.AddWorktree(ctx, "app", "feature/x", AddWorktreeOptions{NewBranch: true})
+	if err == nil || !strings.Contains(err.Error(), left) || !strings.Contains(err.Error(), "--path") {
+		t.Errorf("a non-empty leftover directory must be refused, naming it and the way out: %v", err)
+	}
+	if len(g.calls) != 0 {
+		t.Errorf("git was called: %v", g.calls)
 	}
 }
 
