@@ -15,7 +15,8 @@ func darwinToolDirs(home string) []string {
 		"/Applications/Docker.app/Contents/Resources/bin",
 	}
 	if home != "" {
-		dirs = append(dirs, path.Join(home, ".docker", "bin"), path.Join(home, ".rd", "bin"))
+		// Docker Desktop, Rancher Desktop and OrbStack keep their docker CLI here.
+		dirs = append(dirs, path.Join(home, ".docker", "bin"), path.Join(home, ".rd", "bin"), path.Join(home, ".orbstack", "bin"))
 	}
 	return dirs
 }

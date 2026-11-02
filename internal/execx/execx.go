@@ -58,9 +58,9 @@ func RunChange(ctx context.Context, dir, name string, args ...string) ([]byte, e
 }
 
 func run(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
-	path, err := exec.LookPath(name)
+	path, err := lookPath(name)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", name, ErrNotFound)
+		return nil, err
 	}
 
 	lim := limitsOf(ctx)
@@ -168,9 +168,9 @@ func StreamInteractive(ctx context.Context, dir string, stdin io.Reader, stdout,
 }
 
 func stream(ctx context.Context, dir string, stdin io.Reader, stdout, stderr io.Writer, name string, args ...string) error {
-	path, err := exec.LookPath(name)
+	path, err := lookPath(name)
 	if err != nil {
-		return fmt.Errorf("%s: %w", name, ErrNotFound)
+		return err
 	}
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Dir = dir
