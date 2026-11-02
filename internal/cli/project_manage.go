@@ -33,6 +33,13 @@ Projects and Compose files:
                                                while instances have containers, unless --yes.
                                                --forget-records also drops Theo's settings, port
                                                reservations and generated files (history stays)
+  project remove <name> --delete-worktrees --confirm <name> [--discard-changes] [--forget-records]
+                                               Also delete the project's linked worktrees and
+                                               clones from disk. Refused while any instance has
+                                               containers (even with --yes), and for worktrees
+                                               with uncommitted/untracked files unless
+                                               --discard-changes. The main worktree, branches
+                                               and volumes are never deleted
   project set <name> --compose-file <f> [--compose-file <f>...] | --default-compose-files
                                                Compose files of the project, relative to each
                                                worktree, in the order of docker compose -f A -f B
@@ -111,6 +118,9 @@ func runProjectRemove(e *engine.Engine, args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("project remove", flag.ContinueOnError)
 	yes := fs.Bool("yes", false, "remove although instances have containers")
 	forget := fs.Bool("forget-records", false, "also drop Theo's settings, port reservations and generated files for the project")
+	deleteWT := fs.Bool("delete-worktrees", false, "also delete the project's linked worktrees and clones from disk (needs --confirm <name>)")
+	discard := fs.Bool("discard-changes", false, "with --delete-worktrees: also delete worktrees with uncommitted or untracked files, which are lost")
+	confirm := fs.String("confirm", "", "with --delete-worktrees: the project name, to confirm")
 	asJSON := fs.Bool("json", false, "print JSON")
 	pos, err := parse(fs, args)
 	if err != nil {
@@ -119,10 +129,16 @@ func runProjectRemove(e *engine.Engine, args []string, stdout io.Writer) error {
 	if len(pos) != 1 {
 		return usageErrorf("project remove needs exactly one project name")
 	}
-	res, err := e.RemoveProjectChecked(context.Background(), pos[0], engine.RemoveProjectOptions{Yes: *yes, ForgetRecords: *forget})
+	if !*deleteWT && (*discard || *confirm != "") {
+		return usageErrorf("--discard-changes and --confirm only apply with --delete-worktrees")
+	}
+	res, err := e.RemoveProjectChecked(context.Background(), pos[0], engine.RemoveProjectOptions{Yes: *yes, ForgetRecords: *forget,
+		DeleteWorktrees: *deleteWT, DiscardChanges: *discard, Confirm: *confirm})
 	var busy *engine.ContainersError
 	removed := err == nil
-	if res == nil || (err != nil && !errors.As(err, &busy)) {
+	// With --delete-worktrees every refusal comes after the listing, which
+	// shows what would be deleted.
+	if res == nil || (err != nil && !errors.As(err, &busy) && !*deleteWT) {
 		return err
 	}
 	if *asJSON {
@@ -135,24 +151,58 @@ func runProjectRemove(e *engine.Engine, args []string, stdout io.Writer) error {
 		}
 		return err
 	}
-	printResources(stdout, res, *forget, removed)
+	printResources(stdout, res, *forget, removed, *deleteWT)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "\nRemoved project %q from the registry. Its files, containers and volumes were not touched (%s).\n", res.Project, res.Path)
+	if *deleteWT {
+		fmt.Fprintf(stdout, "\nDeleted %d worktree(s) and clone(s) of %q from disk; its branches and volumes were kept.\n", len(res.Deleted), res.Project)
+		fmt.Fprintf(stdout, "Removed project %q from the registry. Its main worktree, containers and volumes were not touched (%s).\n", res.Project, res.Path)
+	} else {
+		fmt.Fprintf(stdout, "\nRemoved project %q from the registry. Its files, containers and volumes were not touched (%s).\n", res.Project, res.Path)
+	}
 	if *forget {
 		fmt.Fprintln(stdout, "Theo's own settings, port reservations and generated files for it were forgotten; the history stays.")
 	}
 	return nil
 }
 
-// printResources says what keeps existing after a project is removed.
-func printResources(w io.Writer, res *engine.ProjectResources, forget, removed bool) {
+// printResources says what keeps existing after a project is removed and,
+// with --delete-worktrees, which worktrees are deleted from disk.
+func printResources(w io.Writer, res *engine.ProjectResources, forget, removed, deleteWT bool) {
 	verb := "stays"
 	if !removed {
 		verb = "would stay"
 	}
-	fmt.Fprintf(w, "Project %q (%s). Removing it from the registry deletes nothing; this %s:\n", res.Project, res.Path, verb)
+	deleting := map[string]bool{}
+	if deleteWT {
+		del := "would be deleted"
+		if removed {
+			del = "deleted"
+		}
+		fmt.Fprintf(w, "Project %q (%s). With --delete-worktrees these worktrees and clones %s from disk (their branches and volumes stay):\n", res.Project, res.Path, del)
+		if len(res.ToDelete) == 0 {
+			fmt.Fprintln(w, "  none")
+		}
+		for _, d := range res.ToDelete {
+			deleting[d.Path] = true
+			ref := d.Kind
+			if d.Branch != "" {
+				ref += ", " + d.Branch
+			}
+			state := "clean"
+			if len(d.Changes) > 0 {
+				state = fmt.Sprintf("%d uncommitted or untracked change(s), lost if deleted", len(d.Changes))
+			}
+			fmt.Fprintf(w, "  %s (%s) %s\n", d.Path, ref, state)
+			for _, c := range d.Changes {
+				fmt.Fprintf(w, "      %s\n", c)
+			}
+		}
+		fmt.Fprintf(w, "Everything else %s:\n", verb)
+	} else {
+		fmt.Fprintf(w, "Project %q (%s). Removing it from the registry deletes nothing; this %s:\n", res.Project, res.Path, verb)
+	}
 	if res.DockerError != "" {
 		fmt.Fprintf(w, "  Docker could not be checked, so containers and volumes are unknown: %s\n", firstLine(res.DockerError))
 	}
@@ -166,7 +216,16 @@ func printResources(w io.Writer, res *engine.ProjectResources, forget, removed b
 			fmt.Fprintf(w, "    %s\n", it)
 		}
 	}
-	section("worktrees on disk", res.Worktrees)
+	var kept []string
+	for _, wt := range res.Worktrees {
+		if !deleting[wt] {
+			kept = append(kept, wt)
+		}
+	}
+	section("worktrees on disk", kept)
+	if n := len(kept) - 1; n > 0 && !deleteWT {
+		fmt.Fprintf(w, "    (--delete-worktrees --confirm %s would also delete the other %d worktree(s) and clone(s))\n", res.Project, n)
+	}
 	stacks := make([]string, len(res.Stacks))
 	for i, s := range res.Stacks {
 		stacks[i] = fmt.Sprintf("%s (%s) in %s", s.Name, s.Status, s.Worktree)

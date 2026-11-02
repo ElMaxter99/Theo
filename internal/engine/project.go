@@ -269,6 +269,12 @@ type ProjectResources struct {
 	// DockerError is set when Docker could not be asked: the containers and
 	// volumes are then unknown.
 	DockerError string `json:"docker_error,omitempty"`
+	// ToDelete are the linked worktrees and clones that DeleteWorktrees
+	// deletes (or would delete), with their uncommitted changes. Only set
+	// when the removal was asked to delete them.
+	ToDelete []DeletableWorkspace `json:"to_delete,omitempty"`
+	// Deleted are the directories that were deleted from disk.
+	Deleted []string `json:"deleted,omitempty"`
 
 	workspaces []string
 }
@@ -314,7 +320,7 @@ func (e *Engine) InspectProject(ctx context.Context, name string) (*ProjectResou
 		names[ws][n] = true
 	}
 	workspaces := map[string]bool{}
-	list, gitErr := e.git.Worktrees(ctx, p.Path)
+	list, gitErr := e.worktreeList(ctx, p) // Git's worktrees and Theo's clones
 	if gitErr == nil {
 		for i, wt := range list {
 			if wt.Bare {
@@ -420,6 +426,30 @@ type RemoveProjectOptions struct {
 	// instance settings, the reserved ports and the files Theo generated.
 	// The history stays.
 	ForgetRecords bool
+	// DeleteWorktrees also deletes the project's linked worktrees and the
+	// clones Theo made from disk, through the same checks as `theo worktree
+	// remove`. It needs Confirm to be the project's name, and it is refused
+	// while any instance has containers, even with Yes. The main worktree,
+	// branches and volumes are never deleted.
+	DeleteWorktrees bool
+	// DiscardChanges allows DeleteWorktrees to delete worktrees with
+	// uncommitted or untracked files (and clones with commits that exist
+	// nowhere else), which are lost.
+	DiscardChanges bool
+	// Confirm must equal the project's name for DeleteWorktrees.
+	Confirm string
+}
+
+// DeletableWorkspace is a linked worktree or clone that removing a project
+// with DeleteWorktrees deletes from disk.
+type DeletableWorkspace struct {
+	Path   string `json:"path"`
+	Kind   string `json:"kind"` // "worktree" or "clone"
+	Branch string `json:"branch,omitempty"`
+	// Changes are its uncommitted or untracked files, as `git status
+	// --porcelain` shows them, and for a clone its commits that exist
+	// nowhere else. They are lost if it is deleted.
+	Changes []string `json:"changes,omitempty"`
 }
 
 // ContainersError is returned when a project cannot be removed because its
@@ -428,6 +458,9 @@ type RemoveProjectOptions struct {
 type ContainersError struct {
 	Project string
 	Stacks  []ProjectStack
+	// DeleteWorktrees is set when the removal was asked to delete the
+	// worktrees too, which no confirmation allows while containers exist.
+	DeleteWorktrees bool
 }
 
 // Code is the stable code of the error, for interfaces that translate it.
@@ -438,19 +471,27 @@ func (c *ContainersError) Error() string {
 	for i, s := range c.Stacks {
 		names[i] = fmt.Sprintf("%s (%s)", s.Name, s.Status)
 	}
+	if c.DeleteWorktrees {
+		return fmt.Sprintf("project %q has Compose project(s) with containers: %s. Its worktrees are not deleted while any instance has containers, even with --yes; stop them first with `theo down`. Nothing was deleted", c.Project, strings.Join(names, ", "))
+	}
 	return fmt.Sprintf("project %q has Compose project(s) with containers: %s. Removing it from the registry does not stop them, but Theo will no longer manage them; stop them first with `theo down`, or confirm with --yes", c.Project, strings.Join(names, ", "))
 }
 
 // RemoveProjectChecked removes a project from the registry like
 // RemoveProject, after InspectProject. It is refused while the project's
-// instances have containers, unless opts.Yes. It never deletes worktrees,
-// containers or volumes. It returns what InspectProject found.
+// instances have containers, unless opts.Yes. It never deletes containers
+// or volumes, and deletes worktrees only with opts.DeleteWorktrees (see
+// deleteWorktrees). It returns what InspectProject found.
 func (e *Engine) RemoveProjectChecked(ctx context.Context, name string, opts RemoveProjectOptions) (*ProjectResources, error) {
 	res, err := e.InspectProject(ctx, name)
 	if err != nil {
 		return nil, err
 	}
-	if len(res.Stacks) > 0 && !opts.Yes {
+	if opts.DeleteWorktrees {
+		if err := e.deleteWorktrees(ctx, res, opts); err != nil {
+			return res, err
+		}
+	} else if len(res.Stacks) > 0 && !opts.Yes {
 		return res, &ContainersError{Project: res.Project, Stacks: res.Stacks}
 	}
 	if opts.ForgetRecords {
@@ -493,4 +534,97 @@ func (e *Engine) forgetRecords(res *ProjectResources) error {
 		return err
 	}
 	return e.portStore.Save(assigned)
+}
+
+// deleteWorktrees deletes the linked worktrees and clones of the project in
+// res from disk, before the project is unregistered, and records them in
+// res.ToDelete and res.Deleted. Every check happens before anything is
+// deleted: it is refused while Docker cannot be asked or any instance has
+// containers (whatever opts.Yes says), when a worktree defines the shared
+// services, when opts.Confirm is not the project's name, and when a
+// worktree has changes that opts.DiscardChanges does not discard. Each one
+// is then removed by RemoveWorkspace, so the main worktree, branches and
+// volumes are kept. If one fails, the ones before it stay deleted and the
+// project stays registered.
+func (e *Engine) deleteWorktrees(ctx context.Context, res *ProjectResources, opts RemoveProjectOptions) error {
+	p, err := e.Project(res.Project)
+	if err != nil {
+		return err
+	}
+	list, err := e.worktreeList(ctx, p)
+	if err != nil {
+		return fmt.Errorf("cannot list the worktrees of %q, so none was deleted: %w", p.Name, err)
+	}
+	res.ToDelete = []DeletableWorkspace{}
+	for i, wt := range list {
+		if i == 0 || wt.Bare || wt.Prunable || !dirExists(wt.Path) {
+			continue // the main worktree, and directories that are already gone
+		}
+		d := DeletableWorkspace{Path: wt.Path, Kind: workspaceKind(p, list, wt.Path), Branch: wt.Branch}
+		if d.Changes, err = e.git.Changes(ctx, wt.Path); err != nil {
+			return fmt.Errorf("cannot check %s for uncommitted files, so nothing was deleted: %w", wt.Path, err)
+		}
+		if d.Kind == KindClone {
+			unsaved, err := e.unsavedCommits(ctx, p, wt.Path)
+			if err != nil {
+				return fmt.Errorf("cannot check %s for commits that exist only there, so nothing was deleted: %w", wt.Path, err)
+			}
+			d.Changes = append(d.Changes, unsaved...)
+		}
+		res.ToDelete = append(res.ToDelete, d)
+	}
+
+	if res.DockerError != "" {
+		return fmt.Errorf("cannot check whether the instances of %q have containers, so no worktree was deleted: %s", p.Name, firstLineOf(res.DockerError))
+	}
+	if len(res.Stacks) > 0 {
+		return &ContainersError{Project: res.Project, Stacks: res.Stacks, DeleteWorktrees: true}
+	}
+	if set, ok, _ := e.SharedSet(p.Name); ok {
+		for _, d := range res.ToDelete {
+			if samePath(set.From, d.Path) {
+				return fmt.Errorf("%s defines the shared services (%s) of %q; stop sharing them first with `theo shared remove %s`. Nothing was deleted", d.Path, strings.Join(set.Services, ", "), p.Name, p.Name)
+			}
+		}
+	}
+	if opts.Confirm != p.Name {
+		reason := fmt.Sprintf("deleting the worktrees of %q from disk needs --confirm %s. Nothing was deleted", p.Name, p.Name)
+		if opts.Confirm != "" {
+			reason = fmt.Sprintf("--confirm %s does not match the project name; deleting its worktrees from disk needs --confirm %s. Nothing was deleted", opts.Confirm, p.Name)
+		}
+		return &ConfirmError{Instance: p.Name, Reason: reason}
+	}
+	var dirty []string
+	for _, d := range res.ToDelete {
+		if len(d.Changes) > 0 {
+			dirty = append(dirty, d.Path)
+		}
+	}
+	if len(dirty) > 0 && !opts.DiscardChanges {
+		return &ConfirmError{Instance: p.Name, Reason: fmt.Sprintf("%d worktree(s) of %q have uncommitted or untracked files, or commits that exist only in a clone: %s. Commit or move them, or add --discard-changes to lose them. Nothing was deleted",
+			len(dirty), p.Name, strings.Join(dirty, ", "))}
+	}
+
+	res.Deleted = []string{}
+	for _, d := range res.ToDelete {
+		_, err := e.RemoveWorkspace(ctx, p.Name, d.Path, RemoveWorktreeOptions{DiscardChanges: opts.DiscardChanges, Confirm: filepath.Base(d.Path)})
+		if err != nil {
+			done := "nothing was deleted"
+			if len(res.Deleted) > 0 {
+				done = "already deleted: " + strings.Join(res.Deleted, ", ")
+			}
+			return fmt.Errorf("deleting %s: %w (%s; the project is still registered, run the command again)", d.Path, err, done)
+		}
+		res.Deleted = append(res.Deleted, d.Path)
+	}
+	// The project's directory in Theo's own worktree area (the default, or
+	// the old default a rename pinned), once it is empty. A directory the
+	// user chose is left alone.
+	if e.dataDir != "" {
+		if dir, err := e.worktreeDir(p.Name, p.WorktreeDir); err == nil && dir != "" &&
+			!samePath(dir, filepath.Join(e.dataDir, "worktrees")) && isInside(filepath.Join(e.dataDir, "worktrees"), dir) {
+			_ = os.Remove(dir) // only when empty
+		}
+	}
+	return nil
 }

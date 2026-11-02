@@ -40,7 +40,8 @@ Commands:
                                                that have no .env of their own, or where new
                                                worktrees are created
   project list [--json]                        List registered projects
-  project remove <name>                        Unregister a project (files and containers are kept)
+  project remove <name>                        Unregister a project (files and containers are kept;
+                                               --delete-worktrees deletes its other worktrees)
   worktrees <project> [--json]                 List the worktrees of a project
   branches <project> [--json]                  List local and remote branches and which have a worktree
   worktree add <project> <branch> [--new [--from <base>]] [--path <dir>]
