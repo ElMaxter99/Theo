@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -37,7 +38,9 @@ func TestMCPCommand(t *testing.T) {
 		t.Error("--read-only lists up")
 	}
 	checkOutput(t, "tools/call", lines[2], `"isError":false`)
-	checkOutput(t, "tools/call", lines[2], main)
+	// The path travels inside JSON, so Windows backslashes arrive escaped.
+	quoted, _ := json.Marshal(main)
+	checkOutput(t, "tools/call", lines[2], strings.Trim(string(quoted), `"`))
 
 	if _, stderr, code := run("mcp", "extra"); code != ExitUsage {
 		t.Errorf("mcp extra: %d %s", code, stderr)

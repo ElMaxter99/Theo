@@ -950,8 +950,8 @@ func TestFSBrowseListsOnlyDirectories(t *testing.T) {
 
 func TestIdleShutdown(t *testing.T) {
 	// No SSE client and no operation: the server stops by itself.
+	// No request first: on a slow runner the server can already be gone by then.
 	e := newEnv(t, func(c *api.Config) { c.IdleTimeout = 400 * time.Millisecond })
-	e.c.call("GET", "/api/v1/meta", nil, nil)
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if _, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(e.srv.Port()), 200*time.Millisecond); err != nil {
