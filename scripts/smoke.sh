@@ -95,6 +95,7 @@ mkdir -p "$THEO_HOME"
 on_exit() {
   local code=$?
   [ -n "$SERVE_PID" ] && kill "$SERVE_PID" 2>/dev/null
+  [ -n "${PROXY_PID:-}" ] && kill "$PROXY_PID" 2>/dev/null
   docker_cleanup
   if [ "${THEO_SMOKE_KEEP_IMAGES:-0}" != 1 ]; then
     local imgs
@@ -175,6 +176,25 @@ t ok   "restart web" theo restart "$P" web
 t ok   "recreate web" theo recreate "$P" web
 t ok   "up --service web --force-recreate" theo up "$P" --service web --force-recreate
 web 8080 greeting
+
+section "B2. v0.2: proxy, MCP, engine"
+proxy_port() { local p; for p in 17080 17081 17082 17083; do port_busy "$p" || { echo "$p"; return; }; done; echo 17099; }
+PX=$(proxy_port)
+"$THEO_BIN" proxy --port "$PX" >"$WORK/proxy.log" 2>&1 &
+PROXY_PID=$!
+proxy_get() { local i; for i in $(seq 1 20); do curl -s --max-time 5 -H "Host: $1" "localhost:$PX/" | grep -qF "$2" && return 0; sleep 0.5; done; return 1; }
+t ok   "proxy: main.$P.localhost reaches web" proxy_get "main.$P.localhost" greeting
+t ok   "proxy: web.main.$P.localhost reaches web" proxy_get "web.main.$P.localhost" greeting
+t ok   "proxy: unknown host lists the routes (404)" bash -c "test \"\$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: nope.$P.localhost' localhost:$PX/)\" = 404"
+t ok   "proxy routes --json" theo proxy routes "$P" --port "$PX" --json
+t ok   "proxy routes --hosts" theo proxy routes "$P" --port "$PX" --hosts
+kill "$PROXY_PID" 2>/dev/null; wait "$PROXY_PID" 2>/dev/null
+t fail "proxy refuses a non-loopback address" theo proxy --addr 0.0.0.0 --port "$PX"
+mcp_list() { printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"1"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"status","arguments":{"project":"'"$P"'"}}}' | theo mcp --read-only; }
+mcp_ok() { local o; o="$(mcp_list 2>&1)"; echo "$o" | head -c 2000; grep -q '"list_projects"' <<<"$o" && ! grep -q '"name":"up"' <<<"$o" && grep -q '"id":3' <<<"$o" && grep -q "$P" <<<"$o"; }
+t ok   "mcp --read-only: tools/list and status" mcp_ok
+engine_ok() { theo doctor --json | grep -q '"engine"'; }
+t ok   "doctor --json identifies the engine" engine_ok
 
 section "C. Worktrees and clones"
 t ok   "project set --copy-on-add .env" theo project set "$P" --copy-on-add .env

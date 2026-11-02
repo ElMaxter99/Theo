@@ -97,6 +97,7 @@ $Demo = Join-Path $Work $P
 New-Item -ItemType Directory -Force $env:THEO_HOME | Out-Null
 $script:pass = 0; $script:fail = 0; $script:Fails = New-Object System.Collections.ArrayList
 $script:Serve = $null
+$script:Proxy = $null
 
 # T ok|fail "name" { command }: runs the command and compares its exit code.
 # Native output goes through ForEach-Object, so stderr lines are kept as text
@@ -186,6 +187,40 @@ try {
   T ok   "recreate web" { theo recreate $P web }
   T ok   "up --service web --force-recreate" { theo up $P --service web --force-recreate }
   Web 8080 "greeting"
+
+  Section "B2. v0.2: proxy, MCP, engine"
+  $PX = 17080; while ((Test-PortBusy $PX) -and $PX -lt 17099) { $PX++ }
+  $script:Proxy = Start-Process -FilePath $TheoPath -ArgumentList "proxy", "--port", "$PX" `
+    -RedirectStandardOutput (Join-Path $Work "proxy.out") -RedirectStandardError (Join-Path $Work "proxy.err") -NoNewWindow -PassThru
+  function ProxyHas([string]$hostName, [string]$text) {
+    for ($i = 0; $i -lt 20; $i++) {
+      $o = (& $Curl -s --max-time 5 -H "Host: $hostName" "http://localhost:$PX/" 2>$null) -join "`n"
+      if ($o -match [regex]::Escape($text)) { return $true }
+      Start-Sleep -Milliseconds 500
+    }
+    $false
+  }
+  Check ok "proxy: main.$P.localhost reaches web" { ProxyHas "main.$P.localhost" "greeting" }
+  Check ok "proxy: web.main.$P.localhost reaches web" { ProxyHas "web.main.$P.localhost" "greeting" }
+  Check ok "proxy: unknown host lists the routes (404)" { $c = & $Curl -s -o $NullDev -w "%{http_code}" -H "Host: nope.$P.localhost" "http://localhost:$PX/"; "HTTP $c"; "$c" -eq "404" }
+  T ok   "proxy routes --json" { theo proxy routes $P --port $PX --json }
+  T ok   "proxy routes --hosts" { theo proxy routes $P --port $PX --hosts }
+  Stop-Process -Id $script:Proxy.Id -ErrorAction SilentlyContinue; $script:Proxy = $null
+  T fail "proxy refuses a non-loopback address" { theo proxy --addr 0.0.0.0 --port $PX }
+  Check ok "mcp --read-only: tools/list and status" {
+    $msgs = @(
+      '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"1"}}}',
+      '{"jsonrpc":"2.0","method":"notifications/initialized"}',
+      '{"jsonrpc":"2.0","id":2,"method":"tools/list"}',
+      ('{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"status","arguments":{"project":"' + $P + '"}}}')
+    )
+    $in = Join-Path $Work "mcp.in"
+    [IO.File]::WriteAllText($in, (($msgs -join "`n") + "`n"))
+    $o = (Get-Content $in | & $TheoPath mcp --read-only 2>&1 | ForEach-Object { "$_" }) -join "`n"
+    if ($o.Length -gt 2000) { $o.Substring(0, 2000) } else { $o }
+    ($o -match '"list_projects"') -and -not ($o -match '"name":"up"') -and ($o -match '"id":3') -and ($o -match [regex]::Escape($P))
+  }
+  Check ok "doctor --json identifies the engine" { $o = (theo doctor --json 2>&1 | ForEach-Object { "$_" }) -join "`n"; $o -match '"engine"' }
 
   Section "C. Worktrees and clones"
   T ok   "project set --copy-on-add .env" { theo project set $P --copy-on-add .env }
@@ -319,6 +354,7 @@ catch {
 finally {
   Set-Location $started
   if ($script:Serve) { Stop-Process -Id $script:Serve.Id -ErrorAction SilentlyContinue }
+  if ($script:Proxy) { Stop-Process -Id $script:Proxy.Id -ErrorAction SilentlyContinue }
   Remove-Ours
   if ($env:THEO_SMOKE_KEEP_IMAGES -ne "1") {
     $pattern = "^(" + (($Stacks | ForEach-Object { [regex]::Escape($_) }) -join "|") + ")-[a-z0-9_-]+:"
