@@ -2,7 +2,8 @@
 
 `theo project` registers a Git repository and keeps its settings. Registering,
 editing and removing a project never changes the repository, its worktrees,
-containers or volumes.
+containers or volumes; the one exception is the opt-in
+`project remove --delete-worktrees`, which deletes the linked worktrees and clones.
 
 ```
 theo project add <path> [--name <name>] [--env-file <f>]
@@ -13,6 +14,7 @@ theo project set <name> [--env-file <f> | --no-env-file]
                         [--compose-file <f>... | --default-compose-files]
 theo project rename <old> <new> [--yes] [--json]
 theo project remove <name> [--yes] [--forget-records] [--json]
+                           [--delete-worktrees --confirm <name> [--discard-changes]]
 ```
 
 ## show (FR-004)
@@ -80,6 +82,7 @@ Project "shop" (/work/shop). Removing it from the registry deletes nothing; this
   worktrees on disk:
     /work/shop
     /home/me/.config/theo/worktrees/shop/fix-1
+    (--delete-worktrees --confirm shop would also delete the other 1 worktree(s) and clone(s))
   Compose projects with containers: none
   volumes kept with their data:
     shop-fix-1_data
@@ -104,6 +107,53 @@ Removed project "shop" from the registry. Its files, containers and volumes were
   stays (it also serves `theo reconcile`).
 * `--json` prints `{ "removed", "records_dropped", "resources" }` and the refusal still
   exits with 1.
+* When worktrees other than the main one remain, the listing says so and names
+  `--delete-worktrees` (below). Without that flag nothing on disk is deleted.
+
+### Deleting the worktrees too (`--delete-worktrees`)
+
+Removing a project leaves its linked worktrees and the clones Theo made on disk,
+and once the project is unregistered Theo can no longer remove them for you.
+`--delete-worktrees` deletes them as part of the removal, opt-in and confirmed
+with the project's name:
+
+```
+$ theo project remove shop --delete-worktrees --confirm shop
+Project "shop" (/work/shop). With --delete-worktrees these worktrees and clones deleted from disk (their branches and volumes stay):
+  /home/me/.config/theo/worktrees/shop/fix-1 (worktree, fix/1) clean
+  /home/me/.config/theo/worktrees/shop/spike (clone, spike) clean
+Everything else stays:
+  worktrees on disk:
+    /work/shop
+  ...
+
+Deleted 2 worktree(s) and clone(s) of "shop" from disk; its branches and volumes were kept.
+Removed project "shop" from the registry. Its main worktree, containers and volumes were not touched (/work/shop).
+```
+
+* Every linked worktree (wherever it is) and every clone recorded by
+  `theo worktree add --clone` is deleted, each one through the same code and checks
+  as `theo worktree remove`. The **main worktree is never deleted**, nor any branch
+  or volume. Theo's own worktree directory for the project
+  (under `<data>/worktrees/`) is removed too once it is empty; a directory you set
+  with `project set --worktree-dir` is left alone.
+* `--confirm <name>` must be the project's exact name; without it, or with another
+  value, the command prints what would be deleted and changes nothing.
+* It is **refused while any instance has containers**, running or stopped, even with
+  `--yes`: run `theo down` for each instance first. It is also refused when Docker
+  cannot be asked, and when a worktree defines the project's shared services
+  (`theo shared remove` first).
+* A worktree with uncommitted or untracked files, or a clone with commits that
+  exist nowhere else, refuses the whole command (the listing shows the files);
+  `--discard-changes` deletes them anyway and they are lost. Ignored files (such as
+  a copied `.env`) are lost without warning, as with `git worktree remove`.
+* All checks run before anything is deleted. If deleting one worktree still fails
+  (for example a locked worktree), the ones before it stay deleted, the project
+  stays registered and the error says which were deleted; fix the cause and run the
+  command again.
+* It combines with `--forget-records`. In `--json`, `resources.to_delete` lists each
+  worktree with its `kind`, `branch` and `changes`, and `resources.deleted` what was
+  deleted.
 
 ## Duplicate Compose project names (FR-040)
 

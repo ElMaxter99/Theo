@@ -453,7 +453,7 @@ If you shared the cache, also run `theo shared down theo-demo` (now allowed).
 theo project remove theo-demo
 ```
 
-Expect Theo to forget the project; files and volumes are not touched. Finally delete `~/theo-demo` yourself and, if you want, the images (`docker image rm theo-demo-web theo-demo-worker`).
+Expect Theo to forget the project; files and volumes are not touched. If other worktrees are left (the listing says so), `theo project remove theo-demo --delete-worktrees --confirm theo-demo` deletes them from disk together with the project; the main worktree, branches and volumes are kept, and it is refused while an instance has containers (see [project remove](../../docs/cli/project.md#deleting-the-worktrees-too---delete-worktrees)). Finally delete `~/theo-demo` yourself and, if you want, the images (`docker image rm theo-demo-web theo-demo-worker`).
 
 ## Running it without Theo
 
