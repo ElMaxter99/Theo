@@ -22,3 +22,6 @@ func killTree(cmd *exec.Cmd) {
 		return nil
 	}
 }
+
+// prepare does nothing outside Windows.
+func prepare(*exec.Cmd) {}
