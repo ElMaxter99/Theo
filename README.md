@@ -70,6 +70,7 @@ Run `theo help` for the full list. Every command that prints data supports `--js
 | Env precedence | which value wins | [env-precedence](docs/cli/env-precedence.md) |
 | Web interface | `ui`, `serve` | [ui](docs/cli/ui.md) |
 | Desktop app | the same interface in a native window (`theo-desktop`) | [desktop](docs/cli/desktop.md) |
+| AI agents (MCP) | `mcp [--read-only] [--owner <name>]` | [mcp](docs/cli/mcp.md) |
 
 ## Safety principles
 
