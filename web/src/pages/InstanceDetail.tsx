@@ -8,7 +8,7 @@ import { useResource } from "../lib/hooks.ts";
 import { href, navigate, TABS } from "../lib/router.ts";
 import type { TabId } from "../lib/router.ts";
 import { announce } from "../lib/live.ts";
-import { isActiveOp, opErrorText, worktreeStatus } from "../lib/status.ts";
+import { isActiveOp, opErrorOutput, opErrorText, worktreeStatus } from "../lib/status.ts";
 import { rememberWorktrees, startOperation, useOps } from "../ops/store.ts";
 import type { LifecycleKind } from "../ops/store.ts";
 import { useState } from "preact/hooks";
@@ -84,6 +84,7 @@ export function InstanceDetail({ project, wt, tab }: { project: string; wt: stri
       {lastFailed && lastFailed.state === "failed" ? (
         <Banner tone="error" title={t.detail.lastFailed}>
           {opErrorText(lastFailed) ? <p>{opErrorText(lastFailed)}</p> : null}
+          {opErrorOutput(lastFailed) ? <details open><summary>{t.banner.detailsOriginal}</summary><pre class="mono small prewrap">{opErrorOutput(lastFailed)}</pre></details> : null}
           <p>{t.detail.keptNote}</p>
         </Banner>
       ) : null}

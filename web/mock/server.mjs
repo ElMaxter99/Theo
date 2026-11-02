@@ -254,7 +254,7 @@ async function runOp(o, project, w, body) {
   } catch (e) {
     const cancelled = e.message === "cancelled";
     w.history.unshift({ time: now(), user: "ana", operation: o.kind, result: "error", error: cancelled ? "cancelled" : e.message });
-    opState(o, cancelled ? "cancelled" : "failed", { finished_at: now(), error: cancelled ? undefined : { code: "port_conflict", message: e.message, original: "Error response from daemon: " + e.message }, result: { ok: false } });
+    opState(o, cancelled ? "cancelled" : "failed", { finished_at: now(), error: cancelled ? undefined : { code: "port_conflict", message: e.message, original: e.message + "\n\nError response from daemon: " + e.message }, result: { ok: false } });
   }
   for (const r of o.subs) { ev(r, "result", { ok: o.state === "succeeded", summary: o.state, error: o.error?.message }, o.lines.length + 1 + o.dropped); r.end(); }
   o.subs.clear();
