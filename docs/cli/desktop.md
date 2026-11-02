@@ -56,6 +56,16 @@ The icon is the project's provisional app icon (`web/public/brand/`, [CC BY 4.0]
 
 ## Building it yourself
 
+The easy way is the script for your system, which checks what is missing and tells you how to install it:
+
+```
+scripts/build-desktop.sh            # Linux and macOS (also Git Bash on Windows) -> dist/theo-desktop
+.\scripts\build-desktop.ps1          # Windows PowerShell -> dist\theo-desktop.exe
+```
+
+Add `--cli` (`-Cli` in PowerShell) to build `theo` too. It cannot be cross-compiled (the window needs cgo and the system web
+view), so run it on each system. What it does, step by step:
+
 The desktop code sits behind the Go build tag `desktop` and needs cgo, a C/C++ compiler and the system web view
 headers. Without the tag, `go build ./...`, `go vet ./...` and `go test ./...` skip all of it, and `go build
 ./cmd/theo` stays pure Go (`CGO_ENABLED=0`, cross-compilable).
@@ -69,7 +79,7 @@ go build -tags desktop -o theo-desktop ./cmd/theo-desktop
   `export PKG_CONFIG_PATH="$(scripts/webkit40-shim.sh):$PKG_CONFIG_PATH"` first: it writes a `webkit2gtk-4.0.pc` that
   forwards to 4.1 (the part of the API the library uses is the same) and does nothing if a real 4.0 is installed.
 - **macOS:** Xcode command line tools.
-- **Windows:** a MinGW-w64 `gcc` in `PATH`; add `-ldflags "-H=windowsgui"` for a build without a console. For the
+- **Windows:** a MinGW-w64 `gcc` in `PATH` (`winget install BrechtSanders.WinLibs.POSIX.UCRT`, then open a new PowerShell); add `-ldflags "-H=windowsgui"` for a build without a console. For the
   icon, generate the resource first: `go run github.com/akavel/rsrc@v0.10.2 -ico web/public/brand/avatar-plum.ico
   -arch amd64 -o cmd/theo-desktop/rsrc_windows_amd64.syso` (the file is git-ignored). Windows already ships the
   WebView2 loader inside the library, so no DLL travels with the program.
@@ -87,6 +97,7 @@ archives (including the macOS `.app`).
 | macOS: "cannot be opened because the developer cannot be verified" | See Install above (ad-hoc signature). |
 | Windows SmartScreen warns | The executable is not code-signed. "More info" > "Run anyway". |
 | "the session expired" in the window | The server this window used went away (for example another `theo ui` was stopped). Close the window and open it again. |
+| Console windows (`cmd`) open and close in a loop (Windows) | Fixed: the app starts `git` and `docker` without a console window. If you see it, you are running a build older than the fix; rebuild with `scripts\build-desktop.ps1`. |
 | Docker shows as unavailable | Same as the web interface: start Docker. On macOS, make sure it is installed in one of the directories listed above. |
 | A container link does nothing | It opens with the system's default browser (`xdg-open`, `open`, `rundll32`); check you have one configured. |
 

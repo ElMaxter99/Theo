@@ -14,6 +14,7 @@ import (
 	"io"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -88,6 +89,7 @@ func run(ctx context.Context, dir, name string, args ...string) ([]byte, error) 
 
 	cmd := exec.CommandContext(runCtx, path, args...)
 	cmd.Dir = dir
+	prepare(cmd)
 	if lim.Timeout > 0 {
 		killTree(cmd)
 	}
@@ -172,6 +174,7 @@ func stream(ctx context.Context, dir string, stdin io.Reader, stdout, stderr io.
 	}
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Dir = dir
+	prepare(cmd)
 	cmd.Stdin = stdin
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
@@ -180,3 +183,11 @@ func stream(ctx context.Context, dir string, stdin io.Reader, stdout, stderr io.
 	}
 	return nil
 }
+
+var hideConsole atomic.Bool
+
+// SetHideConsole makes the commands Theo starts run without a console window on Windows. A program
+// without a console of its own (the desktop app, built as a GUI program) would otherwise get a new
+// visible console window for every git or docker it starts. It does nothing on other systems and the
+// command line leaves it off, so its children keep writing to the console they share with it.
+func SetHideConsole(hide bool) { hideConsole.Store(hide) }

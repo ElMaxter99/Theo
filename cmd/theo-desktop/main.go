@@ -15,6 +15,7 @@ import (
 
 	"github.com/ElMaxter99/Theo/internal/desktop"
 	"github.com/ElMaxter99/Theo/internal/engine"
+	"github.com/ElMaxter99/Theo/internal/execx"
 	"github.com/ElMaxter99/Theo/internal/registry"
 	"github.com/ElMaxter99/Theo/internal/ui"
 )
@@ -43,6 +44,9 @@ func main() {
 }
 
 func run() error {
+	// A GUI program has no console: without this every git or docker it starts opens a console
+	// window of its own (and the panel starts many, every few seconds).
+	execx.SetHideConsole(true)
 	// Opened from Finder the app has a bare PATH: find git and docker anyway.
 	home, _ := os.UserHomeDir()
 	os.Setenv("PATH", desktop.AugmentPath(os.Getenv("PATH"), runtime.GOOS, home))

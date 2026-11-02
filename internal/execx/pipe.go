@@ -26,6 +26,7 @@ func Pipe(ctx context.Context, stdin io.Reader, stdout io.Writer, name string, a
 		return fmt.Errorf("%s: %w", name, ErrNotFound)
 	}
 	cmd := exec.CommandContext(ctx, path, args...)
+	prepare(cmd)
 	cmd.Stdin = stdin
 	cmd.Stdout = stdout
 	var stderr bytes.Buffer
