@@ -93,7 +93,7 @@ func (e *Engine) Recreate(ctx context.Context, inst *Instance, opts compose.UpOp
 	opts.ForceRecreate = true
 	opts.NoDeps = len(opts.Services) > 0
 	err := e.compose.Up(ctx, inst.target(), opts, stdout, stderr)
-	e.record(inst, "recreate", err)
+	e.recordStart(inst, "recreate", err)
 	return err
 }
 

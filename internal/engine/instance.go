@@ -208,7 +208,7 @@ func (e *Engine) Up(ctx context.Context, inst *Instance, opts compose.UpOptions,
 		return err
 	}
 	err := e.compose.Up(ctx, inst.target(), opts, stdout, stderr)
-	e.record(inst, "up", err)
+	e.recordStart(inst, "up", err)
 	return err
 }
 

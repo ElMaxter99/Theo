@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -81,12 +82,22 @@ type Event struct {
 	Operation string    `json:"operation"`
 	Result    string    `json:"result"` // "ok" or "error"
 	Error     string    `json:"error,omitempty"`
+	// ConfigDigest is the digest of the Compose configuration a successful
+	// up or recreate started the instance with (compose.Project.Digest), so
+	// Theo can say when the files changed since.
+	ConfigDigest string `json:"config_digest,omitempty"`
 }
 
 // Store reads and writes the instance settings and the history in a
 // directory.
 type Store struct {
 	dir string
+
+	// starts caches LastStarts while the history file does not change.
+	mu         sync.Mutex
+	startsSize int64
+	startsMod  time.Time
+	starts     map[string]Event
 }
 
 const (
@@ -292,4 +303,46 @@ func (s *Store) renameEvents(oldName, newName string) (int, error) {
 		return 0, nil
 	}
 	return n, filelock.WriteFile(path, out.Bytes(), 0o644)
+}
+
+// IsStart reports whether ev is a successful operation that (re)created the
+// containers of an instance from its configuration: up or recreate.
+func IsStart(ev Event) bool {
+	return ev.Result == "ok" && (ev.Operation == "up" || ev.Operation == "recreate")
+}
+
+// LastStarts returns, for each worktree path in the history, its last
+// successful up or recreate (see IsStart). The answer is reused while the
+// history file keeps its size and modification time; callers must not
+// change the map.
+func (s *Store) LastStarts() (map[string]Event, error) {
+	info, err := os.Stat(filepath.Join(s.dir, historyFile))
+	if errors.Is(err, os.ErrNotExist) {
+		return map[string]Event{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.starts != nil && info.Size() == s.startsSize && info.ModTime().Equal(s.startsMod) {
+		return s.starts, nil
+	}
+	events, err := s.Events()
+	if err != nil {
+		return nil, err
+	}
+	s.starts, s.startsSize, s.startsMod = LastStartsOf(events), info.Size(), info.ModTime()
+	return s.starts, nil
+}
+
+// LastStartsOf is LastStarts over a list of events, oldest first.
+func LastStartsOf(events []Event) map[string]Event {
+	out := map[string]Event{}
+	for _, ev := range events {
+		if IsStart(ev) {
+			out[filepath.Clean(ev.Workspace)] = ev
+		}
+	}
+	return out
 }
