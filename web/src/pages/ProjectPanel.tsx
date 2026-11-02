@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { api, ApiError, projectPath } from "../api/client.ts";
-import type { Overview, Worktree } from "../api/types.ts";
+import type { Overview, ProxyStatus, Worktree } from "../api/types.ts";
 import { Badge, Banner, Crumbs, ErrorBanner, ExternalLink, Loading, PageHead } from "../components/ui.tsx";
 import { Icon } from "../components/Icon.tsx";
 import { RemoveFlow } from "../components/RemoveFlow.tsx";
@@ -22,6 +22,8 @@ export function ProjectPanel({ project, onRefreshMeta }: { project: string; onRe
   const res = useResource<Overview>(() => api.get<Overview>(`${projectPath(project)}/overview`), [project], { project });
   const ops = useOps();
   const [filter, setFilter] = useState("");
+  const [owner, setOwner] = useState("");
+  const proxy = useResource<ProxyStatus>(() => api.get<ProxyStatus>("/proxy"), [], { project });
   const [removing, setRemoving] = useState<Worktree | null>(null);
   const [actionError, setActionError] = useState<ApiError | undefined>();
   useEffect(() => setTitle([project]), [project]);
@@ -32,11 +34,16 @@ export function ProjectPanel({ project, onRefreshMeta }: { project: string; onRe
   useEffect(() => { if (res.data) res.reload(); /* eslint-disable-next-line */ }, [activeKey]);
 
   const wts = res.data?.worktrees ?? [];
+  const owners = useMemo(() => [...new Set(wts.map((w) => w.owner).filter((o): o is string => !!o))].sort(), [wts]);
   const shown = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    if (!q) return wts;
-    return wts.filter((w) => (w.branch ?? "").toLowerCase().includes(q) || w.path.toLowerCase().includes(q));
-  }, [wts, filter]);
+    return wts.filter((w) => {
+      if (owner === "-" ? !!w.owner : owner && w.owner !== owner) return false;
+      if (!q) return true;
+      return (w.branch ?? "").toLowerCase().includes(q) || w.path.toLowerCase().includes(q) || (w.owner ?? "").toLowerCase().includes(q);
+    });
+  }, [wts, filter, owner]);
+  const pausable = wts.filter((w) => (w.state === "running" || w.state === "partial" || w.state === "unhealthy") && !w.busy && !ops.some((o) => o.worktree === w.id && isActiveOp(o)));
 
   if (res.error && !res.data) {
     return (
@@ -58,6 +65,18 @@ export function ProjectPanel({ project, onRefreshMeta }: { project: string; onRe
     }
   };
 
+  const pauseAll = async () => {
+    setActionError(undefined);
+    announce(t.panel.pausedAllMsg(pausable.length));
+    for (const w of pausable) {
+      try {
+        await startOperation(project, w.id, "stop");
+      } catch (e) {
+        setActionError(e instanceof ApiError ? e : new ApiError(0, { code: "internal", message: String(e) }));
+      }
+    }
+  };
+
   return (
     <>
       <Crumbs items={[{ label: t.projects.title, href: href.projects() }, { label: project }]} />
@@ -66,20 +85,41 @@ export function ProjectPanel({ project, onRefreshMeta }: { project: string; onRe
         sub={res.data ? <span class="mono">{res.data.path}</span> : undefined}
         actions={
           <>
-            <button type="button" class="btn" onClick={() => { res.reload(); onRefreshMeta(); }}><Icon name="restart" /> {t.panel.refresh}</button>
+            <button type="button" class="btn" onClick={() => { res.reload(); proxy.reload(); onRefreshMeta(); }}><Icon name="restart" /> {t.panel.refresh}</button>
+            <button type="button" class="btn" disabled={pausable.length === 0 || res.data?.docker.available === false} title={t.panel.pauseAllHint} aria-describedby="pause-all-hint" onClick={() => void pauseAll()}><Icon name="stop" /> {t.panel.pauseAll}</button>
             <a class="btn" href={href.shared(project)}>{t.shared.link}</a>
             <a class="btn primary" href={href.wizard(project)}><Icon name="plus" /> {t.panel.newBranch}</a>
           </>
         }
       />
+      <span id="pause-all-hint" class="sr-only">{t.panel.pauseAllHint}</span>
+      {proxy.data ? (
+        <p class="small muted">
+          {proxy.data.running && proxy.data.url
+            ? <ExternalLink href={proxy.data.url} label={t.settingsPage.proxyRoutes}>{t.panel.proxyOn(proxy.data.port)}</ExternalLink>
+            : <>{t.panel.proxyOff} · <a href={href.settings()}>{t.panel.proxySettings}</a></>}
+        </p>
+      ) : null}
       {res.data && !res.data.docker.available ? <Banner tone="warn" title={t.banner.dockerTitle}><p>{res.data.docker.error ?? t.banner.dockerBody}</p><p>{t.panel.unknownStateNote}</p></Banner> : null}
       <ErrorBanner error={actionError} />
       {res.loading && !res.data ? <Loading /> : null}
       {res.data ? (
         <>
-          <div class="field">
-            <label for="wt-filter">{t.panel.filter}</label>
-            <input id="wt-filter" class="input" type="search" value={filter} placeholder={t.panel.filterPlaceholder} onInput={(e) => setFilter((e.currentTarget as HTMLInputElement).value)} />
+          <div class="row">
+            <div class="field">
+              <label for="wt-filter">{t.panel.filter}</label>
+              <input id="wt-filter" class="input" type="search" value={filter} placeholder={t.panel.filterPlaceholder} onInput={(e) => setFilter((e.currentTarget as HTMLInputElement).value)} />
+            </div>
+            {owners.length > 0 ? (
+              <div class="field">
+                <label for="wt-owner">{t.panel.ownerFilter}</label>
+                <select id="wt-owner" class="input auto" value={owner} onChange={(e) => setOwner((e.currentTarget as HTMLSelectElement).value)}>
+                  <option value="">{t.panel.ownerAll}</option>
+                  {owners.map((o) => <option key={o} value={o}>{o}</option>)}
+                  <option value="-">{t.panel.ownerNone}</option>
+                </select>
+              </div>
+            ) : null}
           </div>
           {wts.length === 0 ? <p class="empty">{t.panel.noWorktrees}</p> : shown.length === 0 ? <p class="empty">{t.panel.noMatch}</p> : (
             <div class="table-wrap" tabIndex={0} role="region" aria-label={t.panel.tableCaption(project)}>
@@ -118,7 +158,11 @@ function Row({ project, w, act, onRemove, dockerDown }: { project: string; w: Wo
   const st = w.state;
   const lock = busy || dockerDown;
   const urls = urlsOf(w);
+  // The short form already reaches the default service: its long name is left out here (the detail lists every name).
+  const shortFor = (w.proxy_urls ?? []).find((l) => l.default)?.service;
+  const domains = (w.proxy_urls ?? []).filter((l) => l.running && (l.default || l.service !== shortFor));
   const conflicts = conflictsOf(w);
+  const composeChanged = (w.warnings ?? []).find((x) => x.kind === "compose-changed");
   return (
     <tr aria-busy={busy || undefined}>
       <th scope="row">
@@ -128,6 +172,8 @@ function Row({ project, w, act, onRemove, dockerDown }: { project: string; w: Wo
           {w.main ? <span class="tag">{t.panel.main}</span> : null}
           {w.detached ? <span class="tag">{t.panel.detached}</span> : null}
           {w.dirty ? <span class="tag"><Icon name="dot" size={10} /> {t.panel.dirty}</span> : null}
+          {w.owner ? <span class="tag">{t.panel.owner(w.owner)}</span> : null}
+          {composeChanged ? <span class="tag" title={composeChanged.fix ? `${composeChanged.message} (${composeChanged.fix})` : composeChanged.message}><Icon name="warn" size={10} /> {t.panel.composeChanged}</span> : null}
         </div>
       </th>
       <td>
@@ -139,8 +185,11 @@ function Row({ project, w, act, onRemove, dockerDown }: { project: string; w: Wo
         {conflicts.length > 0 ? (
           <ul class="plain">{conflicts.map((c, i) => <li key={i}><span class="badge error"><Icon name="portbusy" /> <span>{t.panel.portBusy(c.port)}</span></span> <span class="small">{c.service}</span></li>)}</ul>
         ) : null}
+        {domains.length > 0 ? (
+          <ul class="plain">{domains.map((u, i) => <li key={"d" + i}><ExternalLink href={u.url} label={u.service}>{u.url.replace(/^https?:\/\//, "")}</ExternalLink> <span class="small muted">{u.default ? "" : u.service}</span></li>)}</ul>
+        ) : null}
         {urls.length > 0 ? (
-          <ul class="plain">{urls.map((u, i) => <li key={i}><ExternalLink href={u.url} label={u.service}>{u.url.replace(/^https?:\/\//, "")}</ExternalLink> <span class="small muted">{u.service}</span></li>)}</ul>
+          <ul class={domains.length > 0 ? "plain small" : "plain"}>{urls.map((u, i) => <li key={i}><ExternalLink href={u.url} label={u.service}>{u.url.replace(/^https?:\/\//, "")}</ExternalLink> <span class="small muted">{u.service}</span></li>)}</ul>
         ) : conflicts.length === 0 ? <span class="muted">{t.panel.noUrls}</span> : null}
       </td>
       <td class="actions">

@@ -72,7 +72,7 @@ export function useOps(): Operation[] {
   return ops;
 }
 
-export type LifecycleKind = "up" | "down" | "restart";
+export type LifecycleKind = "up" | "down" | "restart" | "stop";
 
 export async function startOperation(project: string, wt: string, kind: LifecycleKind, body: Record<string, unknown> = {}): Promise<Operation> {
   const op = await api.post<Operation>(`${wtPath(project, wt)}/${kind}`, body, { idempotent: true });

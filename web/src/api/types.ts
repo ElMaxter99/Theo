@@ -81,6 +81,8 @@ export interface Worktree {
   prunable?: boolean;
   main?: boolean;
   kind?: string;
+  /** Owner label (an agent's name), set with --owner or `theo worktree owner`. */
+  owner?: string;
   dirty?: boolean;
   compose_project?: string;
   env_file?: EnvFileInfo;
@@ -91,8 +93,31 @@ export interface Worktree {
   container_counts?: { running: number; total: number };
   ports?: WtPort[];
   warnings?: WtWarning[];
+  /** Local domains of the instance, only while a proxy runs. */
+  proxy_urls?: ProxyLink[];
   error?: string;
   busy?: Busy | null;
+}
+
+/** An address the proxy serves a service on (proxy.Link). */
+export interface ProxyLink {
+  service: string;
+  url: string;
+  /** The short form <instance>.<project>, for the web, app, api or frontend service. */
+  default?: boolean;
+  running: boolean;
+}
+
+/** GET /proxy. */
+export interface ProxyStatus {
+  running: boolean;
+  /** The interface's own proxy, which it can stop. */
+  managed: boolean;
+  port: number;
+  url?: string;
+  pid?: number;
+  autostart: boolean;
+  error?: string;
 }
 
 export interface Overview {

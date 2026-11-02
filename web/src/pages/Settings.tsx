@@ -2,10 +2,10 @@
 // secrets, and the view preferences (stored only in this browser).
 import { useEffect, useState } from "preact/hooks";
 import { api } from "../api/client.ts";
-import type { Diagnostics, Meta } from "../api/types.ts";
-import { Badge, ErrorBanner, Loading, PageHead } from "../components/ui.tsx";
+import type { Diagnostics, Meta, ProxyStatus } from "../api/types.ts";
+import { Badge, ErrorBanner, ExternalLink, Loading, PageHead } from "../components/ui.tsx";
 import { Icon } from "../components/Icon.tsx";
-import { useResource } from "../lib/hooks.ts";
+import { useAction, useResource } from "../lib/hooks.ts";
 import { announce } from "../lib/live.ts";
 import { reportText } from "../lib/report.ts";
 import { readDensity, readMotion, saveDensity, saveMotion } from "../lib/prefs.ts";
@@ -87,6 +87,8 @@ export function Settings({ meta }: { meta: Meta | undefined }) {
         ) : null}
       </section>
 
+      <ProxyCard />
+
       <section class="card stack" aria-labelledby="st-about">
         <h2 id="st-about">{s.dataTitle}</h2>
         <dl class="facts">
@@ -150,5 +152,62 @@ export function Settings({ meta }: { meta: Meta | undefined }) {
         <p>{s.idleBody(m?.idle ? Math.round(m.idle.timeout_seconds / 60) : undefined)}</p>
       </section>
     </>
+  );
+}
+
+/** The switch of the interface's own `theo proxy` (GET/POST /proxy). */
+function ProxyCard() {
+  const s = t.settingsPage;
+  const res = useResource<ProxyStatus>(() => api.get<ProxyStatus>("/proxy"), []);
+  const [port, setPort] = useState("");
+  const [pending, setPending] = useState<boolean | null>(null);
+  const st = res.data;
+  const toggle = useAction(async (on: boolean) => {
+    if (on) {
+      const n = Number.parseInt(port || String(st?.port ?? 7080), 10);
+      await api.post<ProxyStatus>("/proxy/start", { port: Number.isFinite(n) ? n : 7080 });
+      announce(s.proxyStarted);
+    } else {
+      await api.post<ProxyStatus>("/proxy/stop", {});
+      announce(s.proxyStoppedMsg);
+    }
+    res.reload();
+  });
+  const external = !!st?.running && !st.managed;
+  return (
+    <section class="card stack" aria-labelledby="st-proxy">
+      <h2 id="st-proxy">{s.proxyTitle}</h2>
+      <p>{s.proxyIntro}</p>
+      {res.loading && !st ? <Loading /> : null}
+      <ErrorBanner error={res.error} />
+      {st ? (
+        <>
+          <div class="check">
+            <input id="proxy-on" type="checkbox" checked={pending ?? st.running} disabled={toggle.busy || external}
+              aria-describedby="proxy-state proxy-hint" onChange={(e) => {
+                const on = (e.currentTarget as HTMLInputElement).checked;
+                setPending(on);
+                void toggle.run(on).finally(() => setPending(null));
+              }} />
+            <div>
+              <label for="proxy-on">{s.proxySwitch}</label>
+              <p class="hint" id="proxy-hint">{s.proxyRemember}</p>
+            </div>
+          </div>
+          {!st.running ? (
+            <div class="field">
+              <label for="proxy-port">{s.proxyPort}</label>
+              <input id="proxy-port" class="input auto" inputMode="numeric" size={6} value={port} placeholder={String(st.port)}
+                onInput={(e) => setPort((e.currentTarget as HTMLInputElement).value.replace(/[^0-9]/g, ""))} />
+            </div>
+          ) : null}
+          <p id="proxy-state" role="status">
+            {st.running ? (external ? s.proxyExternal(st.port, st.pid ?? 0) : s.proxyRunning(st.port)) : s.proxyStopped}
+            {st.running && st.url ? <> <ExternalLink href={st.url} label={s.proxyRoutes}>{s.proxyRoutes}</ExternalLink></> : null}
+          </p>
+          <ErrorBanner error={toggle.error} />
+        </>
+      ) : null}
+    </section>
   );
 }

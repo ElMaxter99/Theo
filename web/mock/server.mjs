@@ -61,6 +61,7 @@ function reset() {
   for (let i = 0; i < 45; i++) shopMain.history.push({ time: new Date(Date.UTC(2026, 9, 26, 12, 0, 0) - i * 3600e3).toISOString(), user: "ana", operation: i % 3 === 0 ? "down" : "up", result: i % 7 === 0 ? "error" : "ok", ...(i % 7 === 0 ? { error: "port is already allocated" } : {}) });
   const shopFix = mkWorktree("shop", "shop-fix-123", "fix-123", { dirty: true, state: "partial", services: { web: "running", db: "running", cache: "exited" }, ports: { web: 3001, db: 5433, cache: 6380 }, volumes: "in use" });
   const shopFeat = mkWorktree("shop", "shop-feature-x", "feature-x", { state: "stopped", services: { web: "exited", db: "exited", cache: "exited" }, risky: true, volumes: "kept" });
+  shopFix.owner = "agent-1";
   const shopOld = mkWorktree("shop", "shop-old-spike", "old-spike", { dirty: true, state: "absent", env: { source: "none" } });
   const shopDetached = mkWorktree("shop", "shop-detached", "", { detached: true, state: "unhealthy", services: { web: "unhealthy", db: "running", cache: "running" }, ports: { web: 3002, db: 5434, cache: 6381 } });
   const blogMain = mkWorktree("blog", "blog", "main", { main: true, state: "stopped", services: { web: "exited", db: "exited", cache: "exited" } });
@@ -73,6 +74,7 @@ function reset() {
     ],
     ops: new Map(),
     idem: new Map(),
+    proxy: { running: false, managed: false, port: 7080, autostart: false },
     opSeq: 0,
     // Findings of the reconcile report; "forgettable" ones are Theo's own records.
     findings: [
@@ -154,11 +156,23 @@ function listItem(w) {
   const total = Object.keys(w.rt.services).length;
   const running = Object.values(w.rt.services).filter((v) => v === "running").length;
   return {
-    id: w.id, path: w.path, branch: w.branch || undefined, head: w.head + "0123456789abcdef0123456789abcdef0123", detached: w.detached, locked: false, prunable: false, bare: false, main: w.main, kind: w.kind, dirty: w.dirty,
+    id: w.id, path: w.path, branch: w.branch || undefined, head: w.head + "0123456789abcdef0123456789abcdef0123", detached: w.detached, locked: false, prunable: false, bare: false, main: w.main, kind: w.kind, dirty: w.dirty, owner: w.owner,
+    proxy_urls: proxyLinks(w),
     compose_project: w.compose_project, env_file: w.env_file, state: derive(w), containers: { running, total },
     ports: portStatuses(w), warnings: warningsOf(w),
     busy: op ? { operation_id: op.id, kind: op.kind } : null,
   };
+}
+function proxyLinks(w) {
+  if (!S.proxy.running) return undefined;
+  const project = S.projects.find((p) => p.wts.includes(w));
+  const inst = w.main ? "main" : w.compose_project.replace(new RegExp("^" + project.name + "-"), "");
+  const host = `${inst}.${project.name}.localhost:${S.proxy.port}`;
+  const running = w.rt.services.web === "running";
+  return [{ service: "web", url: `http://${host}`, default: true, running }, ...SERVICES.map((x) => ({ service: x.name, url: `http://${x.name}.${host}`, running: w.rt.services[x.name] === "running" }))];
+}
+function proxyStatus() {
+  return { ...S.proxy, pid: S.proxy.running ? 4242 : undefined, url: S.proxy.running ? `http://localhost:${S.proxy.port}/` : undefined };
 }
 function containersOf(w) {
   // Same shape as the real server: raw `docker compose ps` records (capitalised keys).
@@ -244,6 +258,9 @@ async function runOp(o, project, w, body) {
       for (const n of names) { opLog(o, ` Container ${w.compose_project}-${n}-1  Starting`); await step(400); w.rt.services[n] = "running"; opLog(o, ` Container ${w.compose_project}-${n}-1  Started`); }
       w.rt.volumes = "in use";
       w.history.unshift({ time: now(), user: "ana", operation: o.kind, result: "ok" });
+    } else if (o.kind === "stop") {
+      for (const n of Object.keys(w.rt.services)) { opLog(o, ` Container ${w.compose_project}-${n}-1  Stopping`); await step(300); w.rt.services[n] = "exited"; }
+      w.history.unshift({ time: now(), user: "ana", operation: "stop", result: "ok" });
     } else if (o.kind === "down") {
       for (const n of Object.keys(w.rt.services)) { opLog(o, ` Container ${w.compose_project}-${n}-1  Stopping`); await step(300); }
       w.rt.services = {}; w.rt.volumes = "kept";
@@ -320,6 +337,11 @@ async function api(req, res, url) {
   if (seg[0] === "reconcile") return reconcileRoutes(req, res, seg, q);
   if (seg[0] === "health") return send(res, 200, healthOf());
   if (seg[0] === "diagnostics") return send(res, 200, diagnostics());
+  if (seg[0] === "proxy") {
+    if (!seg[1] && m === "GET") return send(res, 200, proxyStatus());
+    if (seg[1] === "start" && m === "POST") { const b = await readJson(req); S.proxy = { running: true, managed: true, port: b.port || 7080, autostart: true }; emitGlobal("state.changed", {}); return send(res, 200, proxyStatus()); }
+    if (seg[1] === "stop" && m === "POST") { await readJson(req); S.proxy = { ...S.proxy, running: false, managed: false, autostart: false }; emitGlobal("state.changed", {}); return send(res, 200, proxyStatus()); }
+  }
   if (seg[0] !== "projects") return err(res, 404, "not_found", "unknown resource");
   if (seg.length === 1) {
     if (m === "GET") return send(res, 200, S.projects.map(({ wts, ...p }) => p));
@@ -430,7 +452,7 @@ async function api(req, res, url) {
     if (name && m === "PUT") { const b = await readJson(req); w.env[name] = { value: b.value, secret: !!b.secret, services: b.services ?? [] }; return send(res, 200, { applies_on: "next_up" }); }
     if (name && m === "DELETE") { delete w.env[name]; return send(res, 200, { applies_on: "next_up" }); }
   }
-  if (["up", "down", "restart"].includes(sub) && m === "POST") {
+  if (["up", "down", "restart", "stop"].includes(sub) && m === "POST") {
     const b = await readJson(req);
     const key = req.headers["idempotency-key"];
     if (key && S.idem.has(key)) return send(res, 202, publicOp(S.ops.get(S.idem.get(key))), { Location: `/api/v1/operations/${S.idem.get(key)}` });
