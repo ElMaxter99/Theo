@@ -16,29 +16,41 @@ type fakeTools map[string]string
 
 func (f fakeTools) run(_ context.Context, name string, args ...string) (string, error) {
 	key := strings.Join(append([]string{name}, args...), " ")
-	for prefix, out := range f {
-		if strings.HasPrefix(key, prefix) {
-			if out == "!missing" {
-				return "", errors.New(name + ": " + execx.ErrNotFound.Error())
-			}
-			if strings.HasPrefix(out, "!fail ") {
-				return "", errors.New(name + " failed:\n" + strings.TrimPrefix(out, "!fail "))
-			}
-			return out, nil
+	best := ""
+	for prefix := range f { // the longest prefix wins, so overlapping keys are deterministic
+		if strings.HasPrefix(key, prefix) && len(prefix) > len(best) {
+			best = prefix
 		}
 	}
-	return "", errors.New("unexpected " + key)
+	if best == "" {
+		return "", errors.New("unexpected " + key)
+	}
+	out := f[best]
+	if out == "!missing" {
+		return "", errors.New(name + ": " + execx.ErrNotFound.Error())
+	}
+	if strings.HasPrefix(out, "!fail ") {
+		return "", errors.New(name + " failed:\n" + strings.TrimPrefix(out, "!fail "))
+	}
+	return out, nil
 }
 
 func goodTools() fakeTools {
 	return fakeTools{
 		"git --version":          "git version 2.43.0\n",
 		"docker --version":       "Docker version 29.9.2, build abc\n",
-		"docker info":            "29.9.2 linux\n",
+		"docker info":            infoJSON("29.9.2", "linux"),
+		"docker version":         `{"Platform":{"Name":"Docker Engine - Community"},"Components":[{"Name":"Engine","Version":"29.9.2"}]}` + "\n",
+		"docker context inspect": `[{"Name":"default","Endpoints":{"docker":{"Host":"unix:///var/run/docker.sock"}}}]` + "\n",
 		"docker compose version": "5.6.1\n",
 		"docker-compose version": "!missing",
 		"reg query":              "    LongPathsEnabled    REG_DWORD    0x1\n",
 	}
+}
+
+// infoJSON is a minimal `docker info --format '{{json .}}'` of Docker Engine.
+func infoJSON(version, osType string) string {
+	return `{"ServerVersion":"` + version + `","OSType":"` + osType + `","OperatingSystem":"Ubuntu 24.04.1 LTS","Name":"devbox","ClientInfo":{"Context":"default"}}` + "\n"
 }
 
 func doctor(t *testing.T, goos string, tools fakeTools, projects ...string) DoctorReport {
@@ -153,7 +165,7 @@ func TestDoctorDaemonDownAndWindowsContainers(t *testing.T) {
 		t.Errorf("mac fix: %+v", c)
 	}
 
-	tools["docker info"] = "29.9.2 windows\n"
+	tools["docker info"] = infoJSON("29.9.2", "windows")
 	r := doctor(t, "windows", tools)
 	if c := find(t, r, "docker-os"); r.OK || c.Status != StatusFail || !strings.Contains(c.Fix, "Linux containers") {
 		t.Errorf("windows containers: %+v", c)
