@@ -115,3 +115,21 @@ func (Compose) RemoveNetwork(ctx context.Context, name string) error {
 	_, err = execx.Run(ctx, "", "docker", "network", "rm", name)
 	return err
 }
+
+// MissingNetworks returns the names among names that do not exist in Docker.
+func (Compose) MissingNetworks(ctx context.Context, names []string) []string {
+	var missing []string
+	for _, name := range names {
+		if _, err := execx.Run(ctx, "", "docker", "network", "inspect", "--", name); err != nil && networkNotFound(err) {
+			missing = append(missing, name)
+		}
+	}
+	return missing
+}
+
+// networkNotFound tells "Docker says the network does not exist" from every other failure (daemon down,
+// timeout...): only the first one is a missing network.
+func networkNotFound(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no such network") || strings.Contains(msg, "network") && strings.Contains(msg, "not found")
+}

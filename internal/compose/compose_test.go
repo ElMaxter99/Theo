@@ -2,8 +2,11 @@ package compose
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ElMaxter99/Theo/internal/testutil"
@@ -147,5 +150,45 @@ func TestParseVolumesAndExternal(t *testing.T) {
 	}
 	if p.Volumes["a"].IsExternal() || !p.Volumes["b"].IsExternal() || p.Volumes["c"].IsExternal() {
 		t.Errorf("volumes = %+v", p.Volumes)
+	}
+}
+
+func TestExternalNetworksUsed(t *testing.T) {
+	ext := json.RawMessage("true")
+	p := &Project{
+		Services: map[string]Service{
+			"api":    {Networks: map[string]json.RawMessage{"default": nil, "data": nil}},
+			"worker": {Profiles: []string{"worker"}, Networks: map[string]json.RawMessage{"other": nil}},
+			"lonely": {},
+		},
+		Networks: map[string]NetworkConfig{
+			"default": {},
+			"data":    {Name: "gasolinaradar_data", External: ext},
+			"other":   {External: ext}, // no explicit name: the key is the Docker name
+			"unused":  {Name: "nobody_uses_me", External: ext},
+		},
+	}
+	if got := strings.Join(p.ExternalNetworksUsed(nil), ","); got != "gasolinaradar_data" {
+		t.Errorf("without profiles = %q: only networks of services that start, and only external ones", got)
+	}
+	if got := strings.Join(p.ExternalNetworksUsed([]string{"worker"}), ","); got != "gasolinaradar_data,other" {
+		t.Errorf("with the worker profile = %q", got)
+	}
+	var none *Project
+	if len(none.ExternalNetworksUsed(nil)) != 0 {
+		t.Error("a nil project has no networks")
+	}
+}
+
+func TestNetworkNotFound(t *testing.T) {
+	for _, msg := range []string{"Error response from daemon: network gasolinaradar_data not found", "Error: No such network: x"} {
+		if !networkNotFound(errors.New("docker network inspect -- x: " + msg)) {
+			t.Errorf("%q is a missing network", msg)
+		}
+	}
+	for _, msg := range []string{"Cannot connect to the Docker daemon at unix:///var/run/docker.sock", "context deadline exceeded", "failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine"} {
+		if networkNotFound(errors.New("docker network inspect -- x: " + msg)) {
+			t.Errorf("%q is not a missing network", msg)
+		}
 	}
 }

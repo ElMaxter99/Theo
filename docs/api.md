@@ -57,7 +57,7 @@ and optionally `hint`, `level` (2 or 3 for destructive actions), `resource`, `co
 | 403 | `forbidden_origin`, `csrf` | Host/Origin/Sec-Fetch-Site or CSRF checks |
 | 404 | `project_not_found`, `worktree_not_found`, `operation_not_found`, `env_not_found`, `shared_not_configured`, `not_found` | |
 | 409 | `busy`, `confirmation_required`, `instance_has_containers`, `volume_in_use`, `project_has_containers`, `branch_checked_out`, `port_conflict`, `already_exists`, `cancelled`, `shared_in_use`, `shared_running` | protections of the engine |
-| 412 | `docker_unavailable`, `git_unavailable`, `compose_too_old`, `git_too_old` | |
+| 412 | `docker_unavailable`, `git_unavailable`, `compose_too_old`, `git_too_old`, `missing_network` | |
 | 422 | `compose_invalid`, `engine_error` | the engine said no; `message` is its text; `original` has the rest |
 | 500 | `internal` | with `request_id`; details only in the local log |
 

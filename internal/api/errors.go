@@ -89,13 +89,14 @@ func trim(s string) string {
 // when the engine gains one that is not listed here, so that the mapping in
 // fromEngine is never forgotten.
 var engineErrorTypes = map[string]bool{
-	"ChangesError":       true,
-	"InstanceError":      true,
-	"PurgeError":         true,
-	"ConfirmError":       true,
-	"SharedInUseError":   true,
-	"ContainersError":    true,
-	"SharedRunningError": true,
+	"ChangesError":        true,
+	"InstanceError":       true,
+	"PurgeError":          true,
+	"ConfirmError":        true,
+	"SharedInUseError":    true,
+	"ContainersError":     true,
+	"SharedRunningError":  true,
+	"MissingNetworkError": true,
 }
 
 // fromEngine translates an error of the engine, Git or Docker into an API
@@ -113,6 +114,7 @@ func fromEngine(err error, res *ResourceRef) *Error {
 	var conf *engine.ConfirmError
 	var shared *engine.SharedInUseError
 	var cont *engine.ContainersError
+	var missingNet *engine.MissingNetworkError
 	var sharedRun *engine.SharedRunningError
 	switch {
 	case errors.As(err, &changes):
@@ -173,6 +175,9 @@ func fromEngine(err error, res *ResourceRef) *Error {
 			out.Affected = append(out.Affected, Affected{Kind: "compose_project", Name: s.Name, Detail: s.Status})
 		}
 		return out
+	case errors.As(err, &missingNet):
+		return &Error{Status: http.StatusPreconditionFailed, Code: "missing_network", Message: err.Error(), Resource: res,
+			Hint: "create the network, or start the project that owns it, and try again"}
 	case errors.Is(err, context.Canceled):
 		return &Error{Status: http.StatusConflict, Code: "cancelled", Message: "the operation was cancelled", Resource: res}
 	case errors.Is(err, execx.ErrNotFound):
