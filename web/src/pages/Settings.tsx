@@ -15,6 +15,7 @@ import type { ThemePref } from "../lib/theme.ts";
 import type { StatusView } from "../lib/status.ts";
 import { t } from "../strings.ts";
 import { setTitle } from "./Router.tsx";
+import { LanguageSelect } from "../components/LanguageSelect.tsx";
 
 export function checkStatusView(status: string): StatusView {
   const label = t.settingsPage.status[status] ?? status;
@@ -121,6 +122,11 @@ export function Settings({ meta }: { meta: Meta | undefined }) {
             <option value="light">{t.app.themeLight}</option>
             <option value="dark">{t.app.themeDark}</option>
           </select>
+        </div>
+        <div class="field">
+          <label for="pref-lang">{t.app.language}</label>
+          <LanguageSelect id="pref-lang" describedBy="pref-lang-hint" />
+          <p class="hint" id="pref-lang-hint">{t.app.languageHint}</p>
         </div>
         <div class="field">
           <label for="pref-density">{s.density}</label>

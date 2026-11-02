@@ -1,6 +1,7 @@
 // HTTP client for /api/v1: cookie session + CSRF header, typed errors, Idempotency-Key for operations.
 // No secret is ever put in a URL: the launch nonce lives in the URL fragment only until it is exchanged.
 import type { ApiErrorBody } from "./types.ts";
+import { t } from "../strings.ts";
 
 export const BASE = "/api/v1";
 
@@ -90,7 +91,7 @@ async function request<T>(method: string, path: string, body?: unknown, opts: Re
   } catch (e) {
     if ((e as Error).name === "AbortError") throw e;
     sessionLost("server-gone");
-    throw new ApiError(0, { code: "network", message: "Theo is not reachable." });
+    throw new ApiError(0, { code: "network", message: t.app.unreachable });
   }
   if (res.status === 401) {
     sessionLost("no-session");
@@ -107,7 +108,7 @@ async function request<T>(method: string, path: string, body?: unknown, opts: Re
 export async function getWithHeaders<T>(path: string): Promise<{ data: T; headers: Headers }> {
   const res = await fetch(BASE + path, { headers: { Accept: "application/json" }, credentials: "same-origin", cache: "no-store", referrerPolicy: "no-referrer" }).catch(() => {
     sessionLost("server-gone");
-    throw new ApiError(0, { code: "network", message: "Theo is not reachable." });
+    throw new ApiError(0, { code: "network", message: t.app.unreachable });
   });
   if (res.status === 401) { sessionLost("no-session"); throw await parseError(res); }
   if (!res.ok) throw await parseError(res);

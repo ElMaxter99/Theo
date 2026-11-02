@@ -71,7 +71,7 @@ export function PageHead({ title, sub, actions, headingRef }: { title: Component
 
 export function Crumbs({ items }: { items: { label: string; href?: string }[] }) {
   return (
-    <nav aria-label="Breadcrumb">
+    <nav aria-label={t.app.breadcrumb}>
       <ol class="crumbs">
         {items.map((it, i) => (
           <li key={i}>

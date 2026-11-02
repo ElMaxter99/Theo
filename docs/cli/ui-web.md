@@ -15,14 +15,16 @@ web/
   tsconfig.json                     strict TypeScript, typecheck only (esbuild does the bundling)
   src/
     main.tsx, App.tsx               entry, session start, shell
-    strings.ts                      EVERY user-visible text (English; i18n-ready, Q-029)
+    strings.ts                      EVERY user-visible text: the English catalog `en`, `Catalog` (its type) and `t`
+    strings.es.ts                   the Spanish catalog, typed `Catalog` (a missing or extra key fails `npm run check`)
     brand.ts                        the only place with paths to the (provisional) brand artwork
     styles/tokens.css               the only place with colour values: light, dark, semantic colours
     styles/app.css                  layout and components (plain CSS, forced-colors, reduced motion)
     api/        types.ts, client.ts (session + CSRF + errors), sse.ts (parser + reconnecting stream),
                 events.ts (the one global event channel), focus.ts (the "max 2 streams per tab" rule)
     lib/        status.ts (state -> text + icon + tone, one table), ports.ts, overview.ts, logstore.ts,
-                useLogStream.ts, router.ts (hash routes), hooks.ts, theme.ts, live.ts (the one live region), format.ts
+                useLogStream.ts, router.ts (hash routes), hooks.ts, theme.ts, live.ts (the one live region), format.ts,
+                locale.ts (language preference, `num`, `plural`), focusguard.ts (focus never falls back to <body>)
     ops/        store.ts (operations list, start/cancel), Operations.tsx (header indicator and panel)
     components/ Shell, Icon (one icon set), Dialog (native <dialog>; plain and typed confirmation), Tabs (ARIA),
                 VirtualLog (virtualized log view), RemoveFlow, ui.tsx
@@ -69,7 +71,7 @@ The build is deterministic: running it twice gives the same bytes, so CI can che
 |---|---|---|
 | `#/p/<project>/shared` | Shared services of a project: provider state (Compose project, network, host ports published or not, per-service state), start / stop as operations, "Stop sharing" per service, the instances that use them (each with "Stop using"), a form to make another instance use a service, a form to declare a service as shared, "Delete data…". The empty state explains exclusive vs shared. | `pages/SharedServices.tsx` |
 | `#/health` | The reconcile report grouped by kind, with what to do about each finding. Only Theo's own records (`forgettable`) have a checkbox; "Forget Theo's records" asks for confirmation and states that containers, volumes and worktrees are not touched. With `docker_error` a banner says why and which findings are missing. | `pages/Health.tsx`, `lib/health.ts` |
-| `#/settings` | The `doctor` table (status in text + icon, detail, how to fix), versions and data directory, "Copy information for a report" (versions and check results only: no paths, no variables), view preferences (theme, density, reduced motion; stored only in this browser). | `pages/Settings.tsx`, `lib/report.ts`, `lib/prefs.ts` |
+| `#/settings` | The `doctor` table (status in text + icon, detail, how to fix), versions and data directory, "Copy information for a report" (versions and check results only: no paths, no variables), view preferences (theme, language, density, reduced motion; stored only in this browser). | `pages/Settings.tsx`, `lib/report.ts`, `lib/prefs.ts` |
 
 The sidebar has a **Health** entry whose number is the count of findings (text, never only a dot); with `docker_error` it also says
 "Docker unavailable". The count is refreshed when the page opens and, debounced, on `state.changed` and `reconcile.stale`.
@@ -114,6 +116,11 @@ They are the ones in `docs/api.md` (sections 9 to 11 of the backend track), chec
 - **Keyboard and screen readers.** Skip link, landmarks, one polite `aria-live` region (`lib/live.ts`), ARIA tabs with
   Left/Right/Home/End, focus moves to the page heading after navigation and to the step heading in the wizard, dialogs return focus
   to their opener, destructive dialogs focus *Cancel* first and Esc cancels, logs are not live regions.
+- **Language (Q-029).** `t` is the catalog of the language resolved once when the page loads (`lib/locale.ts`: stored
+  preference `theo.lang`, else `navigator.language`, es* -> Spanish); choosing another language saves it and reloads the page,
+  so components import a plain `t` and never subscribe to a language signal. `<html lang>` is set before the first render;
+  the language names in the selector carry their own `lang`. Counts go through `plural` (Intl.PluralRules) and `num`
+  (Intl.NumberFormat), dates through `format.ts`, all with the active locale. Server texts stay in English.
 - **Zoom and motion.** Relative units; at 640 CSS px (200 % zoom) there is no page-level horizontal scroll (wide tables scroll in
   their own focusable region); spinners stop under `prefers-reduced-motion`; `forced-colors` keeps all text and borders.
 - **Logs.** `VirtualLog` renders a window of at most a few hundred line nodes whatever the number of lines (the limit is 10 000);
@@ -131,8 +138,8 @@ All Playwright tests need Chromium and `require('playwright')` (preinstalled in 
 
 | Command | What | Needs |
 |---|---|---|
-| `npm test` | unit tests: design-token contrast, SSE parser, status table, port clashes, log store, virtual window, routes | Node 22 |
-| `npm run test:e2e` | (includes `e2e/v56.test.mjs`: shared services, health, settings, history paging, the wizard checkbox, each screen with axe in light and dark) every screen + axe (light and dark) + CSP, flows (start/stop/cancel, wizard, destructive dialogs, secrets, SSE budget), log viewer with 50 000 lines, keyboard walk, forced colours, zoom, security behaviour | the mock server (started by the tests) |
+| `npm test` | unit tests: design-token contrast, both catalogs have the same keys and non-empty texts (`test/i18n.test.mjs`), SSE parser, status table, port clashes, log store, virtual window, routes | Node 22 |
+| `npm run test:e2e` | (includes `e2e/i18n.test.mjs`: Spanish from the browser, the selector, `lang`, axe in Spanish; `e2e/a11y-v02.test.mjs`: axe inside open dialogs, focus after removals and form errors, live-region announcements; `e2e/v56.test.mjs`: shared services, health, settings, history paging, the wizard checkbox, each screen with axe in light and dark) every screen + axe (light and dark) + CSP, flows (start/stop/cancel, wizard, destructive dialogs, secrets, SSE budget), log viewer with 50 000 lines, keyboard walk, forced colours, zoom, security behaviour | the mock server (started by the tests) |
 | `npm run test:e2e:real` | the same story against the real `theo serve`: add project with the folder picker, start with real Docker, logs, UC-02 port clash with automatic ports, remove with typed confirmation, secrets, purge, security negatives, loopback-only socket | Docker, Go, `THEO_BIN` or a tree that has `internal/api` |
 
 `e2e/real` builds `./cmd/theo` itself when `internal/api` exists; otherwise set `THEO_BIN` to a binary that embeds the current

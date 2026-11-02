@@ -7,6 +7,7 @@ import { VirtualLog } from "../../components/VirtualLog.tsx";
 import { useResource } from "../../lib/hooks.ts";
 import { useLogStream } from "../../lib/useLogStream.ts";
 import { t } from "../../strings.ts";
+import { num } from "../../lib/locale.ts";
 
 const TAILS = [200, 1000, 10000, 50000];
 
@@ -44,7 +45,7 @@ export function LogsTab({ project, w }: { project: string; w: WorktreeDetail }) 
         <div class="field">
           <label for="log-tail">{t.logs.tail}</label>
           <select id="log-tail" class="input" value={String(tail)} onChange={(e) => { s.reset(); setTail(Number((e.currentTarget as HTMLSelectElement).value)); }}>
-            {TAILS.map((n) => <option key={n} value={n}>{n.toLocaleString()}</option>)}
+            {TAILS.map((n) => <option key={n} value={n}>{num(n)}</option>)}
           </select>
         </div>
         <div class="field">

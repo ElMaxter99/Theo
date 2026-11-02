@@ -23,7 +23,10 @@ export function Modal({ title, onClose, children, danger, wide }: { title: strin
     return () => {
       d.removeEventListener("close", onCloseEvt);
       if (d.open) d.close();
-      if (opener && document.contains(opener)) opener.focus();
+      // Focus goes back to the control that opened the dialog. When that control is gone (the row or card it was in
+      // was removed by the action), it goes to the page heading instead of being lost on <body>.
+      if (opener && opener !== document.body && document.contains(opener)) opener.focus();
+      if (!document.activeElement || document.activeElement === document.body) document.querySelector<HTMLElement>("main h1")?.focus();
     };
   }, []);
 
@@ -127,9 +130,10 @@ export function TypedConfirmDialog(p: TypedConfirmProps) {
           </>
         ) : null}
         <div class="field">
-          <label for={inputId}>{p.prompt ?? t.confirm.typeToConfirm(p.expected)}</label>
-          <p class="hint" id={`${inputId}-h`}>{t.confirm.typeToConfirm(p.expected)}</p>
-          <input id={inputId} class="input mono" value={text} autocomplete="off" autocapitalize="off" spellcheck={false} aria-describedby={`${inputId}-h`}
+          <label for={inputId}>{p.prompt || t.confirm.typeToConfirm(p.expected)}</label>
+          {/* The hint repeats the exact text to type; without a server prompt it would only repeat the label. */}
+          {p.prompt ? <p class="hint" id={`${inputId}-h`}>{t.confirm.typeToConfirm(p.expected)}</p> : null}
+          <input id={inputId} class="input mono" value={text} autocomplete="off" autocapitalize="off" spellcheck={false} aria-describedby={p.prompt ? `${inputId}-h` : undefined}
             onInput={(e) => setText((e.currentTarget as HTMLInputElement).value)} />
         </div>
         <ErrorBanner error={error} title={t.confirm.serverRejected} />

@@ -62,7 +62,25 @@ const pairs = [
   ["log-text", "log-bg", 4.5],
   ["log-muted", "log-bg", 4.5],
   ["log-err", "log-bg", 4.5],
+  // Pairs used by app.css that were not listed before the v0.2 accessibility pass.
+  ["danger", "surface", 4.5], // .btn.danger text
+  ["danger", "error-bg", 4.5], // .btn.danger:hover text
+  ["error-fg", "bg", 4.5], // .field-error outside a card
+  ["link", "surface-2", 4.5], // links inside table headers and code
+  ["link", "selected", 4.5],
+  ["text-muted", "selected", 4.5],
+  ["text", "neutral-bg", 4.5],
+  ["text", "error-bg", 4.5],
+  ["warn-fg", "bg", 4.5],
   // Non-text components and the focus ring need 3:1.
+  ["focus", "bg-subtle", 3], // header and sidebar
+  ["focus", "selected", 3], // current sidebar link, selected tab
+  ["focus", "surface-2", 3],
+  ["border", "bg-subtle", 3], // selectors in the header
+  ["border", "surface-2", 3],
+  ["accent", "selected", 3], // selected tab underline, current wizard step
+  ["accent", "surface", 3],
+  ["accent", "bg-subtle", 3],
   ["border", "bg", 3],
   ["border", "surface", 3],
   ["focus", "bg", 3],
