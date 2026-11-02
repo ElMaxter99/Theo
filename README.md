@@ -58,6 +58,7 @@ Run `theo help` for the full list. Every command that prints data supports `--js
 | Compose files | which files and env files are used | [compose-files](docs/cli/compose-files.md) |
 | Worktrees | `worktrees`, `branches`, `worktree add\|remove`, `up`, `down`, `restart`, `ps`, `logs` | [worktrees](docs/cli/worktrees.md) |
 | Host ports | `ports`, `up --auto-ports` | [ports](docs/cli/ports.md) |
+| Local domains | `proxy`, `proxy routes`: `http://<service>.<instance>.<project>.localhost:7080` | [proxy](docs/cli/proxy.md) |
 | Instance settings | `env set\|unset\|list`, `instance set\|show\|config`, `history` | [instance-settings](docs/cli/instance-settings.md) |
 | Volumes | `volumes`, `volumes purge\|backup\|restore\|clone` | [volumes](docs/cli/volumes.md) |
 | Shared services | `shared add\|use\|up\|status\|down` | [shared](docs/cli/shared.md) |

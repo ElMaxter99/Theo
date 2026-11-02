@@ -1,0 +1,150 @@
+# Local domains: `theo proxy`
+
+Every instance gets a name of its own instead of a host port that changes
+with `--auto-ports`:
+
+```sh
+theo proxy                      # foreground; Ctrl+C stops it
+theo proxy routes [project]     # the table of names
+```
+
+```
+http://main.shop.localhost:7080            the main worktree of "shop" (its web service)
+http://web.main.shop.localhost:7080        the same, naming the service
+http://api.feature-x.shop.localhost:7080   the api service of the worktree "feature-x"
+```
+
+## Names
+
+`<service>.<instance>.<project>.localhost[:port]`, and the short form
+`<instance>.<project>.localhost[:port]`.
+
+* **project** is the registered project name.
+* **instance** is `main` for the project's main worktree. For a linked
+  worktree it is what Theo adds to the project name in the Compose project
+  name: the worktree's directory name, plus a short hash when two worktrees
+  share a directory name (`theo ps <project>` shows the Compose names). The
+  branch works too, as an alias, when no other instance has that name:
+  worktree `../shop-login` on branch `feature/login` is both
+  `shop-login.shop.localhost` and `feature-login.shop.localhost`.
+* **service** is the Compose service name.
+
+Each part goes through Theo's slug rule (the one that makes Compose project
+names): lowercase; anything other than a letter, digit, `-` or `_` becomes
+`-`; leading and trailing `-`/`_` are dropped. Host names also turn `_` into
+`-` and are cut at 63 characters. So `feature/Login_Form` is
+`feature-login-form`.
+
+**The short form** goes to the service named `web`, `app`, `api` or
+`frontend`, in that order; otherwise to the first service by name.
+
+**Which port.** Only TCP ports published with a host port are routed (a
+random host port, `"3000"`, is not, nor UDP). A service that publishes
+several goes to its lowest container port (80 before 443, 8080 before 9229);
+reach the others on their host port as before (`theo ports`).
+
+The target is the host port the instance's container publishes now (the
+reassigned one with `--auto-ports`), read the way `theo status` reads it: Git,
+Theo's records and Docker. The proxy keeps that table for 2 seconds; a name
+it does not know, or an instance it thinks is stopped, makes it read again
+(at most twice a second), so an instance you just started answers at once.
+
+## What the proxy does
+
+* Listens on `127.0.0.1:7080` (`--port`, `--addr`). It refuses an address
+  that is not loopback unless you pass `--allow-remote`: then **anyone who can
+  reach your machine on that port reaches every running instance, with no
+  authentication**, including databases' admin pages and debug endpoints. Use
+  it only on a network you trust, and prefer a firewall rule that limits who
+  can connect.
+* Forwards the request unchanged, with the `Host` header you sent (so the
+  application builds links with the name you use) and `X-Forwarded-For`,
+  `X-Forwarded-Host` and `X-Forwarded-Proto: http`.
+* WebSocket and other `Upgrade` requests pass through (hot reload of
+  Vite, webpack, Next.js...).
+* An unknown name answers **404** with the list of routes; `localhost:7080`
+  itself shows that list with 200. A stopped instance answers **502** with the
+  `theo up` command that starts it; so does one whose container does not
+  answer.
+* It writes `proxy.json` in Theo's data directory while it runs. `theo status`
+  then shows the names of each instance (`proxy main: http://…` lines, and
+  `instance.proxy_urls` in `--json`); without a running proxy, `status` is
+  unchanged.
+* Ctrl+C (or SIGTERM) stops it, letting requests in flight finish for up to 3
+  seconds.
+
+Some development servers check the `Host` header and refuse names they do not
+know (Vite's `server.allowedHosts`, webpack-dev-server's `allowedHosts`, Django's
+`ALLOWED_HOSTS`, Rails' `config.hosts`). Add `.localhost` there.
+
+## `theo proxy routes`
+
+```
+ROUTE                                 PROJECT  INSTANCE   SERVICE  TARGET          RUNNING
+http://main.shop.localhost:7080       shop     main       web      127.0.0.1:8080  yes
+http://db.main.shop.localhost:7080    shop     main       db       127.0.0.1:5432  yes
+http://web.main.shop.localhost:7080   shop     main       web      127.0.0.1:8080  yes
+http://feature-x.shop.localhost:7080  shop     feature-x  web      127.0.0.1:8081  no
+```
+
+The port in the URLs is the running proxy's, else 7080, else `--port`.
+`--json` prints `{"port", "proxy_running", "routes": [...]}`, each route with
+`host`, `url`, `default` (the short form), `project`, `instance`, `aliases`
+(optional), `service`, `worktree`, `branch` (optional), `compose_project`
+(optional), `container_port`, `host_port`, `target` and `running`. `--hosts`
+prints hosts-file lines (below).
+
+## How `*.localhost` resolves
+
+`localhost` and every name under it are reserved for the loopback address
+(RFC 6761), but whether a program knows it depends on who resolves the name:
+
+| Client | `*.localhost` → 127.0.0.1 | |
+|---|---|---|
+| Chrome, Edge, Brave, Opera (Chromium) | yes, by the browser itself | all systems |
+| Firefox | yes, by the browser itself | all systems |
+| Safari | recent versions do; older ones ask the system | not verified by us |
+| curl ≥ 7.78 | yes, by curl itself | verified here (Linux, curl 8.5) |
+| The system resolver (`ping`, `getent`, most languages' HTTP clients) | Linux with systemd-resolved or `nss-myhostname`: yes. Plain glibc with `files dns`: **no**. macOS and Windows: generally **no** | Linux without systemd-resolved verified here: `getent hosts web.main.shop.localhost` and Go's resolver fail |
+
+So a browser and curl work as they are. For anything else (a test runner, an
+HTTP library, `ping`, a container), add the names to the hosts file:
+
+```sh
+theo proxy routes --hosts | sudo tee -a /etc/hosts       # macOS, Linux
+theo proxy routes --hosts                                 # Windows: paste into
+                                                          # C:\Windows\System32\drivers\etc\hosts (as administrator)
+```
+
+The hosts file has no wildcards, so run it again after you add a worktree or
+service. Or skip names entirely: any client can send the request to the proxy
+and set the header, `curl -H 'Host: main.shop.localhost' http://127.0.0.1:7080/`.
+
+What we verified: on Linux (glibc, `hosts: files dns`, no systemd-resolved),
+curl 8.5 resolves `*.localhost` by itself while `getent` and Go's resolver do
+not. The browser rows come from the browsers' documented behaviour; the macOS,
+Windows and Safari rows are not verified by Theo's tests.
+
+## With the web interface
+
+`theo ui` keeps showing each instance's `http://localhost:<port>` links; while
+the proxy runs, `theo status --json` (and so any tool built on it) has the
+names in `proxy_urls`. The two servers are separate: the interface listens on
+a random `127.0.0.1` port, the proxy on 7080. Browsers treat each
+`*.localhost` name as its own site, so cookies of `main.shop.localhost` do not
+leak to `feature-x.shop.localhost`, nor to the interface (cookies are not
+scoped by port, so they would on bare `localhost`).
+
+## With agents
+
+An agent working in a worktree can find its instance's address without
+knowing which port `--auto-ports` gave it:
+
+```sh
+theo proxy routes shop --json | jq -r '.routes[] | select(.default and .branch=="feature/x") | .url'
+```
+
+and fetch it with curl (which resolves `*.localhost` itself), or with
+`-H 'Host: …'` against `127.0.0.1:7080` from a client that does not. The name
+of an instance never changes while the worktree exists, so it can be written in
+a test configuration or a prompt once.

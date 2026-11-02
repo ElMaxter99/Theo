@@ -46,6 +46,7 @@ func runStatus(e *engine.Engine, args []string, stdout, _ io.Writer) error {
 	if err != nil {
 		return err
 	}
+	addProxyURLs(report)
 	if *asJSON {
 		return writeJSON(stdout, report)
 	}
@@ -77,6 +78,11 @@ func printStatus(w io.Writer, r *engine.StatusReport) error {
 		}
 		if err := tw.Flush(); err != nil {
 			return err
+		}
+		for _, wt := range p.Worktrees {
+			if wt.Instance != nil && len(wt.Instance.ProxyURLs) > 0 {
+				fmt.Fprintf(w, "  proxy %s: %s\n", statusRef(wt), strings.Join(wt.Instance.ProxyURLs, ", "))
+			}
 		}
 		for _, wt := range p.Worktrees {
 			for _, warn := range wt.Warnings {

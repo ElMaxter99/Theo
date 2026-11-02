@@ -73,7 +73,7 @@ func TestCompletionStatic(t *testing.T) {
 	if got := suggest(t, "--", "--explain"); !reflect.DeepEqual(got, []string{"--explain", "--help", "--version"}) {
 		t.Errorf("global flags = %v", got)
 	}
-	if got := suggest(t, "p", "--explain"); !reflect.DeepEqual(got, []string{"ports", "project", "ps"}) {
+	if got := suggest(t, "p", "--explain"); !reflect.DeepEqual(got, []string{"ports", "project", "proxy", "ps"}) {
 		t.Errorf("commands after --explain = %v", got)
 	}
 	if got := suggest(t, "--f", "up", "app"); !reflect.DeepEqual(got, []string{"--force-recreate"}) {
