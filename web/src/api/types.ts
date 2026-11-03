@@ -32,6 +32,8 @@ export interface Project {
   compose_files?: string[];
   /** Root-relative patterns copied from the main worktree into a new one (`project set --copy-on-add`). */
   copy_on_add?: string[];
+  /** Whether the app stores its own address in its data (Q-020): absent means auto (by image). */
+  url_in_data?: "on" | "off";
   added_at: string;
 }
 
@@ -59,6 +61,11 @@ export interface WtWarning {
   kind: string;
   message: string;
   fix?: string;
+  /** url-in-data (Q-020): the address the data was made for, the current one, the service, and the app's own command. */
+  previous?: string;
+  current?: string;
+  service?: string;
+  command?: string;
 }
 
 export interface UrlInfo {

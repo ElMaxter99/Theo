@@ -337,6 +337,15 @@ func (s *Server) fillInstance(ctx context.Context, project string, wt engine.Wor
 		}
 		v.Ports = append(v.Ports, engine.PortStatus{Service: m.Service, ContainerPort: m.Target, Protocol: m.Protocol, HostPort: port, URL: m.URL(), Status: m.Status})
 	}
+	if len(containers) > 0 {
+		sel := wt.Branch
+		if sel == "" {
+			sel = wt.Path
+		}
+		if w := s.eng.URLInDataWarning(inst, plan, sel); w != nil {
+			v.Warnings = append(v.Warnings, *w)
+		}
+	}
 	for _, m := range plan.Conflicts() {
 		warn("port-conflict", "host port "+m.Configured+" ("+m.Service+") is already in use")
 	}

@@ -418,3 +418,8 @@ dialog.palette { margin: 12vh auto auto; width: min(38rem, calc(100vw - 2rem)); 
   .chip, .search-trigger, .segmented, .toast, .menu-list, .bulkbar, details.more { border: 1px solid CanvasText; }
   .chip[aria-pressed="true"], .subnav a[aria-current="page"], .palette-item[aria-selected="true"], .segmented input:checked + label, .menu-item:focus { background: Highlight; color: HighlightText; forced-color-adjust: none; }
 }
+
+/* Q-020: the url-in-data card on the instance summary. */
+.card.url-in-data { border-color: var(--warn-fg); background: var(--warn-bg); }
+.card.url-in-data h3 { margin: 0; font-size: 1rem; }
+.card.url-in-data pre.cmd { margin: 0; padding: 0.6rem 0.75rem; border-radius: var(--radius-sm); background: var(--surface); overflow-x: auto; white-space: pre; }

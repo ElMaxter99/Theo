@@ -24,6 +24,17 @@ theo instance set my-api -w feature/x --neutralize-container-names
 theo instance set my-api -w feature/x --keep-container-names   # undo
 ```
 
+## Address stored in the data
+
+When the `url-in-data` warning says the data still holds an old address,
+update it with the application's own tool (for WordPress with WP-CLI:
+`wp search-replace 'http://localhost:8081' 'http://localhost:8082'`), then
+tell Theo, so it warns again only when the address changes next time:
+
+```sh
+theo instance set blog -w fix-menu --data-address-updated
+```
+
 ## Inspect
 
 ```sh

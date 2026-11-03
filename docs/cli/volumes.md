@@ -98,12 +98,19 @@ Theo copies bytes; it does not understand what is inside. Some applications
 store their own address in the data. The classic case is WordPress, which keeps
 the site URL (`siteurl` and `home` in the database) and may embed it in content:
 a clone made on port `8081` and started on port `8082` still redirects to
-`http://localhost:8081`. Theo does **not** rewrite data. Advice:
+`http://localhost:8081`. Theo does **not** rewrite data, but it **warns**: after
+`volumes clone`, `up`, `theo status`, the interface and MCP give the
+`url-in-data` warning with the old and the new address (see
+[project](project.md#applications-that-store-their-address-in-their-data---url-in-data)).
+It records the address of the instance's data at its first start, at a clone
+(the source's address) and with `theo instance set --data-address-updated`.
+Advice:
 
 - Fix the address after cloning, with the application's own tool (for WordPress,
-  `wp search-replace 'http://localhost:8081' 'http://localhost:8082'`, or define
-  `WP_HOME` and `WP_SITEURL` from the instance's environment so it is not read
-  from the database).
+  `wp search-replace 'http://localhost:8081' 'http://localhost:8082'` with WP-CLI,
+  which the official `wordpress` image does not include; or define `WP_HOME` and
+  `WP_SITEURL` in `wp-config.php`, which the official image lets you add through
+  the `WORDPRESS_CONFIG_EXTRA` variable).
 - Or keep the instance on a fixed port (see it with `theo ports`, set it with `theo env set`), so the address
   is the same everywhere.
 - Prefer applications and images that read their public URL from an environment

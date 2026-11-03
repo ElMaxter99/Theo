@@ -171,10 +171,10 @@ Same JSON as `theo project list --json` (`name`, `path`, `env_file?`, `worktree_
 ### `POST /projects` `{path, name?, env_file?}` -> 201 (the project)
 Errors: `already_exists` (409), engine text for "not a repository" (422).
 
-### `PATCH /projects/{p}` `{env_file?, worktree_dir?, compose_files?, copy_on_add?}` -> 200 (the project)
+### `PATCH /projects/{p}` `{env_file?, worktree_dir?, compose_files?, copy_on_add?, url_in_data?}` -> 200 (the project)
 `env_file` and `worktree_dir` are a string or `null`; `compose_files` (like `theo project set --compose-file`, in
 merge order, each must exist in the main worktree) and `copy_on_add` (like `--copy-on-add`, root-relative patterns)
-are a list of strings or `null`. `null` clears the setting; an absent key leaves it alone. Any other key answers
+are a list of strings or `null`; `url_in_data` is `"on"`, `"off"`, `"auto"` or `null` (auto), like `--url-in-data`. `null` clears the setting; an absent key leaves it alone. Any other key answers
 400 `unknown_field`.
 
 ### `POST /projects/{p}/rename` `{name, yes?}` -> 200
@@ -550,7 +550,7 @@ Bodies are never logged. Hypothesis not implemented: noting `reveal` in the hist
 ```
 
 ### Settings
-`GET|PATCH .../{wt}/settings` with `{neutralize_container_names?, auto_ports?, profiles?, owner?}`. `profiles`
+`GET|PATCH .../{wt}/settings` with `{neutralize_container_names?, auto_ports?, profiles?, owner?, data_address_updated?}`. `data_address_updated: true` is `theo instance set --data-address-updated` (clears the `url-in-data` warning). `profiles`
 replaces the profiles the instance always starts with (`[]` clears them; each must be in `known_profiles`), and
 `owner` sets the worktree's owner label (`""` clears it), like `theo instance set --profile` and `theo worktree
 owner`.

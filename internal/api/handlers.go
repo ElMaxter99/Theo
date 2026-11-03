@@ -224,7 +224,7 @@ func (s *Server) handlePatchProject(w http.ResponseWriter, r *http.Request, _ *s
 		return v, true, nil
 	}
 	for k := range req {
-		if k != "env_file" && k != "worktree_dir" && k != "compose_files" && k != "copy_on_add" {
+		if k != "env_file" && k != "worktree_dir" && k != "compose_files" && k != "copy_on_add" && k != "url_in_data" {
 			return errf(http.StatusBadRequest, "unknown_field", "unknown field "+quote(k))
 		}
 	}
@@ -276,6 +276,16 @@ func (s *Server) handlePatchProject(w http.ResponseWriter, r *http.Request, _ *s
 	if hasDir {
 		if err := s.eng.SetWorktreeDir(name, dir); err != nil {
 			return err
+		}
+	}
+	if mode, has, err := str("url_in_data"); err != nil {
+		return err
+	} else if has {
+		if mode == "" {
+			mode = engine.URLInDataAuto
+		}
+		if _, err := s.eng.SetURLInData(name, mode); err != nil {
+			return badRequest(err.Error())
 		}
 	}
 	p, err := s.eng.Project(name)
@@ -807,6 +817,9 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request, _ *
 		// worktree's owner label.
 		Profiles *[]string `json:"profiles"`
 		Owner    *string   `json:"owner"`
+		// DataAddressUpdated records that the data now holds the current
+		// address (clears the url-in-data warning, Q-020).
+		DataAddressUpdated bool `json:"data_address_updated"`
 	}
 	if err := decode(r, &req); err != nil {
 		return err
@@ -846,6 +859,12 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request, _ *
 		if err := s.eng.SetAutoPorts(inst, *req.AutoPorts); err != nil {
 			return err
 		}
+	}
+	if req.DataAddressUpdated {
+		if _, err := s.eng.ConfirmDataAddress(r.Context(), inst); err != nil {
+			return badRequest(err.Error())
+		}
+		s.cache.invalidate(r.PathValue("p"))
 	}
 	return writeJSON(w, http.StatusOK, s.settingsWithOwner(inst, owner))
 }

@@ -4,6 +4,9 @@ Notable changes per release. Each release on GitHub also lists every merged pull
 
 ## v0.3.0 (unreleased)
 
+### New
+- **Address stored in the data (Q-020):** for applications that keep their own address in their data (WordPress, Ghost, Drupal, Joomla, Matomo, Nextcloud, or any project with `theo project set --url-in-data on`), Theo warns (`url-in-data`) when an instance answers on another address than the one its data was made for: after `volumes clone`, after `up`, in `theo status`, MCP and the interface (a card on the instance summary with the old and the new address and what to do). Theo never changes data. `theo instance set --data-address-updated` records the new address once the data is updated.
+
 ### Changed
 - **Desktop, missing WebView2 (Windows):** the dialog now explains in Spanish what is missing, offers to open Microsoft's download page (Yes / No) and points to `theo ui` in the meantime. The technical detail stays at the end for bug reports.
 

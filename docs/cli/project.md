@@ -12,10 +12,25 @@ theo project show <name> [--json]
 theo project set <name> [--env-file <f> | --no-env-file]
                         [--worktree-dir <d> | --default-worktree-dir]
                         [--compose-file <f>... | --default-compose-files]
+                        [--url-in-data auto|on|off]
 theo project rename <old> <new> [--yes] [--json]
 theo project remove <name> [--yes] [--forget-records] [--json]
                            [--delete-worktrees --confirm <name> [--discard-changes]]
 ```
+
+## Applications that store their address in their data (`--url-in-data`)
+
+Some applications keep their own address in their data: WordPress keeps the
+site URL in the database. When such an instance answers on another address
+than the one its data was made for (after `volumes clone`, or after `up
+--auto-ports` moved its port), Theo warns with the kind `url-in-data`. It
+never changes the data. See [volumes](volumes.md#limit-data-that-depends-on-the-instances-port-or-url).
+
+`auto` (the default) turns the warning on for the images known to do this:
+`wordpress`, `ghost`, `drupal`, `joomla`, `matomo` and `nextcloud`, by image
+name in any registry. `on` turns it on for any image (the service with a
+known image, else `web`, `app`, `api` or `frontend`, else the first one that
+publishes a port); `off` turns it off.
 
 ## show (FR-004)
 

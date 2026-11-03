@@ -124,7 +124,7 @@ func runInstanceCmd(e *engine.Engine, args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("instance "+sub, flag.ContinueOnError)
 	var sel instanceFlags
 	sel.register(fs)
-	var neutralize, keep, auto, asJSON, autoOn, autoOff, noProfiles bool
+	var neutralize, keep, auto, asJSON, autoOn, autoOff, noProfiles, addrUpdated bool
 	var profiles stringList
 	switch sub {
 	case "set":
@@ -134,6 +134,7 @@ func runInstanceCmd(e *engine.Engine, args []string, stdout io.Writer) error {
 		fs.BoolVar(&autoOff, "no-auto-ports", false, "use the configured host ports again")
 		fs.Var(&profiles, "profile", "Compose profile the instance always starts with (repeatable)")
 		fs.BoolVar(&noProfiles, "no-profiles", false, "clear the profiles of this instance")
+		fs.BoolVar(&addrUpdated, "data-address-updated", false, "record that the data now holds the instance's current address (clears the url-in-data warning)")
 	case "show":
 		fs.BoolVar(&asJSON, "json", false, "print JSON")
 	case "config":
@@ -161,8 +162,15 @@ func runInstanceCmd(e *engine.Engine, args []string, stdout io.Writer) error {
 		setsProfiles := len(profiles) > 0 || noProfiles
 		setsNames := neutralize || keep
 		setsAuto := autoOn || autoOff
-		if neutralize && keep || autoOn && autoOff || len(profiles) > 0 && noProfiles || !setsNames && !setsAuto && !setsProfiles {
-			return usageErrorf("instance set needs --neutralize-container-names | --keep-container-names, --auto-ports | --no-auto-ports, and/or --profile <p> (repeatable) | --no-profiles")
+		if neutralize && keep || autoOn && autoOff || len(profiles) > 0 && noProfiles || !setsNames && !setsAuto && !setsProfiles && !addrUpdated {
+			return usageErrorf("instance set needs --neutralize-container-names | --keep-container-names, --auto-ports | --no-auto-ports, --profile <p> (repeatable) | --no-profiles, and/or --data-address-updated")
+		}
+		if addrUpdated {
+			url, err := e.ConfirmDataAddress(ctx, inst)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(stdout, "%s: its data now holds %s; Theo warns again if the address changes.\n", inst.Compose, url)
 		}
 		if neutralize || keep {
 			if err := e.SetNeutralizeContainerNames(inst, neutralize); err != nil {

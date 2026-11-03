@@ -124,6 +124,7 @@ Fields marked *optional* are left out when they do not apply.
 | `config-error` | `docker compose config` fails for this worktree (first line of the error) |
 | `fixed-container-name` | a linked worktree's services set `container_name`, so a second instance collides |
 | `docker-unavailable` | Docker could not be asked |
+| `url-in-data` | the application stores its own address in its data (`project set --url-in-data`) and the instance answers on another one; `previous`, `current` and `service` say which, `command` is the application's own fix when Theo knows one (WP-CLI for WordPress), and `fix` is `theo instance set ... --data-address-updated` |
 | `compose-changed` | the instance has containers, and the configuration `docker compose config` resolves now differs from the one its last successful `up` or `recreate` started from; `fix` is the `theo up` command that applies it |
 | `project missing`, `worktree missing`, `containers removed`, `orphan containers`, `orphan volumes`, `stale settings`, `stale ports`, `stale files` | findings of `theo reconcile`, reused as they are (`fix` carries its advice) |
 

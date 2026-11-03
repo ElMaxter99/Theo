@@ -209,6 +209,10 @@ func (e *Engine) Up(ctx context.Context, inst *Instance, opts compose.UpOptions,
 	}
 	err := e.compose.Up(ctx, inst.target(), opts, stdout, stderr)
 	e.recordStart(inst, "up", err)
+	if err == nil {
+		// The first start Theo sees is the address the data was made for (Q-020).
+		e.rememberDataAddress(inst, e.AddressOf(ctx, inst), "start", "", false)
+	}
 	return err
 }
 
