@@ -19,17 +19,19 @@ async function tabUntil(page, pred, max = 60) {
   assert.fail("did not reach the target with Tab; last: " + (await active(page)));
 }
 
-test("keyboard-only walk: skip link, project, worktree, all tabs with arrow keys, wizard, dialog focus return", async () => {
+test("keyboard-only walk: skip link, project, worktree, all tabs with arrow keys", async () => {
   const page = await openApp(browser, mock);
-  await page.getByText("5 worktrees").waitFor();
   await page.keyboard.press("Tab");
   assert.match(await active(page), /Skip to content/);
   await page.keyboard.press("Enter");
   assert.match(await active(page), /^MAIN\|main/);
-  // Project card -> panel
-  await tabUntil(page, (a) => /^A\|\|Open shop/.test(a));
-  await page.keyboard.press("Enter");
+  await page.evaluate(() => { location.hash = "#/projects"; });
   await page.waitForSelector("table.data");
+  await page.waitForTimeout(300); // the shell moves focus to the page heading after a navigation
+  // Project link -> instances
+  await tabUntil(page, (a) => /^A\|\|shop$/.test(a));
+  await page.keyboard.press("Enter");
+  await page.waitForSelector("table.data.rows");
   // Worktree link -> detail
   await tabUntil(page, (a) => /^A\|\|fix-123$/.test(a));
   await page.keyboard.press("Enter");
@@ -37,49 +39,46 @@ test("keyboard-only walk: skip link, project, worktree, all tabs with arrow keys
   // Tabs: roving tabindex + arrows
   await tabUntil(page, (a) => /inst-tab-summary/.test(a));
   const seen = [];
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 5; i++) {
     seen.push(await page.evaluate(() => document.activeElement.id));
     await page.keyboard.press("ArrowRight");
   }
-  assert.deepEqual(seen, ["summary", "services", "ports", "logs", "variables", "volumes", "history"].map((t) => `inst-tab-${t}`));
+  assert.deepEqual(seen, ["summary", "logs", "config", "data", "activity"].map((t) => `inst-tab-${t}`));
   assert.equal(await page.evaluate(() => document.activeElement.id), "inst-tab-summary", "wraps around");
   await page.keyboard.press("End");
-  assert.equal(await page.locator("[role=tab][aria-selected=true]").getAttribute("id"), "inst-tab-history");
+  assert.equal(await page.locator("[role=tab][aria-selected=true]").getAttribute("id"), "inst-tab-activity");
   await page.keyboard.press("Home");
   assert.equal(await page.locator("[role=tab][aria-selected=true]").getAttribute("id"), "inst-tab-summary");
   assert.equal(await page.locator("[role=tab][tabindex='0']").count(), 1, "only the selected tab is in the tab order");
   await page.ctx.close();
 });
 
-test("keyboard-only: the wizard and the destructive dialog return focus to their opener", async () => {
+test("keyboard-only: the row menu, the destructive dialog and the new instance panel return focus", async () => {
   const page = await openApp(browser, mock, { route: "#/p/shop", wait: "table.data" });
-  // Open "More actions" of old-spike, then remove, with the keyboard only.
-  const summary = page.locator("tr", { hasText: "old-spike" }).locator("summary");
-  await summary.focus();
+  await page.waitForTimeout(300);
+  // Open "More actions" of old-spike, go to the last item (remove) and open it, with the keyboard only.
+  const menuButton = page.getByRole("button", { name: "More actions for old-spike" });
+  await menuButton.focus();
   await page.keyboard.press("Enter");
-  await page.keyboard.press("Tab");
-  const remove = page.locator("tr", { hasText: "old-spike" }).getByRole("button", { name: /Remove worktree/ });
-  await remove.focus();
+  await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "menuitem");
+  await page.keyboard.press("End");
+  assert.match(await active(page), /Remove worktree/);
   await page.keyboard.press("Enter");
   await page.locator("dialog[open]").waitFor();
   assert.match(await active(page), /Cancel/);
   await page.keyboard.press("Escape");
   await page.locator("dialog[open]").waitFor({ state: "detached" });
-  // Focus returns to the control that opened the dialog (inside the menu that was open).
   assert.notEqual(await active(page), "BODY||");
-  await page.goto(page.url().split("#")[0] + "#/p/shop/new");
-  await page.waitForSelector(".stepper");
-  await page.waitForTimeout(300); // the shell moves focus to the page heading shortly after a navigation
-  await page.locator("#wz-new").focus();
-  await page.keyboard.type("kbd-branch");
-  await page.keyboard.press("Tab"); // from field to "start from" select
-  await page.keyboard.press("Tab"); // Next button
+  // The panel: the name field has the focus; Escape closes it and focus is not lost.
+  await page.getByRole("link", { name: "New instance" }).first().focus();
   await page.keyboard.press("Enter");
-  await page.waitForSelector("#wz-folder");
-  assert.match(await page.locator(".wizard-heading").textContent(), /Step 2 of 4/);
-  // Focus moves to the heading a moment after the step renders; wait for it instead of reading it once.
-  await page.waitForFunction(() => document.activeElement?.className.includes("wizard-heading"), null, { timeout: 3000 }).catch(() => undefined);
-  assert.equal(await page.evaluate(() => document.activeElement.className.includes("wizard-heading")), true, "focus moved to the step heading");
+  await page.locator("dialog.drawer").waitFor();
+  await page.waitForFunction(() => document.activeElement?.id === "ni-name", null, { timeout: 3000 });
+  await page.keyboard.type("kbd-branch");
+  assert.match(await page.locator(".summary-line").innerText(), /kbd-branch/);
+  await page.keyboard.press("Escape");
+  await page.locator("dialog.drawer").waitFor({ state: "detached" });
+  assert.notEqual(await active(page), "BODY||");
   await page.ctx.close();
 });
 
@@ -123,14 +122,14 @@ for (const [name, opts] of [["dark mode", { colorScheme: "dark" }], ["forced col
 }
 
 test("manual theme override persists in localStorage and survives a reload", async () => {
-  const page = await openApp(browser, mock);
-  await page.locator("#theme-select").selectOption("dark");
+  const page = await openApp(browser, mock, { route: "#/settings", wait: "#pref-theme" });
+  await page.locator("#pref-theme").selectOption("dark");
   assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "dark");
   assert.equal(await page.evaluate(() => localStorage.getItem("theo.theme")), "dark");
   await page.reload();
-  await page.waitForSelector("main h1");
+  await page.waitForSelector("#pref-theme");
   assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "dark");
-  await page.locator("#theme-select").selectOption("system");
+  await page.locator("#pref-theme").selectOption("system");
   assert.equal(await page.evaluate(() => document.documentElement.dataset.theme ?? "none"), "none");
   await page.ctx.close();
 });
@@ -143,7 +142,8 @@ test("the page still works when localStorage throws", async () => {
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto(await mock.launchUrl());
   await page.waitForSelector("main h1");
-  await page.locator("#theme-select").selectOption("dark"); // applies for this page view even if it cannot be saved
+  await page.evaluate(() => { location.hash = "#/settings"; });
+  await page.locator("#pref-theme").selectOption("dark"); // applies for this page view even if it cannot be saved
   assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "dark");
   assert.deepEqual(errors, []);
   await context.close();
@@ -159,15 +159,15 @@ test("reduced motion: spinners do not animate", async () => {
   await page.ctx.close();
 });
 
-for (const [label, route] of [["project list", ""], ["panel", "#/p/shop"], ["detail summary", "DETAIL"], ["variables", "VARS"], ["wizard", "#/p/shop/new"], ["add project", "#/projects/new"]]) {
+for (const [label, route] of [["project list", ""], ["panel", "#/p/shop"], ["detail summary", "DETAIL"], ["configuration", "VARS"], ["new instance panel", "#/p/shop/new"], ["add project", "#/projects/new"]]) {
   test(`200% zoom (640 CSS px) and larger text: no page-level horizontal scroll on ${label}`, async () => {
     const url = new URL(await mock.launchUrl());
     const r = await fetch(mock.origin + "/api/v1/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nonce: url.hash.slice(3) }) });
     const cookie = r.headers.get("set-cookie").split(";")[0];
     const ov = await (await fetch(mock.origin + "/api/v1/projects/shop/overview", { headers: { Cookie: cookie } })).json();
     const id = ov.worktrees.find((w) => w.main).id;
-    const target = route === "DETAIL" ? `#/p/shop/w/${id}/summary` : route === "VARS" ? `#/p/shop/w/${id}/variables` : route;
-    const page = await openApp(browser, mock, { viewport: { width: 640, height: 800 }, route: target, wait: route === "#/p/shop/new" ? ".stepper" : "main h1, .welcome h1" });
+    const target = route === "DETAIL" ? `#/p/shop/w/${id}/summary` : route === "VARS" ? `#/p/shop/w/${id}/config` : route;
+    const page = await openApp(browser, mock, { viewport: { width: 640, height: 800 }, route: target, wait: route === "#/p/shop/new" ? "dialog.drawer" : "main h1, .welcome h1" });
     await page.waitForTimeout(600);
     for (const size of ["100%", "150%"]) {
       await page.evaluate((s) => { document.documentElement.style.fontSize = s; }, size);

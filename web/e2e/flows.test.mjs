@@ -1,4 +1,4 @@
-// Interaction flows against the mock API: lifecycle and operations, wizard, destructive dialogs, variables, SSE budget.
+// Interaction flows against the mock API: lifecycle and operations, the new instance panel, destructive dialogs, variables, SSE budget.
 import { test, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { chromium, startMock, openApp, shot } from "./helpers.mjs";
@@ -43,10 +43,10 @@ test("start from the panel: row-level busy state, then running with a link", asy
   const r = row(page, "feature-x");
   await r.getByRole("button", { name: /Start feature-x/ }).click();
   await r.locator(".badge:has-text('Starting')").waitFor();
-  assert.ok(await r.getByRole("button", { name: /Start feature-x/ }).isDisabled(), "row is locked while busy");
-  assert.ok(await row(page, "main").getByRole("button", { name: /Stop main/ }).isEnabled(), "other rows stay usable");
+  assert.equal(await r.getByRole("button", { name: /Start feature-x/ }).count(), 0, "the row shows the progress instead of Start while busy");
+  assert.ok(await row(page, "main").getByRole("button", { name: /More actions for main/ }).isEnabled(), "other rows stay usable");
   await r.locator(".badge:has-text('Running')").waitFor({ timeout: 15000 });
-  await r.locator("a[href^='http://localhost:']").waitFor();
+  await r.locator("td.url-list a[href^='http://localhost:']").waitFor();
   assert.ok((await page.locator("#live-region").textContent()) !== null);
   await page.ctx.close();
 });
@@ -95,31 +95,29 @@ test("closing the tab during an operation does not stop it; reopening shows it a
   await page2.ctx.close();
 });
 
-test("wizard: existing branch in another worktree cannot be chosen, and says why", async () => {
-  const page = await openApp(browser, mock, { route: "#/p/shop/new", wait: ".stepper" });
-  await page.getByLabel("Use an existing branch").check();
-  const radio = page.getByRole("radio", { name: /fix-123/ });
-  assert.ok(await radio.isDisabled());
-  assert.ok(await page.locator("text=in use: it is active in another worktree").count() > 0);
-  await page.getByRole("radio", { name: /develop/ }).check();
-  await page.getByRole("button", { name: "Next" }).click();
-  await page.waitForSelector("#wz-folder");
+const panel = (page) => page.locator("dialog.drawer");
+
+test("new instance: an existing branch in another worktree cannot be chosen, and says why", async () => {
+  const page = await openApp(browser, mock, { route: "#/p/shop/new", wait: "dialog.drawer" });
+  await panel(page).getByText("Existing branch").click();
+  const option = page.locator("#ni-branch option", { hasText: "fix-123" });
+  assert.ok(await option.evaluate((o) => o.disabled));
+  assert.match(await option.innerText(), /in use: it is active in another worktree/);
+  await page.selectOption("#ni-branch", "develop");
+  assert.match(await panel(page).locator(".summary-line").innerText(), /develop/);
   await page.ctx.close();
 });
 
-test("wizard: conflict preview, automatic ports, both instances running with distinct URLs", async () => {
+test("new instance: conflict preview, automatic ports, both instances running with distinct URLs", async () => {
   await mock.scenario({ slow: 0.2 });
-  const page = await openApp(browser, mock, { route: "#/p/shop/new", wait: ".stepper" });
-  await page.fill("#wz-new", "fix-456");
-  await page.getByRole("button", { name: "Next" }).click();
-  await page.getByRole("button", { name: "Next" }).click();
-  await page.waitForSelector("text=would clash");
-  assert.ok(await page.getByRole("radio", { name: /Assign free ports automatically/ }).isChecked(), "automatic is the default");
-  await page.getByRole("button", { name: "Next" }).click();
-  await page.getByRole("button", { name: "Create and start" }).click();
+  const page = await openApp(browser, mock, { route: "#/p/shop/new", wait: "dialog.drawer" });
+  await page.fill("#ni-name", "fix-456");
+  await panel(page).locator("text=These host ports are taken").waitFor();
+  assert.ok(await page.locator("#ni-auto").isChecked(), "automatic is the default");
+  await panel(page).getByRole("button", { name: "Create and start" }).click();
   await page.waitForURL(/#\/p\/shop\/w\/wt_[0-9a-f]{10}\/logs/);
   await page.waitForSelector(".log-view");
-  await shot(page, "20-after-wizard-logs");
+  await shot(page, "20-after-new-instance-logs");
   const call = await session();
   const deadline = Date.now() + 20000;
   let ov;
@@ -135,24 +133,21 @@ test("wizard: conflict preview, automatic ports, both instances running with dis
   await page.ctx.close();
 });
 
-test("wizard: when starting fails the worktree is kept and the screen says so", async () => {
+test("new instance: when starting fails the worktree is kept and the screen says so", async () => {
   await mock.scenario({ slow: 0.2 });
-  const page = await openApp(browser, mock, { route: "#/p/shop/new", wait: ".stepper" });
-  await page.fill("#wz-new", "fail-it");
-  for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "Next" }).click();
-  await page.getByRole("button", { name: "Create and start" }).click();
+  const page = await openApp(browser, mock, { route: "#/p/shop/new", wait: "dialog.drawer" });
+  await page.fill("#ni-name", "fail-it");
+  await panel(page).getByRole("button", { name: "Create and start" }).click();
   await page.waitForURL(/\/logs/);
   await page.locator("text=The last operation failed").waitFor({ timeout: 20000 });
   assert.ok(await page.locator("text=The worktree and the branch were kept").count() > 0);
   await page.ctx.close();
 });
 
-test("wizard: notes from the engine are shown", async () => {
-  const page = await openApp(browser, mock, { route: "#/p/shop/new", wait: ".stepper" });
-  await page.fill("#wz-new", "noenv-branch");
-  for (let i = 0; i < 3; i++) await page.getByRole("button", { name: "Next" }).click();
-  await page.getByLabel("Start the instance now").uncheck();
-  await page.getByRole("button", { name: "Create", exact: true }).click();
+test("new instance: notes from the engine are shown", async () => {
+  const page = await openApp(browser, mock, { route: "#/p/shop/new", wait: "dialog.drawer" });
+  await page.fill("#ni-name", "noenv-branch");
+  await panel(page).getByRole("button", { name: "Create only" }).click();
   await page.locator("text=Notes from Theo").waitFor();
   assert.ok(await page.locator("text=no .env file was found").count() > 0);
   await page.ctx.close();
@@ -161,8 +156,8 @@ test("wizard: notes from the engine are shown", async () => {
 test("remove a worktree with uncommitted changes: typed confirmation, server revalidates", async () => {
   const page = await openApp(browser, mock, { route: "#/p/shop", wait: "table.data" });
   const r = row(page, "old-spike");
-  await r.locator("summary").click();
-  await r.getByRole("button", { name: /Remove worktree/ }).click();
+  await r.getByRole("button", { name: /More actions for/ }).click();
+  await page.getByRole("menuitem", { name: /Remove worktree/ }).click();
   await page.getByRole("button", { name: "Remove worktree" }).click(); // plain confirmation, nothing deleted yet
   const dlg = page.locator("dialog[open]");
   await dlg.locator("text=Will be deleted").waitFor();
@@ -186,8 +181,8 @@ test("remove: Escape cancels; the server rejects a wrong confirmation when calle
   const id = await wt("old-spike");
   const page = await openApp(browser, mock, { route: "#/p/shop", wait: "table.data" });
   const r = row(page, "old-spike");
-  await r.locator("summary").click();
-  await r.getByRole("button", { name: /Remove worktree/ }).click();
+  await r.getByRole("button", { name: /More actions for/ }).click();
+  await page.getByRole("menuitem", { name: /Remove worktree/ }).click();
   await page.locator("dialog[open]").waitFor();
   await page.keyboard.press("Escape");
   await page.locator("dialog[open]").waitFor({ state: "detached" });
@@ -205,8 +200,8 @@ test("remove: Escape cancels; the server rejects a wrong confirmation when calle
 test("remove a worktree that still has containers: refused, 'stop first'", async () => {
   const page = await openApp(browser, mock, { route: "#/p/shop", wait: "table.data" });
   const r = row(page, "fix-123");
-  await r.locator("summary").click();
-  await r.getByRole("button", { name: /Remove worktree/ }).click();
+  await r.getByRole("button", { name: /More actions for/ }).click();
+  await page.getByRole("menuitem", { name: /Remove worktree/ }).click();
   await page.getByRole("button", { name: "Remove worktree" }).click();
   await page.locator("dialog[open] >> text=This instance still has containers").waitFor();
   assert.ok(await page.locator("dialog[open] >> text=Stop the instance first").count() > 0);
@@ -260,18 +255,19 @@ test("secrets: never in the DOM or in list responses until Show; hidden again af
 
 test("variables: add, edit and delete", async () => {
   const id = await wt("main");
-  const page = await openApp(browser, mock, { route: `#/p/shop/w/${id}/variables`, wait: "table.data" });
-  await page.getByRole("button", { name: "Add variable" }).click();
+  const page = await openApp(browser, mock, { route: `#/p/shop/w/${id}/config`, wait: "table.data" });
+  const vars = page.locator("section[aria-labelledby=cfg-vars]");
+  await vars.getByRole("button", { name: "Add variable" }).click();
   await page.fill("#var-name", "1bad");
-  await page.getByRole("button", { name: "Save" }).click();
+  await vars.getByRole("button", { name: "Save" }).click();
   await page.locator("text=do not start with a digit").waitFor();
   await page.fill("#var-name", "NEW_VAR");
   await page.fill("#var-value", "hello");
-  await page.getByRole("button", { name: "Save" }).click();
+  await vars.getByRole("button", { name: "Save" }).click();
   await page.locator("th:has-text('NEW_VAR')").waitFor();
   await page.getByRole("button", { name: "Edit NEW_VAR" }).click();
   await page.fill("#var-value", "changed");
-  await page.getByRole("button", { name: "Save" }).click();
+  await vars.getByRole("button", { name: "Save" }).click();
   await page.locator("td:has-text('changed')").waitFor();
   await page.getByRole("button", { name: "Delete NEW_VAR" }).click();
   await page.locator("dialog[open]").getByRole("button", { name: "Delete" }).click();
@@ -290,7 +286,7 @@ test("never more than 2 SSE connections per tab, even with logs and operation ou
   await page.getByRole("button", { name: "Show output" }).first().click();
   await page.waitForTimeout(1200);
   await page.locator("text=Another live view is using the connection").waitFor();
-  for (const tab of ["summary", "services", "logs", "history"]) { await page.evaluate((h) => { location.hash = h; }, `#/p/shop/w/${id}/${tab}`); await page.waitForTimeout(300); }
+  for (const tab of ["summary", "config", "logs", "activity"]) { await page.evaluate((h) => { location.hash = h; }, `#/p/shop/w/${id}/${tab}`); await page.waitForTimeout(300); }
   assert.ok(sse.max() <= 2, `max simultaneous SSE connections in the tab was ${sse.max()}`);
   assert.ok(sse.max() >= 2, "the global channel and one focus stream were both used");
   await page.ctx.close();

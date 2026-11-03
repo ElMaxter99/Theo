@@ -77,7 +77,7 @@ looks for changes made outside Theo every 5 seconds.
 
 The interface is available in English (the default, like the CLI) and in Spanish (Spain). On the first visit it follows the
 browser: a browser set to any Spanish variant (`es`, `es-ES`, `es-MX`...) gets Spanish, anything else gets English. The
-**Language** selector next to the theme selector (and in *Settings*) offers *System*, *English* and *Español*; the choice is
+**Language** selector in *Settings › Preferences*, next to the theme, offers *System*, *English* and *Español*; the choice is
 stored only in this browser, like the theme, and changing it reloads the page. Numbers and dates follow the chosen language.
 Texts that come from the server or from Docker (error messages, `doctor` details, findings, log lines) stay in English, and
 so does the text copied by *Copy information for a report*, so that reports read the same for everyone.

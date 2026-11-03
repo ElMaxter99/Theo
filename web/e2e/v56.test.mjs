@@ -186,7 +186,7 @@ test("health: findings grouped by kind, fixed text, indicator with a number, axe
   assert.ok(await page.getByRole("heading", { name: /Stale ports \(2\)/ }).count() === 1);
   assert.match(await page.locator("main").textContent(), /This does not delete containers, volumes or worktrees/);
   const nav = page.getByTestId("nav-health");
-  assert.match(await nav.textContent(), /Health\s*6/);
+  assert.match(await nav.textContent(), /Problems\s*6/);
   assert.match(await nav.textContent(), /findings/);
   // Only Theo's own records have a checkbox.
   const orphan = page.locator("section", { has: page.getByRole("heading", { name: /Orphan volumes/ }) });
@@ -215,7 +215,7 @@ test("health: forget removes Theo's records only, after a confirmation, and the 
   await button.click();
   await dlg.getByRole("button", { name: "Forget records" }).click();
   await dlg.waitFor({ state: "detached" });
-  await page.waitForFunction(() => document.querySelectorAll("section h2").length === 4);
+  await page.getByRole("heading", { name: /Stale ports/ }).waitFor({ state: "detached" });
   const after = (await call("GET", "/reconcile")).body.findings;
   assert.equal(after.length, 4);
   assert.deepEqual(after.map((f) => f.kind).sort(), ["orphan containers", "orphan volumes", "stale settings", "worktree missing"]);
@@ -227,7 +227,7 @@ test("health: forget removes Theo's records only, after a confirmation, and the 
   assert.deepEqual(r.body.skipped, [bad.id], "a finding that is not Theo's own record is skipped, not forgotten");
   assert.equal(r.body.forgotten, 0);
   assert.equal((await call("GET", "/reconcile")).body.findings.length, 4);
-  assert.match(await page.getByTestId("nav-health").textContent(), /Health\s*4/);
+  assert.match(await page.getByTestId("nav-health").textContent(), /Problems\s*4/);
   await page.ctx.close();
 });
 
@@ -246,7 +246,7 @@ test("health: no findings says so in text and the indicator shows 0", async () =
   await mock.scenario({ healthy: true });
   const page = await openApp(browser, mock, { route: "#/health", wait: "h1" });
   await page.getByText("No differences found").waitFor();
-  assert.match(await page.getByTestId("nav-health").textContent(), /Health\s*0/);
+  assert.match(await page.getByTestId("nav-health").textContent(), /Problems\s*0/);
   await check(page, "47-health-clean");
   await page.ctx.close();
 });
@@ -254,11 +254,12 @@ test("health: no findings says so in text and the indicator shows 0", async () =
 // ------------------------------------------------------------------ settings and diagnostics
 
 test("settings: doctor checks with status text, versions, copy report without secrets", async () => {
-  const page = await openApp(browser, mock, { route: "#/settings", wait: "h1" });
-  await page.getByRole("heading", { name: "Checks" }).waitFor();
-  await page.locator("table tbody tr", { hasText: "Docker Compose" }).waitFor();
+  const page = await openApp(browser, mock, { route: "#/settings/about", wait: "#st-about" });
   assert.match(await page.locator("section[aria-labelledby=st-about]").textContent(), /0\.0\.0-mock/);
   assert.match(await page.locator("section[aria-labelledby=st-about]").textContent(), /\/home\/ana\/\.local\/share\/theo/);
+  await page.evaluate(() => { location.hash = "#/settings/diagnostics"; });
+  await page.getByRole("heading", { name: "Checks" }).waitFor();
+  await page.locator("table tbody tr", { hasText: "Docker Compose" }).waitFor();
   await check(page, "48-settings");
   // Report text: the clipboard may be blocked in the test browser; either way the text is available.
   await page.getByRole("button", { name: "Copy information for a report" }).click();
@@ -274,7 +275,7 @@ test("settings: doctor checks with status text, versions, copy report without se
 
 test("settings: an old Compose is reported as failed, with how to fix it", async () => {
   await mock.scenario({ composeOld: true });
-  const page = await openApp(browser, mock, { route: "#/settings", wait: "h1" });
+  const page = await openApp(browser, mock, { route: "#/settings/diagnostics", wait: "h1" });
   const row = page.locator("table tbody tr", { hasText: "Docker Compose" });
   await row.waitFor();
   assert.match(await row.textContent(), /Failed/);
@@ -286,7 +287,7 @@ test("settings: an old Compose is reported as failed, with how to fix it", async
 
 test("settings: a platform warning (Windows outside WSL 2) is shown as a warning, not as a failure", async () => {
   await mock.scenario({ windows: true });
-  const page = await openApp(browser, mock, { route: "#/settings", wait: "h1" });
+  const page = await openApp(browser, mock, { route: "#/settings/diagnostics", wait: "h1" });
   const row = page.locator("table tbody tr", { hasText: "Project location" });
   await row.waitFor();
   assert.match(await row.textContent(), /Warning/);
@@ -313,7 +314,7 @@ test("history: pages of 20, older events on demand, until everything is loaded",
   const call = await session();
   const ov = (await call("GET", "/projects/shop/overview")).body;
   const main = ov.worktrees.find((w) => w.main).id;
-  const page = await openApp(browser, mock, { route: `#/p/shop/w/${main}/history`, wait: "[role=tabpanel] table" });
+  const page = await openApp(browser, mock, { route: `#/p/shop/w/${main}/activity`, wait: "[role=tabpanel] table" });
   const rows = () => page.locator("[role=tabpanel] tbody tr").count();
   assert.equal(await rows(), 20);
   await page.getByRole("button", { name: "Load older events" }).click();
@@ -328,25 +329,21 @@ test("history: pages of 20, older events on demand, until everything is loaded",
 
 // ------------------------------------------------------------------ wizard: fixed container names
 
-async function wizardToStep2(page, name) {
-  await page.fill("#wz-new", name);
-  await page.getByRole("button", { name: "Next" }).click();
-  await page.waitForSelector("#wz-folder");
+async function panelWithName(page, name) {
+  await page.fill("#ni-name", name);
+  await page.locator("details.more summary").click();
 }
 
-test("wizard: fixed container names are offered with an explicit checkbox that is OFF by default", async () => {
-  const page = await openApp(browser, mock, { route: "#/p/shop/new", wait: ".stepper" });
-  await wizardToStep2(page, "no-neutralize");
+test("new instance: fixed container names are offered with an explicit checkbox that is OFF by default", async () => {
+  const page = await openApp(browser, mock, { route: "#/p/shop/new", wait: "dialog.drawer" });
+  await panelWithName(page, "no-neutralize");
   const box = page.getByLabel("Neutralize fixed container names for this worktree");
   await box.waitFor();
   assert.equal(await box.isChecked(), false);
-  assert.match(await page.locator("main").textContent(), /web: shop-web/);
-  await shot(page, "51-wizard-fixed-names");
-  await page.getByRole("button", { name: "Next" }).click();
-  await page.getByRole("button", { name: "Next" }).click();
-  assert.equal(await page.getByText("Remove the fixed container names for this worktree only").count(), 0, "not in the summary when not ticked");
-  await page.getByLabel("Start the instance now").uncheck();
-  await page.getByRole("button", { name: "Create", exact: true }).click();
+  assert.match(await page.locator("dialog.drawer").textContent(), /web: shop-web/);
+  await shot(page, "51-new-instance-fixed-names");
+  await page.getByRole("button", { name: "Create only" }).click();
+  await page.waitForFunction(() => /#\/p\/shop\/w\//.test(location.hash));
   await page.locator(".page-head h1").first().waitFor();
   await page.waitForTimeout(300);
   const call = await session();
@@ -356,15 +353,12 @@ test("wizard: fixed container names are offered with an explicit checkbox that i
   await page.ctx.close();
 });
 
-test("wizard: ticking the checkbox neutralizes the names of the new worktree only, and the summary says so", async () => {
-  const page = await openApp(browser, mock, { route: "#/p/shop/new", wait: ".stepper" });
-  await wizardToStep2(page, "do-neutralize");
+test("new instance: ticking the checkbox neutralizes the names of the new worktree only", async () => {
+  const page = await openApp(browser, mock, { route: "#/p/shop/new", wait: "dialog.drawer" });
+  await panelWithName(page, "do-neutralize");
   await page.getByLabel("Neutralize fixed container names for this worktree").check();
-  await page.getByRole("button", { name: "Next" }).click();
-  await page.getByRole("button", { name: "Next" }).click();
-  await page.getByText("Remove the fixed container names for this worktree only").waitFor();
-  await page.getByLabel("Start the instance now").uncheck();
-  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await page.getByRole("button", { name: "Create only" }).click();
+  await page.waitForFunction(() => /#\/p\/shop\/w\//.test(location.hash));
   await page.locator(".page-head h1").first().waitFor();
   await page.waitForTimeout(300);
   const call = await session();
@@ -376,9 +370,9 @@ test("wizard: ticking the checkbox neutralizes the names of the new worktree onl
   await page.ctx.close();
 });
 
-test("wizard: a project without fixed container names does not show the checkbox", async () => {
-  const page = await openApp(browser, mock, { route: "#/p/blog/new", wait: ".stepper" });
-  await wizardToStep2(page, "plain-branch");
+test("new instance: a project without fixed container names does not show the checkbox", async () => {
+  const page = await openApp(browser, mock, { route: "#/p/blog/new", wait: "dialog.drawer" });
+  await panelWithName(page, "plain-branch");
   assert.equal(await page.getByLabel("Neutralize fixed container names for this worktree").count(), 0);
   await page.ctx.close();
 });
@@ -389,9 +383,9 @@ test("keyboard: the new pages are reachable from the sidebar and the project pan
   const page = await openApp(browser, mock, { route: "#/p/shop", wait: "table.data" });
   await page.getByRole("link", { name: "Shared services" }).click();
   await page.waitForSelector("#sh-provider");
-  await page.getByRole("link", { name: /^Health/ }).click();
-  await page.waitForSelector("h1:has-text('Health')");
-  await page.getByRole("link", { name: "Settings" }).click();
+  await page.getByRole("link", { name: /^Problems/ }).click();
+  await page.waitForSelector("h1:has-text('Problems')");
+  await page.locator("nav.app-nav").getByRole("link", { name: "Settings" }).click();
   await page.waitForSelector("h1:has-text('Settings and diagnostics')");
   assert.equal(await page.locator("[role=navigation][aria-label=Main] a[aria-current=page], nav[aria-label=Main] a[aria-current=page]").count(), 1);
   await page.ctx.close();

@@ -62,7 +62,7 @@ test("scrolling up stops following; pause freezes the view; resume shows what ar
   await page.getByRole("button", { name: "Jump to the end" }).waitFor();
   assert.equal(await page.getByLabel("Follow").isChecked(), false);
   await page.getByLabel("Follow").check();
-  await page.getByRole("button", { name: "Pause" }).click();
+  await page.locator(".log-toolbar").getByRole("button", { name: "Pause" }).click();
   const before = await page.locator("[data-testid=log-count]").textContent();
   await page.waitForTimeout(1600);
   assert.equal(await page.locator("[data-testid=log-count]").textContent(), before, "paused: count does not move");

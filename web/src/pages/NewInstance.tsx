@@ -129,7 +129,7 @@ export function NewInstance({ project, overview, onClose }: { project: string; o
   return (
     <Modal title={n.title(project)} onClose={onClose} drawer>
       <form onSubmit={(e) => { e.preventDefault(); void create(true); }} noValidate>
-        <fieldset>
+        <fieldset class="plain">
           <legend class="sr-only">{n.modeLegend}</legend>
           <div class="segmented">
             <input id="ni-mode-new" type="radio" name="ni-mode" checked={mode === "new"} onChange={() => { setMode("new"); setErr(""); }} />

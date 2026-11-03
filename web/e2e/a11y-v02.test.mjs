@@ -28,8 +28,9 @@ async function axeIn(page, selector, name) {
 
 test("open dialogs have no serious axe violations: confirm, typed confirm, form, folder browser, operations panel", async () => {
   // Plain confirmation (unregister).
-  let page = await openApp(browser, mock);
-  await page.getByRole("button", { name: "Unregister blog" }).click();
+  let page = await openApp(browser, mock, { route: "#/projects", wait: "table.data" });
+  await page.getByRole("button", { name: "More actions for blog" }).click();
+  await page.getByRole("menuitem", { name: "Unregister" }).click();
   await page.locator("dialog[open]").waitFor();
   await axeIn(page, "dialog[open]", "unregister dialog");
   await page.keyboard.press("Escape");
@@ -44,13 +45,15 @@ test("open dialogs have no serious axe violations: confirm, typed confirm, form,
 
   // Typed confirmation (remove a worktree with uncommitted changes).
   page = await openApp(browser, mock, { route: "#/p/shop", wait: "table.data" });
-  await row(page, "old-spike").locator("summary").click();
-  await row(page, "old-spike").getByRole("button", { name: /Remove worktree/ }).click();
+  await page.getByRole("button", { name: "More actions for old-spike" }).click();
+  await page.getByRole("menuitem", { name: /Remove worktree/ }).click();
   await page.getByRole("button", { name: "Remove worktree" }).click();
   await page.locator("dialog[open] >> text=Will be deleted").waitFor();
   await axeIn(page, "dialog[open]", "typed confirmation");
   await page.keyboard.press("Escape");
-  // Operations panel.
+  // Operations panel: in 0.2 it is only in the header while something runs.
+  await mock.scenario({ slow: 3 });
+  await page.getByRole("button", { name: /Start feature-x/ }).click();
   await page.locator(".ops-indicator button").click();
   await page.locator("#ops-panel").waitFor();
   await axeIn(page, "#ops-panel", "operations panel");
@@ -58,10 +61,10 @@ test("open dialogs have no serious axe violations: confirm, typed confirm, form,
 
   // Variable form, with a validation error shown.
   const id = await wt("main");
-  page = await openApp(browser, mock, { route: `#/p/shop/w/${id}/variables`, wait: "main h1" });
+  page = await openApp(browser, mock, { route: `#/p/shop/w/${id}/config`, wait: "section[aria-labelledby=cfg-vars] table.data" });
   await page.getByRole("button", { name: "Add variable" }).click();
   await page.locator("dialog[open]").waitFor();
-  await page.getByRole("button", { name: "Save" }).click();
+  await page.locator("dialog[open]").getByRole("button", { name: "Save" }).click();
   await page.locator("#var-name-err").waitFor();
   await axeIn(page, "dialog[open]", "variable form with an error");
   await page.ctx.close();
@@ -69,11 +72,11 @@ test("open dialogs have no serious axe violations: confirm, typed confirm, form,
 
 test("a form error moves focus to the field, which is marked invalid and described by the error", async () => {
   const id = await wt("main");
-  const page = await openApp(browser, mock, { route: `#/p/shop/w/${id}/variables`, wait: "main h1" });
+  const page = await openApp(browser, mock, { route: `#/p/shop/w/${id}/config`, wait: "section[aria-labelledby=cfg-vars] table.data" });
   await page.getByRole("button", { name: "Add variable" }).click();
   await page.locator("dialog[open]").waitFor();
   await page.fill("#var-name", "1bad");
-  await page.getByRole("button", { name: "Save" }).focus();
+  await page.locator("dialog[open]").getByRole("button", { name: "Save" }).focus();
   await page.keyboard.press("Enter");
   await page.locator("#var-name-err").waitFor();
   assert.match(await activeTag(page), /^INPUT\|var-name\|/, "focus moved to the invalid field");
@@ -83,14 +86,16 @@ test("a form error moves focus to the field, which is marked invalid and describ
 });
 
 test("after unregistering a project with the keyboard, focus lands on the page heading, not on <body>", async () => {
-  const page = await openApp(browser, mock);
-  await page.getByText("5 worktrees").waitFor();
-  await page.getByRole("button", { name: "Unregister blog" }).focus();
+  const page = await openApp(browser, mock, { route: "#/projects", wait: "table.data" });
+  await page.getByRole("button", { name: "More actions for blog" }).focus();
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "menuitem");
+  await page.keyboard.press("End");
   await page.keyboard.press("Enter");
   await page.locator("dialog[open]").waitFor();
   await page.getByRole("button", { name: "Unregister project" }).focus();
   await page.keyboard.press("Enter");
-  await page.locator("li.card", { hasText: "blog" }).waitFor({ state: "detached" });
+  await page.locator("tbody tr", { hasText: "blog" }).waitFor({ state: "detached" });
   await page.waitForFunction(() => document.activeElement && document.activeElement !== document.body, null, { timeout: 3000 }).catch(() => undefined);
   assert.match(await activeTag(page), /^H1\|/, "focus is on the heading");
   await page.ctx.close();
@@ -98,8 +103,8 @@ test("after unregistering a project with the keyboard, focus lands on the page h
 
 test("after removing a worktree from its row menu, focus lands on the page heading", async () => {
   const page = await openApp(browser, mock, { route: "#/p/shop", wait: "table.data" });
-  await row(page, "old-spike").locator("summary").click();
-  await row(page, "old-spike").getByRole("button", { name: /Remove worktree/ }).click();
+  await page.getByRole("button", { name: "More actions for old-spike" }).click();
+  await page.getByRole("menuitem", { name: /Remove worktree/ }).click();
   await page.getByRole("button", { name: "Remove worktree" }).click();
   const dlg = page.locator("dialog[open]");
   await dlg.locator("text=Will be deleted").waitFor();
@@ -118,8 +123,8 @@ test("typed confirmation: the label and the description are different sentences,
     label: document.querySelector(`label[for="${el.id}"]`)?.textContent ?? "",
     desc: (el.getAttribute("aria-describedby") || "").split(" ").filter(Boolean).map((id) => document.getElementById(id)?.textContent ?? "").join(" "),
   }));
-  await row(page, "old-spike").locator("summary").click();
-  await row(page, "old-spike").getByRole("button", { name: /Remove worktree/ }).click();
+  await page.getByRole("button", { name: "More actions for old-spike" }).click();
+  await page.getByRole("menuitem", { name: /Remove worktree/ }).click();
   await page.getByRole("button", { name: "Remove worktree" }).click();
   await page.locator("dialog[open] >> text=Will be deleted").waitFor();
   let r = await read();
@@ -134,8 +139,8 @@ test("typed confirmation: the label and the description are different sentences,
     if (json?.error?.confirm) delete json.error.confirm.prompt;
     await route.fulfill({ response: res, json });
   });
-  await row(page, "old-spike").locator("summary").click();
-  await row(page, "old-spike").getByRole("button", { name: /Remove worktree/ }).click();
+  await page.getByRole("button", { name: "More actions for old-spike" }).click();
+  await page.getByRole("menuitem", { name: /Remove worktree/ }).click();
   await page.getByRole("button", { name: "Remove worktree" }).click();
   await page.locator("dialog[open] >> text=Will be deleted").waitFor();
   r = await read();

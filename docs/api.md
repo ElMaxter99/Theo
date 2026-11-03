@@ -684,7 +684,8 @@ exactly as the CLI does; the API keeps no history of its own.
 The history of every project at once, with the same paging headers: what the home screen lists.
 
 ### `GET /status[?project=]`
-The same JSON as `theo status --json`: every project, worktree and instance (or one project's).
+The same JSON as `theo status --json`: every project, worktree and instance (or one project's), with one addition:
+each worktree carries its `id`, the same one the worktree routes take, so the interface can link to it.
 
 ### `POST /stop-all` `{project?}` -> 202 (operation `stop-all`)
 `theo stop --all [project]`: stops every running instance (containers and volumes are kept). One at a time.

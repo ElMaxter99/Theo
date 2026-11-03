@@ -380,7 +380,10 @@ dialog.drawer {
 dialog.drawer .dialog-body { min-height: 100%; display: flex; flex-direction: column; }
 dialog.drawer form { display: flex; flex-direction: column; flex: 1 1 auto; }
 dialog.drawer .dialog-actions { margin-top: auto; padding-top: var(--space-4); position: sticky; bottom: 0; background: var(--surface); }
-.dialog-actions.spread { justify-content: flex-start; align-items: center; }
+.dialog-actions.spread { justify-content: flex-end; align-items: center; }
+.dialog-actions.spread .copy-cmd { flex-basis: 100%; }
+.dialog-actions.spread > .grow { display: none; }
+fieldset.plain { border: 0; padding: 0; margin: 0 0 var(--space-4); }
 .segmented { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 .segmented input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .segmented label { padding: 0.4rem 0.9rem; cursor: pointer; font-weight: 600; }

@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.resolve(here, "..", "..", "internal", "ui", "dist");
 
-const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".txt": "text/plain; charset=utf-8", ".md": "text/markdown; charset=utf-8" };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -62,6 +62,7 @@ function reset() {
   const shopFix = mkWorktree("shop", "shop-fix-123", "fix-123", { dirty: true, state: "partial", services: { web: "running", db: "running", cache: "exited" }, ports: { web: 3001, db: 5433, cache: 6380 }, volumes: "in use" });
   const shopFeat = mkWorktree("shop", "shop-feature-x", "feature-x", { state: "stopped", services: { web: "exited", db: "exited", cache: "exited" }, risky: true, volumes: "kept" });
   shopFix.owner = "agent-1";
+  shopMain.backups = [{ project: "shop", instance: "shop", volume: "pgdata", docker_volume: "shop_pgdata", archive: "shop_pgdata-20261030T091500Z.tar.gz", size: 18_345_678, created_at: "2026-10-30T09:15:00Z", file: "/home/ana/.local/share/theo/backups/shop/shop_pgdata-20261030T091500Z.tar.gz" }];
   const shopOld = mkWorktree("shop", "shop-old-spike", "old-spike", { dirty: true, state: "absent", env: { source: "none" } });
   const shopDetached = mkWorktree("shop", "shop-detached", "", { detached: true, state: "unhealthy", services: { web: "unhealthy", db: "running", cache: "running" }, ports: { web: 3002, db: 5434, cache: 6381 } });
   const blogMain = mkWorktree("blog", "blog", "main", { main: true, state: "stopped", services: { web: "exited", db: "exited", cache: "exited" } });
@@ -240,8 +241,8 @@ async function runOp(o, project, w, body) {
   const step = async (ms) => { await sleep(ms * scenario.slow); if (o.state === "cancelling") throw new Error("cancelled"); };
   const names = Object.keys(w.rt.services).length ? Object.keys(w.rt.services) : SERVICES.map((s) => s.name);
   try {
-    if (o.kind === "up" || o.kind === "restart") {
-      if (o.kind === "restart") { opLog(o, "Restarting containers"); await step(500); }
+    if (["up", "restart", "start", "recreate"].includes(o.kind)) {
+      if (o.kind === "restart" || o.kind === "recreate") { opLog(o, "Restarting containers"); await step(500); }
       opLog(o, `Using environment from ${w.env_file?.source ?? "none"}`);
       // Reserve ports
       const held = heldPorts(w);
@@ -276,6 +277,131 @@ async function runOp(o, project, w, body) {
   for (const r of o.subs) { ev(r, "result", { ok: o.state === "succeeded", summary: o.state, error: o.error?.message }, o.lines.length + 1 + o.dropped); r.end(); }
   o.subs.clear();
   emitGlobal("state.changed", { project: project.name, worktree: w.id });
+}
+
+
+// ---------------------------------------------------------------- 0.2 additions
+function statusOf() {
+  return {
+    projects: S.projects.map((p) => ({
+      name: p.name, path: p.path, warnings: [],
+      worktrees: p.wts.map((w) => {
+        const st = derive(w);
+        const li = listItem(w);
+        return {
+          id: w.id, path: w.path, branch: w.branch || undefined, kind: w.kind, dirty: w.dirty, warnings: warningsOf(w),
+          instance: st === "absent" ? undefined : { compose_project: w.compose_project, instance_state: st, counts: li.containers, ports: portStatuses(w), proxy_urls: (proxyLinks(w) ?? []).map((l) => l.url) },
+        };
+      }),
+    })),
+    docker_error: scenario.docker ? undefined : "Cannot connect to the Docker daemon at unix:///var/run/docker.sock",
+    warnings: [],
+  };
+}
+function historyPage(res, all, q) {
+  const end = q.get("before") !== null && Number(q.get("before")) < all.length ? Number(q.get("before")) : all.length;
+  const limit = Number(q.get("limit") || 0);
+  if (limit < 0 || Number.isNaN(limit)) return err(res, 400, "invalid_request", "limit must be a positive number");
+  const start = limit > 0 && end - limit > 0 ? end - limit : 0;
+  return send(res, 200, all.slice(start, end), { "Theo-History-Total": String(all.length), ...(start > 0 ? { "Theo-History-Next": String(start) } : {}) });
+}
+const eventsOf = (p, w) => [...w.history].reverse().map((h) => ({ project: p.name, workspace: w.path, compose_project: w.compose_project, ...h }));
+const byTime = (a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0);
+/** An operation that is not one instance's lifecycle: stop-all and the volume operations. */
+function genericOp(res, kind, project, wtId, steps, after) {
+  if (!scenario.docker) return err(res, 412, "docker_unavailable", "Cannot connect to the Docker daemon", { hint: "Start Docker and try again." });
+  const o = { id: "op_" + String(++S.opSeq).padStart(4, "0") + crypto.randomBytes(3).toString("hex"), kind, project, worktree: wtId, state: "running", started_at: now(), cancellable: false, lines: [], subs: new Set(), dropped: 0 };
+  S.ops.set(o.id, o);
+  opState(o, "running");
+  (async () => {
+    for (const line of steps) { opLog(o, line); await sleep(300 * scenario.slow); }
+    after?.();
+    opState(o, "succeeded", { finished_at: now(), result: { ok: true, summary: `${kind} finished` } });
+    for (const r of o.subs) { ev(r, "result", { ok: true, summary: "succeeded" }, o.lines.length + 1); r.end(); }
+    o.subs.clear();
+    emitGlobal("state.changed", { project, worktree: wtId });
+  })();
+  return send(res, 202, publicOp(o), { Location: `/api/v1/operations/${o.id}` });
+}
+const MCP_ARGS = (q) => ["mcp", ...(q.get("read_only") === "1" ? ["--read-only"] : []), ...(q.get("owner") ? ["--owner", q.get("owner")] : [])];
+function mcpInstall(q) {
+  const args = MCP_ARGS(q);
+  return {
+    name: "theo", command: "theo", args, claude_code: ["claude", "mcp", "add", "theo", "--", "theo", ...args],
+    claude_code_command: `claude mcp add theo -- theo ${args.join(" ")}`,
+    mcpServers: { theo: { command: "theo", args } },
+    snippet: `## Local environments (Theo)\n\nThis repository runs its Docker Compose instances with Theo. Use the theo MCP server${args.includes("--read-only") ? " (read-only)" : ""} to list worktrees, create one per task and start its instance; do not run docker compose directly.\n`,
+  };
+}
+
+async function topLevel(req, res, seg, q) {
+  const m = req.method;
+  if (seg[0] === "status" && m === "GET") return send(res, 200, statusOf()), true;
+  if (seg[0] === "history" && m === "GET") return historyPage(res, S.projects.flatMap((p) => p.wts.flatMap((w) => eventsOf(p, w))).sort(byTime), q), true;
+  if (seg[0] === "mcp" && seg[1] === "install" && m === "GET") return send(res, 200, mcpInstall(q)), true;
+  if (seg[0] === "stop-all" && m === "POST") {
+    const b = (await readJson(req)) ?? {};
+    const projects = b.project ? S.projects.filter((p) => p.name === b.project) : S.projects;
+    if (b.project && projects.length === 0) return err(res, 404, "project_not_found", `project ${b.project} is not registered`), true;
+    const targets = projects.flatMap((p) => p.wts.filter((w) => ["running", "partial", "unhealthy"].includes(derive(w))));
+    genericOp(res, "stop-all", b.project ?? "", undefined, targets.map((w) => `Stopping ${w.compose_project}`), () => {
+      for (const w of targets) { for (const n of Object.keys(w.rt.services)) w.rt.services[n] = "exited"; w.history.unshift({ time: now(), user: "ana", operation: "stop", result: "ok" }); }
+    });
+    return true;
+  }
+  return false;
+}
+
+async function projectExtras(req, res, proj, seg, q) {
+  const m = req.method;
+  if (seg[2] === "history" && m === "GET") return historyPage(res, proj.wts.flatMap((w) => eventsOf(proj, w)).sort(byTime), q), true;
+  if (seg[2] === "rename" && m === "POST") {
+    const b = (await readJson(req)) ?? {};
+    const name = String(b.name ?? "").trim();
+    if (!name) return err(res, 400, "invalid_request", "name is required"), true;
+    if (findProject(name)) return err(res, 409, "invalid_request", `a project named ${name} already exists`), true;
+    const old = proj.name; proj.name = name;
+    emitGlobal("state.changed", { project: name });
+    return send(res, 200, { old, new: name, records: proj.wts.length }), true;
+  }
+  if (seg[2] === "prune") {
+    const merged = proj.wts.filter((w) => !w.main && ["feature-x", "old-spike"].includes(w.branch)).map((w) => ({ path: w.path, branch: w.branch, owner: w.owner, reason: Object.keys(w.rt.services).length ? "it still has containers; run down first" : w.dirty ? "it has uncommitted changes" : undefined, removed: false }));
+    const notMerged = proj.wts.filter((w) => !w.main).length - merged.length;
+    if (m === "GET") return send(res, 200, { project: proj.name, into: "main", applied: false, merged, not_merged: notMerged }), true;
+    if (m === "POST") {
+      const b = (await readJson(req)) ?? {};
+      if (b.confirm !== proj.name) return send(res, 409, { error: { code: "confirmation_required", level: 3, message: "type the project name to remove the merged worktrees", confirm: { expected: proj.name, prompt: "Type the project name" } } }), true;
+      for (const x of merged) if (!x.reason) { proj.wts = proj.wts.filter((w) => w.path !== x.path); x.removed = true; }
+      emitGlobal("state.changed", { project: proj.name });
+      return send(res, 200, { project: proj.name, into: "main", applied: true, merged, not_merged: notMerged }), true;
+    }
+  }
+  return false;
+}
+
+async function volumeExtras(req, res, proj, w, seg) {
+  const m = req.method;
+  if (seg[4] !== "volumes") return false;
+  w.backups ??= [];
+  if (seg[5] === "backups" && m === "GET") return send(res, 200, w.backups), true;
+  if (["backup", "restore", "clone"].includes(seg[5]) && m === "POST") {
+    const b = (await readJson(req)) ?? {};
+    const kind = seg[5];
+    if (kind !== "backup") {
+      if (Object.keys(w.rt.services).length) return err(res, 409, "instance_has_containers", "the instance still has containers; run down first"), true;
+      if (b.confirm !== w.compose_project) return send(res, 409, { error: { code: "confirmation_required", level: 3, message: `this overwrites the data of ${w.compose_project}`, confirm: { expected: w.compose_project, prompt: "Type the instance name" } } }), true;
+    }
+    genericOp(res, `volumes.${kind}`, proj.name, w.id, [kind === "backup" ? `Backing up ${w.compose_project}_pgdata` : kind === "restore" ? `Restoring ${b.volume ?? "pgdata"} from ${b.backup}` : `Copying volumes from ${b.from}`], () => {
+      if (kind === "backup") {
+        const at = now();
+        const archive = `${w.compose_project}_pgdata-${at.replace(/[-:]/g, "").replace(/\..*$/, "")}.tar.gz`;
+        w.backups.unshift({ project: proj.name, instance: w.compose_project, volume: "pgdata", docker_volume: `${w.compose_project}_pgdata`, archive, size: 4_812_345, created_at: at, file: `/home/ana/.local/share/theo/backups/${proj.name}/${archive}` });
+      }
+      w.history.unshift({ time: now(), user: "ana", operation: `volumes ${kind}`, result: "ok" });
+    });
+    return true;
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------- routing
@@ -342,6 +468,7 @@ async function api(req, res, url) {
     if (seg[1] === "start" && m === "POST") { const b = await readJson(req); S.proxy = { running: true, managed: true, port: b.port || 7080, autostart: true }; emitGlobal("state.changed", {}); return send(res, 200, proxyStatus()); }
     if (seg[1] === "stop" && m === "POST") { await readJson(req); S.proxy = { ...S.proxy, running: false, managed: false, autostart: false }; emitGlobal("state.changed", {}); return send(res, 200, proxyStatus()); }
   }
+  if (await topLevel(req, res, seg, q)) return;
   if (seg[0] !== "projects") return err(res, 404, "not_found", "unknown resource");
   if (seg.length === 1) {
     if (m === "GET") return send(res, 200, S.projects.map(({ wts, ...p }) => p));
@@ -362,9 +489,10 @@ async function api(req, res, url) {
   const { wts, ...pub } = proj;
   if (seg.length === 2) {
     if (m === "GET") return send(res, 200, pub);
-    if (m === "PATCH") { const b = await readJson(req); for (const k of ["env_file", "worktree_dir"]) if (k in b) proj[k] = b[k] ?? ""; return send(res, 200, pub); }
+    if (m === "PATCH") { const b = await readJson(req); for (const k of ["env_file", "worktree_dir"]) if (k in b) proj[k] = b[k] ?? ""; for (const k of ["compose_files", "copy_on_add"]) if (k in b) proj[k] = b[k] ?? undefined; const { wts: _w, ...out } = proj; return send(res, 200, out); }
     if (m === "DELETE") { S.projects = S.projects.filter((p) => p !== proj); return send(res, 200, { files_kept: true, containers_kept: true }); }
   }
+  if (await projectExtras(req, res, proj, seg, q)) return;
   if (seg[2] === "overview") return send(res, 200, { project: proj.name, path: proj.path, docker: scenario.docker ? { available: true } : { available: false, error: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock" }, worktrees: wts.map(listItem), generated_at: now() });
   if (seg[2] === "shared") return sharedRoutes(req, res, proj, seg);
   if (seg[2] === "branches") {
@@ -409,7 +537,8 @@ async function api(req, res, url) {
     return send(res, 200, { ports });
   }
   if (sub === "config") return send(res, 200, `name: ${w.compose_project}\nservices:\n  web:\n    image: shop/web:dev\n    environment:\n      DATABASE_URL: "••••••"\n`);
-  if (sub === "settings") { if (m === "PATCH") { Object.assign(w.settings, await readJson(req)); } return send(res, 200, { ...w.settings, auto_ports: false, profiles: [], shared: [...(proj.shared?.links.get(w.id) ?? [])], join: [], fixed_container_names: proj.fixed ?? {} }); }
+  if (await volumeExtras(req, res, proj, w, seg)) return;
+  if (sub === "settings") { if (m === "PATCH") { const b = (await readJson(req)) ?? {}; if ("owner" in b) { w.owner = b.owner || undefined; delete b.owner; } Object.assign(w.settings, b); } return send(res, 200, { auto_ports: false, profiles: [], ...w.settings, owner: w.owner, known_profiles: ["debug", "seed"], shared: [...(proj.shared?.links.get(w.id) ?? [])], join: [], fixed_container_names: proj.fixed ?? {} }); }
   if (sub === "shared") return sharedLink(req, res, proj, w, seg);
   if (sub === "history") {
     const all = [...w.history].reverse(); // oldest first, as the engine keeps it
@@ -452,7 +581,7 @@ async function api(req, res, url) {
     if (name && m === "PUT") { const b = await readJson(req); w.env[name] = { value: b.value, secret: !!b.secret, services: b.services ?? [] }; return send(res, 200, { applies_on: "next_up" }); }
     if (name && m === "DELETE") { delete w.env[name]; return send(res, 200, { applies_on: "next_up" }); }
   }
-  if (["up", "down", "restart", "stop"].includes(sub) && m === "POST") {
+  if (["up", "down", "restart", "stop", "start", "recreate"].includes(sub) && m === "POST") {
     const b = await readJson(req);
     const key = req.headers["idempotency-key"];
     if (key && S.idem.has(key)) return send(res, 202, publicOp(S.ops.get(S.idem.get(key))), { Location: `/api/v1/operations/${S.idem.get(key)}` });

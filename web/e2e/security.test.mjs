@@ -88,7 +88,7 @@ test("the page makes no request outside its own origin and has no console CSP vi
 test("the served shell carries the strict CSP and security headers", async () => {
   const r = await rawRequest(mock.port, { path: "/", headers: { Host: `127.0.0.1:${mock.port}` } });
   assert.equal(r.status, 200);
-  assert.equal(r.headers["content-security-policy"], "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+  assert.equal(r.headers["content-security-policy"], "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
   assert.equal(r.headers["x-content-type-options"], "nosniff");
   assert.equal(r.headers["referrer-policy"], "no-referrer");
   assert.ok(!/<script>[^<]/.test(r.body));
