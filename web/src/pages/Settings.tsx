@@ -2,7 +2,7 @@
 // secrets, and the view preferences (stored only in this browser).
 import { useEffect, useState } from "preact/hooks";
 import { api } from "../api/client.ts";
-import type { Diagnostics, Meta, ProxyStatus } from "../api/types.ts";
+import type { Diagnostics, McpInstall, Meta, ProxyStatus } from "../api/types.ts";
 import { Badge, ErrorBanner, ExternalLink, Loading, PageHead } from "../components/ui.tsx";
 import { Icon } from "../components/Icon.tsx";
 import { useAction, useResource } from "../lib/hooks.ts";
@@ -16,6 +16,10 @@ import type { StatusView } from "../lib/status.ts";
 import { t } from "../strings.ts";
 import { setTitle } from "./Router.tsx";
 import { LanguageSelect } from "../components/LanguageSelect.tsx";
+import { CopyCommand, copyText } from "../components/CopyCommand.tsx";
+import { qs } from "../api/client.ts";
+import { href, SETTINGS_SECTIONS } from "../lib/router.ts";
+import type { SettingsSection } from "../lib/router.ts";
 
 export function checkStatusView(status: string): StatusView {
   const label = t.settingsPage.status[status] ?? status;
@@ -28,13 +32,33 @@ export function checkStatusView(status: string): StatusView {
   }
 }
 
-export function Settings({ meta }: { meta: Meta | undefined }) {
+// V-09 Settings, in five sections with their own address: Preferences, Local domains, AI agents, Diagnostics, About.
+export function Settings({ meta, section }: { meta: Meta | undefined; section: SettingsSection }) {
+  useEffect(() => setTitle([t.settingsNav[section], t.settingsPage.title]), [section]);
+  return (
+    <>
+      <PageHead title={t.settingsPage.title} />
+      <div class="settings-layout">
+        <nav class="subnav vertical" aria-label={t.settingsPage.title}>
+          <ul>
+            {SETTINGS_SECTIONS.map((id) => <li key={id}><a href={href.settings(id)} aria-current={id === section ? "page" : undefined}>{t.settingsNav[id]}</a></li>)}
+          </ul>
+        </nav>
+        <div class="stack grow">
+          {section === "preferences" ? <Preferences /> : null}
+          {section === "domains" ? <ProxyCard /> : null}
+          {section === "agents" ? <Agents /> : null}
+          {section === "diagnostics" ? <DiagnosticsSection meta={meta} /> : null}
+          {section === "about" ? <About meta={meta} /> : null}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function DiagnosticsSection({ meta }: { meta: Meta | undefined }) {
   const doctor = useResource<Diagnostics>(() => api.get<Diagnostics>("/diagnostics"), []);
-  const [theme, setTheme] = useState<ThemePref>(readTheme());
-  const [density, setDensity] = useState<Density>(readDensity());
-  const [motion, setMotion] = useState<Motion>(readMotion());
   const [shown, setShown] = useState("");
-  useEffect(() => setTitle([t.settingsPage.title]), []);
   const s = t.settingsPage;
   const diag = doctor.data;
   const d = diag?.doctor;
@@ -54,8 +78,6 @@ export function Settings({ meta }: { meta: Meta | undefined }) {
 
   return (
     <>
-      <PageHead title={s.title} />
-
       <section class="card stack" aria-labelledby="st-doctor">
         <div class="row between">
           <h2 id="st-doctor">{s.doctorTitle}</h2>
@@ -87,8 +109,29 @@ export function Settings({ meta }: { meta: Meta | undefined }) {
         ) : null}
       </section>
 
-      <ProxyCard />
+      <section class="card stack" aria-labelledby="st-report">
+        <h2 id="st-report">{s.copyTitle}</h2>
+        <p>{s.copyBody}</p>
+        <div><button type="button" class="btn" onClick={() => void copy()}>{s.copyButton}</button></div>
+        {shown ? (
+          <div class="field">
+            <label for="st-report-text">{s.reportLabel}</label>
+            <textarea id="st-report-text" class="input report-text" readOnly value={shown} onFocus={(e) => (e.currentTarget as HTMLTextAreaElement).select()} />
+          </div>
+        ) : null}
+      </section>
+    </>
+  );
+}
 
+function About({ meta }: { meta: Meta | undefined }) {
+  const s = t.settingsPage;
+  const doctor = useResource<Diagnostics>(() => api.get<Diagnostics>("/diagnostics"), []);
+  const diag = doctor.data;
+  const d = diag?.doctor;
+  const m = diag?.meta ?? meta;
+  return (
+    <>
       <section class="card stack" aria-labelledby="st-about">
         <h2 id="st-about">{s.dataTitle}</h2>
         <dl class="facts">
@@ -103,18 +146,21 @@ export function Settings({ meta }: { meta: Meta | undefined }) {
         </dl>
       </section>
 
-      <section class="card stack" aria-labelledby="st-report">
-        <h2 id="st-report">{s.copyTitle}</h2>
-        <p>{s.copyBody}</p>
-        <div><button type="button" class="btn" onClick={() => void copy()}>{s.copyButton}</button></div>
-        {shown ? (
-          <div class="field">
-            <label for="st-report-text">{s.reportLabel}</label>
-            <textarea id="st-report-text" class="input report-text" readOnly value={shown} onFocus={(e) => (e.currentTarget as HTMLTextAreaElement).select()} />
-          </div>
-        ) : null}
+      <section class="card stack" aria-labelledby="st-idle">
+        <h2 id="st-idle">{s.idleTitle}</h2>
+        <p>{s.idleBody(m?.idle ? Math.round(m.idle.timeout_seconds / 60) : undefined)}</p>
       </section>
+    </>
+  );
+}
 
+function Preferences() {
+  const s = t.settingsPage;
+  const [theme, setTheme] = useState<ThemePref>(readTheme());
+  const [density, setDensity] = useState<Density>(readDensity());
+  const [motion, setMotion] = useState<Motion>(readMotion());
+  return (
+    <>
       <section class="card stack" aria-labelledby="st-prefs">
         <h2 id="st-prefs">{s.prefsTitle}</h2>
         <div class="field">
@@ -146,12 +192,53 @@ export function Settings({ meta }: { meta: Meta | undefined }) {
         </div>
         <p class="hint">{s.prefsNote}</p>
       </section>
-
-      <section class="card stack" aria-labelledby="st-idle">
-        <h2 id="st-idle">{s.idleTitle}</h2>
-        <p>{s.idleBody(m?.idle ? Math.round(m.idle.timeout_seconds / 60) : undefined)}</p>
-      </section>
     </>
+  );
+}
+
+/** AI agents: how to register Theo's MCP server with Claude Code and other clients, and the AGENTS.md paragraph. */
+function Agents() {
+  const a = t.agents;
+  const [owner, setOwner] = useState("");
+  const [readOnly, setReadOnly] = useState(false);
+  const [applied, setApplied] = useState({ owner: "", readOnly: false });
+  const res = useResource<McpInstall>(() => api.get<McpInstall>(`/mcp/install${qs({ owner: applied.owner || undefined, read_only: applied.readOnly || undefined })}`), [applied.owner, applied.readOnly]);
+  const doc = res.data;
+  const copy = (text: string) => { void copyText(text).then((ok) => announce(ok ? t.copy.copied : t.copy.failed)); };
+  const json = doc ? JSON.stringify({ mcpServers: doc.mcpServers }, null, 2) : "";
+  return (
+    <section class="card stack" aria-labelledby="st-agents">
+      <h2 id="st-agents">{a.title}</h2>
+      <p>{a.lead}</p>
+      <form class="row" onSubmit={(e) => { e.preventDefault(); setApplied({ owner: owner.trim(), readOnly }); }}>
+        <div class="field">
+          <label for="ag-owner">{a.owner}</label>
+          <input id="ag-owner" class="input auto" value={owner} aria-describedby="ag-owner-hint" onInput={(e) => setOwner((e.currentTarget as HTMLInputElement).value)} />
+          <p class="hint" id="ag-owner-hint">{a.ownerHint}</p>
+        </div>
+        <div class="check">
+          <input id="ag-ro" type="checkbox" checked={readOnly} onChange={(e) => setReadOnly((e.currentTarget as HTMLInputElement).checked)} />
+          <label for="ag-ro">{a.readOnly}</label>
+        </div>
+        <button type="submit" class="btn sm">{a.update}</button>
+      </form>
+      {res.loading && !doc ? <Loading /> : null}
+      <ErrorBanner error={res.error} />
+      {doc ? (
+        <>
+          <h3>{a.claudeCode}</h3>
+          <pre class="snippet mono small" tabIndex={0}>{doc.claude_code_command}</pre>
+          <div><CopyCommand command={doc.claude_code_command} small={false} /></div>
+          <h3>{a.others}</h3>
+          <pre class="snippet mono small" tabIndex={0}>{json}</pre>
+          <div><button type="button" class="btn" onClick={() => copy(json)}>{a.copyJson}</button></div>
+          <h3>{a.snippet}</h3>
+          <p class="hint">{a.snippetHint}</p>
+          <pre class="snippet mono small" tabIndex={0}>{doc.snippet}</pre>
+          <div><button type="button" class="btn" onClick={() => copy(doc.snippet)}>{a.copySnippet}</button></div>
+        </>
+      ) : null}
+    </section>
   );
 }
 

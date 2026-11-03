@@ -5,17 +5,45 @@ Notable changes per release. Each release on GitHub also lists every merged pull
 ## v0.2.0 (unreleased)
 
 ### New
+- **Redesigned interface.** The web interface and the desktop app are reorganised around what you do most:
+  - a **home** screen with what is running, what needs attention and the recent activity;
+  - each project as tabs (Instances, Shared services, Activity, Settings);
+  - a **side panel to create an instance** in one screen instead of the four-step wizard;
+  - five tabs per instance (Summary, Logs, Configuration, Data, Activity) instead of seven;
+  - **Problems** (instance warnings, the reconcile report and the cleanup of merged worktrees) instead of Health;
+  - settings in sections.
+
+  It also adds a command palette (Ctrl+K or ⌘K) with keyboard shortcuts, per-service actions, state filters, bulk start and
+  pause, backups, restores and copies of volumes, renaming a project, the MCP registration, "Copy command" next to each
+  action, and toasts when an operation ends. Turquoise has two tones (one for marks, one for text) and headings use the
+  Fredoka typeface, bundled with the app. Addresses of 0.1 keep working. See [docs/cli/ui-web.md](docs/cli/ui-web.md#screens-02-redesign).
+- **API for the interface**:
+  - `GET /status` and `GET /history` for every project;
+  - `POST /stop-all`, `GET /mcp/install`, `POST /projects/{p}/rename` and `GET|POST /projects/{p}/prune`;
+  - volume backups, restores and clones as operations;
+  - `services` on start, stop and restart, and the new operations `start` and `recreate`;
+  - more fields in the project, worktree and settings changes.
+
+  See [docs/api.md](docs/api.md).
+- **CLI**:
+  - `theo` with no arguments prints a summary of every project;
+  - the project can be left out (or given as `.`) inside one of its folders;
+  - `theo help <command>` and `theo help all`;
+  - `--color auto|always|never` and `NO_COLOR`;
+  - errors end with the next step to take.
+
+  See [docs/cli/output.md](docs/cli/output.md).
 - **`theo mcp`**: a Model Context Protocol server over stdio, so AI agents (Claude Code and others) can list projects, create worktrees with an owner label, start, stop and inspect instances, and dry-run operations. Operations that delete data stay human-only. `--read-only` and `--owner`. See [docs/cli/mcp.md](docs/cli/mcp.md).
 - **`theo proxy`**: a local reverse proxy on `127.0.0.1:7080` that serves every instance at `http://<service>.<instance>.<project>.localhost:7080` (and `<instance>.<project>.localhost`), WebSockets included. `theo proxy routes` lists the URLs (`--json`, `--hosts`); `theo status` shows them while the proxy runs. See [docs/cli/proxy.md](docs/cli/proxy.md).
 - **Container engines**: `theo doctor` identifies Docker Engine, Docker Desktop, Colima, OrbStack, Rancher Desktop and Podman, and explains what differs. `THEO_DOCKER` points Theo at another docker-compatible CLI. See [docs/cli/engines.md](docs/cli/engines.md).
-- **Spanish interface**: the web interface and the desktop app follow the browser language (English or Spanish) with a selector next to the theme.
+- **Spanish interface**: the web interface and the desktop app follow the browser language (English or Spanish), with a selector in Settings.
 - **Proxy from the interface**: the web interface and the desktop app can run the proxy themselves (Settings, or the line above the worktrees) and remember the switch; each worktree shows its local domains while a proxy runs. See [docs/cli/proxy.md](docs/cli/proxy.md#with-the-web-interface).
 - **`theo open <project> [-w <w>] [service]`**: opens a running service in the browser, at its local domain while a proxy runs. `--print` only prints the address.
 - **`theo mcp install`**: prints (or with `--apply` runs) the command that registers Theo in Claude Code, plus a paragraph for `AGENTS.md`; `--owner`, `--read-only`, `--scope`.
 - **MCP**: new read-only tool `proxy_routes`; `ports`, `up` and `status` include the proxy addresses while a proxy runs.
 - **Compose changed warning**: `theo status`, the interface and MCP warn (`compose-changed`) when the Compose configuration of a running instance changed since its last `up` or `recreate`, with the command that applies it.
 - **`theo worktree prune <project> --merged`**: lists the worktrees whose branch is merged into the main branch (or `--into`), and with `--confirm <project>` removes the ones with no containers and no uncommitted files. Branches are never deleted.
-- **`theo stop --all [project]`** and a **Pause all** button in the interface stop every running instance at once without removing anything.
+- **`theo stop --all [project]`**, "Stop everything" on the home screen and "Pause every instance" in a project stop every running instance at once without removing anything.
 - The interface shows the **owner** of each worktree (set by agents through MCP) and filters by it.
 - **`theo project remove --delete-worktrees --confirm <name>`**: also deletes the project's other worktrees and clones, after the same checks as `worktree remove`. Without the flag nothing changes, but the listing says which worktrees stay on disk.
 

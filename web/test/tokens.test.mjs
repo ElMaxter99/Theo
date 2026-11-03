@@ -78,6 +78,10 @@ const pairs = [
   ["focus", "surface-2", 3],
   ["border", "bg-subtle", 3], // selectors in the header
   ["border", "surface-2", 3],
+  ["brand", "bg", 3], // current tab, active chip border
+  ["brand", "surface", 3],
+  ["brand", "selected", 3],
+  ["brand", "bg-subtle", 3],
   ["accent", "selected", 3], // selected tab underline, current wizard step
   ["accent", "surface", 3],
   ["accent", "bg-subtle", 3],

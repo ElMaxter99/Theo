@@ -16,7 +16,7 @@ import (
 
 func TestProxyUsage(t *testing.T) {
 	t.Setenv(registry.EnvHome, t.TempDir())
-	if out, _, _ := run("help"); !strings.Contains(out, "proxy routes [project]") || !strings.Contains(out, "<service>.<instance>.<project>.localhost") {
+	if out, _, _ := run("help", "all"); !strings.Contains(out, "proxy routes [project]") || !strings.Contains(out, "<service>.<instance>.<project>.localhost") {
 		t.Errorf("help lacks the proxy:\n%s", out)
 	}
 	for _, args := range [][]string{

@@ -27,6 +27,9 @@
   --text: #27132f;
   --text-muted: #5a4a60;
   --link: #0b6561;
+  /* Turquoise in two tones: --brand (#168783, the logo teal) for non-text marks such as the current tab,
+     active borders and fills; --accent (#0e6b67) for buttons and links, where text needs 4.5:1. */
+  --brand: #168783;
   --accent: #0e6b67;
   --accent-hover: #0a5754;
   --on-accent: #ffffff;
@@ -65,6 +68,7 @@
     --text: #f4eef6;
     --text-muted: #c4b5cb;
     --link: #55d6cd;
+    --brand: #2fb3aa;
     --accent: #3cc4ba;
     --accent-hover: #6fdcd4;
     --on-accent: #0f1a1a;
@@ -103,6 +107,7 @@
   --text: #f4eef6;
   --text-muted: #c4b5cb;
   --link: #55d6cd;
+  --brand: #2fb3aa;
   --accent: #3cc4ba;
   --accent-hover: #6fdcd4;
   --on-accent: #0f1a1a;
@@ -130,7 +135,8 @@
 }
 
 :root {
-  /* System font stack: no web fonts, no external requests (typography is still open, BRAND-008). */
+  /* Body text uses the system stack; headings use Fredoka, bundled with the app (no external requests). */
+  --font-display: "Fredoka", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   --radius: 0.5rem;
@@ -144,3 +150,6 @@
   --shadow: 0 1px 2px rgb(39 19 47 / 0.12), 0 2px 8px rgb(39 19 47 / 0.08);
   --nav-width: 13.5rem;
 }
+
+@font-face { font-family: "Fredoka"; font-style: normal; font-weight: 600; font-display: swap; src: url("../fonts/fredoka-latin-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "Fredoka"; font-style: normal; font-weight: 700; font-display: swap; src: url("../fonts/fredoka-latin-700-normal.woff2") format("woff2"); }

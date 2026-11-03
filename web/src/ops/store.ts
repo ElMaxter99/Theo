@@ -19,6 +19,13 @@ function notify() {
 
 export const getOps = (): Operation[] => ops;
 
+const finished = new Set<(op: Operation) => void>();
+/** Calls fn when an operation this page saw running finishes (the toasts). */
+export function onOperationFinished(fn: (op: Operation) => void): () => void {
+  finished.add(fn);
+  return () => { finished.delete(fn); };
+}
+
 export function rememberWorktrees(list: Pick<Worktree, "id" | "branch" | "path" | "detached">[]): void {
   for (const w of list) names.set(w.id, w.branch || w.path.split(/[\\/]/).filter(Boolean).pop() || w.id);
 }
@@ -34,7 +41,10 @@ export function upsertOp(op: Operation): void {
   ops = [next, ...ops.filter((o) => o.id !== op.id)].sort((a, b) => (b.started_at ?? "").localeCompare(a.started_at ?? "")).slice(0, 60);
   const name = nameOf(next.worktree) || next.project || "";
   if (!prev && isActiveOp(next)) announce(t.ops.announceStarted(t.ops.kindProgress[normKind(next.kind)] ?? kindLabel(next.kind), name));
-  else if (prev && isActiveOp(prev) && !isActiveOp(next)) announce(t.ops.announceDone(kindLabel(next.kind), name, t.ops.state[next.state] ?? next.state));
+  else if (prev && isActiveOp(prev) && !isActiveOp(next)) {
+    announce(t.ops.announceDone(kindLabel(next.kind), name, t.ops.state[next.state] ?? next.state));
+    finished.forEach((fn) => fn(next));
+  }
   notify();
 }
 
@@ -72,7 +82,7 @@ export function useOps(): Operation[] {
   return ops;
 }
 
-export type LifecycleKind = "up" | "down" | "restart" | "stop";
+export type LifecycleKind = "up" | "down" | "restart" | "stop" | "start" | "recreate";
 
 export async function startOperation(project: string, wt: string, kind: LifecycleKind, body: Record<string, unknown> = {}): Promise<Operation> {
   const op = await api.post<Operation>(`${wtPath(project, wt)}/${kind}`, body, { idempotent: true });
@@ -91,5 +101,19 @@ export async function cancelOperation(id: string): Promise<void> {
 export async function startSharedOperation(project: string, kind: "up" | "down", body: Record<string, unknown> = {}): Promise<Operation> {
   const op = await api.post<Operation>(`/projects/${encodeURIComponent(project)}/shared/${kind}`, body, { idempotent: true });
   upsertOp({ project, ...op });
+  return op;
+}
+
+/** POST /stop-all: stops every running instance, of one project or of all. */
+export async function stopAll(project?: string): Promise<Operation> {
+  const op = await api.post<Operation>("/stop-all", project ? { project } : {}, { idempotent: true });
+  upsertOp({ project, ...op });
+  return op;
+}
+
+/** Volume backups, restores and clones of an instance (operations volumes.*). */
+export async function startVolumeOperation(project: string, wt: string, kind: "backup" | "restore" | "clone", body: Record<string, unknown>): Promise<Operation> {
+  const op = await api.post<Operation>(`${wtPath(project, wt)}/volumes/${kind}`, body, { idempotent: true });
+  upsertOp({ project, worktree: wt, ...op });
   return op;
 }

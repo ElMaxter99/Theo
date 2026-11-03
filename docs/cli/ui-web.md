@@ -23,12 +23,18 @@ web/
     api/        types.ts, client.ts (session + CSRF + errors), sse.ts (parser + reconnecting stream),
                 events.ts (the one global event channel), focus.ts (the "max 2 streams per tab" rule)
     lib/        status.ts (state -> text + icon + tone, one table), ports.ts, overview.ts, logstore.ts,
-                useLogStream.ts, router.ts (hash routes), hooks.ts, theme.ts, live.ts (the one live region), format.ts,
-                locale.ts (language preference, `num`, `plural`), focusguard.ts (focus never falls back to <body>)
-    ops/        store.ts (operations list, start/cancel), Operations.tsx (header indicator and panel)
-    components/ Shell, Icon (one icon set), Dialog (native <dialog>; plain and typed confirmation), Tabs (ARIA),
+                useLogStream.ts, router.ts (hash routes, 0.1 addresses rewritten), hooks.ts, theme.ts, live.ts (the one
+                live region), format.ts, locale.ts (language preference, `num`, `plural`), focusguard.ts (focus never
+                falls back to <body>), statusStore.ts (GET /status, shared by the sidebar, home and the palette)
+    ops/        store.ts (operations list, start/cancel, stop-all, volume operations), Operations.tsx (header indicator
+                and panel, shown only while something runs)
+    components/ Shell, Icon (one icon set), Dialog (native <dialog>; plain and typed confirmation; side panel), Tabs (ARIA),
+                Menu (APG menu button), Palette (command palette and keyboard shortcuts), Toasts, CopyCommand,
                 VirtualLog (virtualized log view), RemoveFlow, ui.tsx
-    pages/      Projects (+ welcome), AddProject, ProjectPanel, InstanceDetail, tabs/*, Wizard
+    pages/      Home (+ welcome), Projects, AddProject, ProjectHeader, ProjectPanel (instances), NewInstance (side panel),
+                SharedServices, ProjectActivity, ProjectSettings, InstanceDetail, tabs/*, Problems (+ Health, cleanup),
+                Settings
+  src/fonts/                        Fredoka 600 and 700 (woff2, SIL OFL 1.1, licence in OFL.txt), headings only
   public/brand/                     provisional artwork, NOTICE.md (NOT under the MIT licence)
   mock/server.mjs                   mock API server (Node, no dependencies) for development and tests
   test/                             unit tests (`node --test`)
@@ -36,7 +42,8 @@ web/
   e2e/screenshots/                  PNGs of every screen (light, some dark, forced colours, zoom)
 ```
 
-Rules that the code and the tests enforce: no CDN, no web fonts, no inline `<script>` or `<style>`, no external request,
+Rules that the code and the tests enforce: no CDN, no font other than the bundled Fredoka (served from the app itself,
+`font-src 'self'`), no inline `<script>` or `<style>`, no external request,
 no `innerHTML` (project data is always a text node), no Shadow DOM, no component library, native elements first
 (`<button>`, `<dialog>`, `<table>`, `<details>`), at most two SSE connections per tab.
 
@@ -59,21 +66,49 @@ Names carry a content hash so that the Go server can cache them forever; `index.
 | `dist/index.html` | generated; references the files below |
 | `dist/assets/app-<hash>.js` / `.css` | the application (ES module) and its styles |
 | `dist/assets/theme-<hash>.js` | tiny classic script in `<head>` that applies a saved light/dark choice before first paint |
-| `dist/assets/THIRD-PARTY.txt` | licence of the bundled runtime (Preact, MIT) |
+| `dist/assets/fredoka-latin-<weight>-normal-<hash>.woff2` | the heading typeface |
+| `dist/assets/THIRD-PARTY.txt` | licences of the bundled runtime (Preact, MIT) and typeface (Fredoka, SIL OFL 1.1) |
 | `dist/brand/*` | provisional brand artwork and its `NOTICE.md` |
 
 The build is deterministic: running it twice gives the same bytes, so CI can check that the committed bundle matches the source
 (`npm ci && npm run build && git diff --exit-code internal/ui/dist`).
 
-## Shared services, health and settings (V5, V6)
+## Screens (0.2 redesign)
+
+The design lives in the Theo-workspace repository (the design canvas); every new screen is drawn there first. The 0.2
+structure replaces the 0.1 one: a home screen, the project as tabs, a side panel instead of the four-step wizard, five tabs
+per instance instead of seven, and *Problems* instead of *Health*.
+
+| Route | Screen | Source |
+|---|---|---|
+| `#/` | Home: what is running (with its address and Pause), what needs attention, recent activity of every project, "Stop everything". With no project it is the welcome screen, with the Git and Docker checks. | `pages/Home.tsx` |
+| `#/projects`, `#/projects/new` | Projects as a table (running, attention, New instance, ⋯ menu); adding a project. | `pages/Projects.tsx`, `pages/AddProject.tsx` |
+| `#/p/<p>` | Instances: state chips with counts, search, owner filter, multi-select with bulk start and pause, one row per instance with the action that fits its state and a ⋯ menu. | `pages/ProjectPanel.tsx` |
+| `#/p/<p>/new` | The same, with the *New instance* side panel open: new or existing branch, port check while typing, "More options" (owner, folder, copy files, clone volumes, fixed container names), a one-line summary, *Create and start* / *Create only* / *Copy command*. | `pages/NewInstance.tsx` |
+| `#/p/<p>/shared`, `/activity`, `/settings` | Shared services; the history of every instance of the project; the project's settings (Compose files, env file, worktree folder, files copied into new worktrees, rename, the AGENTS.md paragraph, unregister). | `pages/SharedServices.tsx`, `ProjectActivity.tsx`, `ProjectSettings.tsx` |
+| `#/p/<p>/w/<id>/<tab>` | Instance: Summary (warnings, services with their own actions, ports, facts), Logs, Configuration (profiles, owner, ports, variables, the Compose preview), Data (volumes, backups, restore, copy from another instance, delete), Activity. | `pages/InstanceDetail.tsx`, `pages/tabs/*` |
+| `#/problems`, `#/problems/cleanup` | Instance warnings with what to do, the reconcile report (below); cleanup of worktrees whose branch is merged, after typing the project name. | `pages/Problems.tsx`, `pages/Health.tsx` |
+| `#/settings/<section>` | Preferences (theme, language, density, motion), Local domains, AI agents (MCP registration), Diagnostics (doctor and the report), About. | `pages/Settings.tsx` |
+
+Addresses of 0.1 keep working and are rewritten in place: `#/health` goes to `#/problems`, and the old instance tabs go to the
+new ones (`services` and `ports` to `summary`, `variables` to `config`, `volumes` to `data`, `history` to `activity`).
+
+**Keyboard.** Ctrl+K (⌘K) or `/` opens the command palette (projects, instances and actions, filtered as you type; arrows and
+Enter); `?` lists the shortcuts; `g i`, `g p`, `g x`, `g s` go to home, projects, problems and settings. Row and page menus
+follow the APG menu-button pattern (arrows, Home/End, Escape returns focus to the button).
+
+**Colour.** Turquoise has two tones: `--brand` (#168783, the logo teal) for marks that are not text, such as the current tab
+and active borders, and `--accent` (#0e6b67) for buttons and links, where text needs 4.5:1. Headings use Fredoka.
+
+## Shared services, problems and settings
 
 | Route | Screen | Source |
 |---|---|---|
 | `#/p/<project>/shared` | Shared services of a project: provider state (Compose project, network, host ports published or not, per-service state), start / stop as operations, "Stop sharing" per service, the instances that use them (each with "Stop using"), a form to make another instance use a service, a form to declare a service as shared, "Delete data…". The empty state explains exclusive vs shared. | `pages/SharedServices.tsx` |
-| `#/health` | The reconcile report grouped by kind, with what to do about each finding. Only Theo's own records (`forgettable`) have a checkbox; "Forget Theo's records" asks for confirmation and states that containers, volumes and worktrees are not touched. With `docker_error` a banner says why and which findings are missing. | `pages/Health.tsx`, `lib/health.ts` |
-| `#/settings` | The `doctor` table (status in text + icon, detail, how to fix), versions and data directory, "Copy information for a report" (versions and check results only: no paths, no variables), view preferences (theme, language, density, reduced motion; stored only in this browser). | `pages/Settings.tsx`, `lib/report.ts`, `lib/prefs.ts` |
+| `#/problems` | The reconcile report grouped by kind, with what to do about each finding. Only Theo's own records (`forgettable`) have a checkbox; "Forget Theo's records" asks for confirmation and states that containers, volumes and worktrees are not touched. With `docker_error` a banner says why and which findings are missing. | `pages/Health.tsx`, `lib/health.ts` |
+| `#/settings/diagnostics`, `/preferences`, `/about` | The `doctor` table (status in text + icon, detail, how to fix), versions and data directory, "Copy information for a report" (versions and check results only: no paths, no variables), view preferences (theme, language, density, reduced motion; stored only in this browser). | `pages/Settings.tsx`, `lib/report.ts`, `lib/prefs.ts` |
 
-The sidebar has a **Health** entry whose number is the count of findings (text, never only a dot); with `docker_error` it also says
+The sidebar has a **Problems** entry whose number is the count of findings (text, never only a dot); with `docker_error` it also says
 "Docker unavailable". The count is refreshed when the page opens and, debounced, on `state.changed` and `reconcile.stale`.
 
 Confirmations follow the same rule as the rest of the app: the first request carries no `confirm`; the server answers
@@ -84,8 +119,8 @@ instances are linked is refused by the server (`shared_in_use`) and the interfac
 **History** is paginated: the tab asks for 20 events, and "Load older events" asks for the next page with `before=<time of the
 oldest loaded event>`. The list is de-duplicated, so a refresh during paging does not repeat rows.
 
-**Wizard, fixed container names.** When the settings of the main worktree report `fixed_container_names`, step 2 shows them and an
-unchecked checkbox "Neutralize fixed container names for this worktree". It is never ticked for the user. When ticked, after the
+**New instance, fixed container names.** When the settings of the main worktree report `fixed_container_names`, "More options"
+shows them and an unchecked checkbox "Neutralize fixed container names for this worktree". It is never ticked for the user. When ticked, after the
 worktree is created the app sends `PATCH .../settings {neutralize_container_names: true}` for the new worktree only, before starting
 it; if that fails the instance is not started and the screen says why.
 
@@ -104,7 +139,11 @@ They are the ones in `docs/api.md` (sections 9 to 11 of the backend track), chec
   (`lib/report.ts` is only the fallback). The report contains no secrets but does include the data directory; the page says so.
 - `GET .../history?limit=&before=`: the body is the plain array (oldest first); the cursor of the older page is in the response header
   `Theo-History-Next` (absent on the oldest page).
-- `GET .../settings` has `fixed_container_names`, used by the wizard checkbox.
+- `GET .../settings` has `fixed_container_names`, used by the checkbox of the new instance panel, and `known_profiles` and
+  `owner` for the Configuration tab.
+- `GET /status` (every project, with worktree ids), `GET /history` and `GET /projects/{p}/history` (same paging as above),
+  `POST /stop-all`, `GET /mcp/install`, `POST /projects/{p}/rename`, `GET|POST /projects/{p}/prune`,
+  `GET .../volumes/backups` and `POST .../volumes/backup|restore|clone`: the 0.2 additions in `docs/api.md`.
 
 ## Design and accessibility decisions
 
@@ -114,7 +153,7 @@ They are the ones in `docs/api.md` (sections 9 to 11 of the backend track), chec
   Semantic colours (ok, warning, error, info) are independent of the brand palette: the brand coral is not the error red.
 - **State is never colour alone.** `lib/status.ts` is the single table from API enums to text + distinct icon shape + tone.
 - **Keyboard and screen readers.** Skip link, landmarks, one polite `aria-live` region (`lib/live.ts`), ARIA tabs with
-  Left/Right/Home/End, focus moves to the page heading after navigation and to the step heading in the wizard, dialogs return focus
+  Left/Right/Home/End, focus moves to the page heading after navigation and to the name field in the new instance panel, dialogs return focus
   to their opener, destructive dialogs focus *Cancel* first and Esc cancels, logs are not live regions.
 - **Language (Q-029).** `t` is the catalog of the language resolved once when the page loads (`lib/locale.ts`: stored
   preference `theo.lang`, else `navigator.language`, es* -> Spanish); choosing another language saves it and reloads the page,

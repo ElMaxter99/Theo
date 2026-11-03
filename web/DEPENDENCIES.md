@@ -8,6 +8,7 @@ bundle (`internal/ui/dist`); everything else is a development tool and is never 
 | `preact` | 10.29.8 | MIT | UI runtime (about 5 KiB gzipped) | yes, bundled; its licence is copied to `dist/assets/THIRD-PARTY.txt` |
 | `esbuild` | 0.28.2 | MIT | bundler (`npm run build`); installs its platform binary `@esbuild/<os>-<arch>` (same version, MIT) | no |
 | `typescript` | 5.9.3 | Apache-2.0 | type check (`npm run check`) | no |
+| Fredoka (typeface, weights 600 and 700, latin subset, woff2 from `@fontsource/fredoka`) | 5.2.8, copied into `src/fonts` | **SIL OFL 1.1** | headings; not an npm dependency, the two files are committed | yes, bundled; the OFL is copied to `dist/assets/THIRD-PARTY.txt` |
 | `axe-core` | 4.14.0 | **MPL-2.0** | accessibility checks inside the Playwright tests (`web/e2e`) | no |
 
 Not dependencies of this package: **Playwright** and Chromium come preinstalled in the development environment and in CI
@@ -24,6 +25,6 @@ If the owner prefers a strict allow-list, drop `axe-core` and the axe checks in 
 ## Rules
 
 - No new runtime dependency without a reason written here.
-- No CDN, no web fonts, no telemetry: the interface makes no request outside its own origin (tested in
+- No CDN, no web fonts from outside (Fredoka is bundled and served by Theo itself), no telemetry: the interface makes no request outside its own origin (tested in
   `e2e/security.test.mjs`).
 - The provisional brand artwork in `public/brand/` is **not** covered by the MIT licence (see `public/brand/NOTICE.md`).

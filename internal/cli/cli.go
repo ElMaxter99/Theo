@@ -117,19 +117,35 @@ var errUsage = errors.New("usage")
 // writing normal output to stdout and errors to stderr, and returns the
 // process exit code.
 func Run(args []string, stdout, stderr io.Writer) int {
-	// Global flags come before the command: `theo --explain up app`.
-	if len(args) > 0 && args[0] == "--explain" {
-		args = args[1:]
+	// Global flags come before the command: `theo --explain up app`,
+	// `theo --color never status`.
+	defer func(mode string) { colorMode = mode }(colorMode)
+	args, explain, err := globalFlags(args)
+	if err != nil {
+		printError(stderr, errors.Unwrap(err))
+		return ExitUsage
+	}
+	if explain {
+		if len(args) == 0 {
+			fmt.Fprint(stderr, "theo: --explain needs a command, like `theo --explain up app`\n")
+			return ExitUsage
+		}
 		done := execx.Explain(stdout)
 		defer done()
 		stdout = io.Discard // the commands are listed; what they would have printed is not
 	}
 	if len(args) == 0 {
-		fmt.Fprint(stderr, helpText())
-		return ExitUsage
+		// `theo` alone: what runs, in every project.
+		if err := withEngine(func(e *engine.Engine) error { return runSummary(e, stdout) }); err != nil {
+			printError(stderr, err)
+			return ExitError
+		}
+		return ExitOK
 	}
+	// The project (and the worktree) from the current folder, when the
+	// command leaves it out or gives ".".
+	args = inferProject(args, stderr)
 
-	var err error
 	switch args[0] {
 	case "version", "--version":
 		if len(args) == 2 && args[1] == "--json" {
@@ -139,8 +155,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, engine.VersionLine())
 		return ExitOK
 	case "help", "--help", "-h":
-		fmt.Fprint(stdout, helpText())
-		return ExitOK
+		err = runHelp(args[1:], stdout)
 	case "project":
 		err = withEngine(func(e *engine.Engine) error { return runProject(e, args[1:], stdout) })
 	case "worktrees":
@@ -182,13 +197,21 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case errors.As(err, &exit): // `theo exec`: the command's own exit code
 		return exit.code
 	case errors.Is(err, flag.ErrHelp):
-		fmt.Fprint(stdout, helpText())
+		if text, ok := helpFor(args[0]); ok {
+			fmt.Fprintf(stdout, "Usage:\n%s\nAll commands: theo help · the full reference: theo help all\n", text)
+		} else {
+			fmt.Fprint(stdout, helpTopics)
+		}
 		return ExitOK
 	case errors.Is(err, errUsage):
-		fmt.Fprintf(stderr, "theo: %s\n\n%s", strings.TrimPrefix(err.Error(), "usage: "), helpText())
+		next := "theo help"
+		if _, ok := helpFor(args[0]); ok && args[0] != "help" {
+			next = "theo help " + args[0]
+		}
+		fmt.Fprintf(stderr, "theo: %s\n  %s %s\n", strings.TrimPrefix(err.Error(), "usage: "), paint(useColor(stderr), ansiCyan, "→"), next)
 		return ExitUsage
 	default:
-		fmt.Fprintf(stderr, "theo: %s\n", err)
+		printError(stderr, err)
 		return ExitError
 	}
 }

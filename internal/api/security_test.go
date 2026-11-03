@@ -197,7 +197,7 @@ func TestNoSecretInURLsOrLogs(t *testing.T) {
 
 func TestSecurityHeaders(t *testing.T) {
 	e := newEnv(t)
-	const csp = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+	const csp = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 	for _, p := range []string{"/", "/api/v1/meta", "/missing.js"} {
 		_, _, hdr := e.c.raw("GET", p, nil, nil)
 		if got := hdr.Get("Content-Security-Policy"); got != csp {

@@ -1,33 +1,54 @@
+// V-03 Project › Instances: one line per worktree with its state, its address and the action that fits it; the rest is
+// in the row menu. Filters by state, owner and text; several instances can be started or paused at once.
+// With #/p/{p}/new the "New instance" panel (V-04) is open on top.
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { api, ApiError, projectPath } from "../api/client.ts";
-import type { Overview, ProxyStatus, Worktree } from "../api/types.ts";
-import { Badge, Banner, Crumbs, ErrorBanner, ExternalLink, Loading, PageHead } from "../components/ui.tsx";
+import type { Overview, Worktree } from "../api/types.ts";
+import { Badge, Banner, ErrorBanner, ExternalLink, Loading } from "../components/ui.tsx";
 import { Icon } from "../components/Icon.tsx";
+import { MenuButton } from "../components/Menu.tsx";
+import { copyText, theoCmd } from "../components/CopyCommand.tsx";
 import { RemoveFlow } from "../components/RemoveFlow.tsx";
 import { useResource } from "../lib/hooks.ts";
-import { href } from "../lib/router.ts";
+import { href, navigate } from "../lib/router.ts";
 import { announce } from "../lib/live.ts";
 import { conflictsOf, urlsOf } from "../lib/overview.ts";
 import { containerCounts, isActiveOp, worktreeStatus } from "../lib/status.ts";
-import { rememberWorktrees, startOperation, useOps } from "../ops/store.ts";
+import { rememberWorktrees, startOperation, stopAll, useOps } from "../ops/store.ts";
 import type { LifecycleKind } from "../ops/store.ts";
 import { t } from "../strings.ts";
 import { setTitle } from "./Router.tsx";
+import { ProjectHeader } from "./ProjectHeader.tsx";
+import { NewInstance } from "./NewInstance.tsx";
 
-export function wtName(w: Worktree): string {
+export function wtName(w: Pick<Worktree, "branch" | "detached" | "path" | "id">): string {
   return w.branch || (w.detached ? t.panel.detached : "") || w.path.split(/[\\/]/).filter(Boolean).pop() || w.id;
 }
 
-export function ProjectPanel({ project, onRefreshMeta }: { project: string; onRefreshMeta: () => void }) {
+/** `-w` argument of the CLI for a worktree: the main one needs none. */
+export function wtArg(w: Pick<Worktree, "branch" | "path" | "main">): string | undefined {
+  if (w.main) return undefined;
+  return w.branch || w.path;
+}
+
+type Chip = "all" | "running" | "stopped" | "problems";
+const ACTIVE = ["running", "partial", "unhealthy"];
+const chipOf = (w: Worktree): Chip => (w.state === "partial" || w.state === "unhealthy" || (w.warnings ?? []).length > 0 && w.state !== "running" ? "problems" : ACTIVE.includes(w.state) ? "running" : "stopped");
+
+const asError = (e: unknown) => (e instanceof ApiError ? e : new ApiError(0, { code: "internal", message: String(e) }));
+
+export function ProjectPanel({ project, drawer, onRefreshMeta }: { project: string; drawer: boolean; onRefreshMeta: () => void }) {
   const res = useResource<Overview>(() => api.get<Overview>(`${projectPath(project)}/overview`), [project], { project });
   const ops = useOps();
   const [filter, setFilter] = useState("");
   const [owner, setOwner] = useState("");
-  const proxy = useResource<ProxyStatus>(() => api.get<ProxyStatus>("/proxy"), [], { project });
+  const [chip, setChip] = useState<Chip>("all");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
   const [removing, setRemoving] = useState<Worktree | null>(null);
   const [actionError, setActionError] = useState<ApiError | undefined>();
   useEffect(() => setTitle([project]), [project]);
   useEffect(() => { if (res.data) rememberWorktrees(res.data.worktrees); }, [res.data]);
+  useEffect(() => { setPicked(new Set()); setChip("all"); setFilter(""); setOwner(""); }, [project]);
 
   // When an operation of this project finishes, the list is refreshed (the server also emits state.changed).
   const activeKey = ops.filter(isActiveOp).map((o) => o.id).join(",");
@@ -35,107 +56,112 @@ export function ProjectPanel({ project, onRefreshMeta }: { project: string; onRe
 
   const wts = res.data?.worktrees ?? [];
   const owners = useMemo(() => [...new Set(wts.map((w) => w.owner).filter((o): o is string => !!o))].sort(), [wts]);
+  const counts = useMemo(() => {
+    const c: Record<Chip, number> = { all: wts.length, running: 0, stopped: 0, problems: 0 };
+    for (const w of wts) c[chipOf(w)]++;
+    return c;
+  }, [wts]);
   const shown = useMemo(() => {
     const q = filter.trim().toLowerCase();
     return wts.filter((w) => {
+      if (chip !== "all" && chipOf(w) !== chip) return false;
       if (owner === "-" ? !!w.owner : owner && w.owner !== owner) return false;
       if (!q) return true;
       return (w.branch ?? "").toLowerCase().includes(q) || w.path.toLowerCase().includes(q) || (w.owner ?? "").toLowerCase().includes(q);
     });
-  }, [wts, filter, owner]);
-  const pausable = wts.filter((w) => (w.state === "running" || w.state === "partial" || w.state === "unhealthy") && !w.busy && !ops.some((o) => o.worktree === w.id && isActiveOp(o)));
+  }, [wts, filter, owner, chip]);
+  const busyIds = new Set(ops.filter(isActiveOp).map((o) => o.worktree));
+  const selected = wts.filter((w) => picked.has(w.id));
+  const dockerDown = res.data?.docker.available === false;
+
+  const act = async (w: Worktree, kind: LifecycleKind) => {
+    setActionError(undefined);
+    announce((kind === "up" ? t.panel.startedMsg : kind === "down" ? t.panel.stoppedMsg : kind === "stop" ? t.panel.pausedMsg : t.panel.restartedMsg)(wtName(w)));
+    try {
+      await startOperation(project, w.id, kind, kind === "up" ? { auto_ports: true } : {});
+    } catch (e) {
+      setActionError(asError(e));
+    }
+  };
+  const bulk = async (kind: "up" | "stop") => {
+    setActionError(undefined);
+    const list = selected.filter((w) => !busyIds.has(w.id) && (kind === "up" ? !ACTIVE.includes(w.state) : ACTIVE.includes(w.state)));
+    announce(kind === "up" ? t.instances.startingN(list.length) : t.panel.pausedAllMsg(list.length));
+    for (const w of list) {
+      try { await startOperation(project, w.id, kind, kind === "up" ? { auto_ports: true } : {}); }
+      catch (e) { setActionError(asError(e)); }
+    }
+    setPicked(new Set());
+  };
+  const toggle = (id: string) => { const n = new Set(picked); if (n.has(id)) n.delete(id); else n.add(id); setPicked(n); };
+  const allShown = shown.length > 0 && shown.every((w) => picked.has(w.id));
+  const closeDrawer = () => navigate(href.project(project));
 
   if (res.error && !res.data) {
     return (
       <>
-        <Crumbs items={[{ label: t.projects.title, href: href.projects() }, { label: project }]} />
-        <PageHead title={project} />
+        <ProjectHeader project={project} tab="instances" />
         <ErrorBanner error={res.error} title={res.error.status === 404 ? t.panel.notFound : t.panel.loadError} />
       </>
     );
   }
 
-  const act = async (w: Worktree, kind: LifecycleKind) => {
-    setActionError(undefined);
-    announce((kind === "up" ? t.panel.startedMsg : kind === "down" ? t.panel.stoppedMsg : t.panel.restartedMsg)(wtName(w)));
-    try {
-      await startOperation(project, w.id, kind, kind === "up" ? { auto_ports: true } : {});
-    } catch (e) {
-      setActionError(e instanceof ApiError ? e : new ApiError(0, { code: "internal", message: String(e) }));
-    }
-  };
-
-  const pauseAll = async () => {
-    setActionError(undefined);
-    announce(t.panel.pausedAllMsg(pausable.length));
-    for (const w of pausable) {
-      try {
-        await startOperation(project, w.id, "stop");
-      } catch (e) {
-        setActionError(e instanceof ApiError ? e : new ApiError(0, { code: "internal", message: String(e) }));
-      }
-    }
-  };
-
   return (
     <>
-      <Crumbs items={[{ label: t.projects.title, href: href.projects() }, { label: project }]} />
-      <PageHead
-        title={project}
-        sub={res.data ? <span class="mono">{res.data.path}</span> : undefined}
-        actions={
-          <>
-            <button type="button" class="btn" onClick={() => { res.reload(); proxy.reload(); onRefreshMeta(); }}><Icon name="restart" /> {t.panel.refresh}</button>
-            <button type="button" class="btn" disabled={pausable.length === 0 || res.data?.docker.available === false} title={t.panel.pauseAllHint} aria-describedby="pause-all-hint" onClick={() => void pauseAll()}><Icon name="stop" /> {t.panel.pauseAll}</button>
-            <a class="btn" href={href.shared(project)}>{t.shared.link}</a>
-            <a class="btn primary" href={href.wizard(project)}><Icon name="plus" /> {t.panel.newBranch}</a>
-          </>
-        }
-      />
-      <span id="pause-all-hint" class="sr-only">{t.panel.pauseAllHint}</span>
-      {proxy.data ? (
-        <p class="small muted">
-          {proxy.data.running && proxy.data.url
-            ? <ExternalLink href={proxy.data.url} label={t.settingsPage.proxyRoutes}>{t.panel.proxyOn(proxy.data.port)}</ExternalLink>
-            : <>{t.panel.proxyOff} · <a href={href.settings()}>{t.panel.proxySettings}</a></>}
-        </p>
-      ) : null}
-      {res.data && !res.data.docker.available ? <Banner tone="warn" title={t.banner.dockerTitle}><p>{res.data.docker.error ?? t.banner.dockerBody}</p><p>{t.panel.unknownStateNote}</p></Banner> : null}
+      <ProjectHeader project={project} path={res.data?.path} tab="instances" menu={[
+        { label: t.instances.pauseAll, disabled: counts.running + counts.problems === 0 || dockerDown, onSelect: () => { void stopAll(project).catch((e) => setActionError(asError(e))); announce(t.home.stoppingAll); } },
+        { label: t.app.refresh, onSelect: () => { res.reload(); onRefreshMeta(); } },
+      ]} />
+      {dockerDown ? <Banner tone="warn" title={t.banner.dockerTitle}><p>{res.data?.docker.error ?? t.banner.dockerBody}</p><p>{t.panel.unknownStateNote}</p></Banner> : null}
       <ErrorBanner error={actionError} />
       {res.loading && !res.data ? <Loading /> : null}
       {res.data ? (
         <>
-          <div class="row">
-            <div class="field">
-              <label for="wt-filter">{t.panel.filter}</label>
-              <input id="wt-filter" class="input" type="search" value={filter} placeholder={t.panel.filterPlaceholder} onInput={(e) => setFilter((e.currentTarget as HTMLInputElement).value)} />
+          <div class="toolbar">
+            <div class="chips" role="group" aria-label={t.instances.filterState}>
+              {(["all", "running", "stopped", "problems"] as Chip[]).map((c) => (
+                <button key={c} type="button" class="chip" aria-pressed={chip === c} onClick={() => setChip(c)}>{t.instances.chip[c]} <span class="chip-n">{counts[c]}</span></button>
+              ))}
             </div>
+            <label class="sr-only" for="wt-filter">{t.panel.filter}</label>
+            <input id="wt-filter" class="input search" type="search" value={filter} placeholder={t.panel.filterPlaceholder} onInput={(e) => setFilter((e.currentTarget as HTMLInputElement).value)} />
             {owners.length > 0 ? (
-              <div class="field">
-                <label for="wt-owner">{t.panel.ownerFilter}</label>
+              <>
+                <label class="sr-only" for="wt-owner">{t.panel.ownerFilter}</label>
                 <select id="wt-owner" class="input auto" value={owner} onChange={(e) => setOwner((e.currentTarget as HTMLSelectElement).value)}>
                   <option value="">{t.panel.ownerAll}</option>
                   {owners.map((o) => <option key={o} value={o}>{o}</option>)}
                   <option value="-">{t.panel.ownerNone}</option>
                 </select>
-              </div>
+              </>
             ) : null}
           </div>
+          {selected.length > 0 ? (
+            <div class="bulkbar" role="region" aria-label={t.instances.selection(selected.length)}>
+              <strong>{t.instances.selection(selected.length)}</strong>
+              <button type="button" class="btn sm" disabled={dockerDown} onClick={() => void bulk("up")}><Icon name="play" /> {t.panel.start}</button>
+              <button type="button" class="btn sm" disabled={dockerDown} onClick={() => void bulk("stop")}><Icon name="stop" /> {t.panel.pause}</button>
+              <button type="button" class="btn sm quiet" onClick={() => setPicked(new Set())}>{t.instances.clearSelection}</button>
+            </div>
+          ) : null}
           {wts.length === 0 ? <p class="empty">{t.panel.noWorktrees}</p> : shown.length === 0 ? <p class="empty">{t.panel.noMatch}</p> : (
             <div class="table-wrap" tabIndex={0} role="region" aria-label={t.panel.tableCaption(project)}>
-              <table class="data">
+              <table class="data rows">
                 <caption class="sr-only">{t.panel.tableCaption(project)}</caption>
                 <thead>
                   <tr>
+                    <th scope="col" class="pick">
+                      <input type="checkbox" aria-label={t.instances.selectAll} checked={allShown}
+                        onChange={(e) => { const on = (e.currentTarget as HTMLInputElement).checked; const n = new Set(picked); for (const w of shown) { if (on) n.add(w.id); else n.delete(w.id); } setPicked(n); }} />
+                    </th>
                     <th scope="col">{t.panel.colWorktree}</th>
                     <th scope="col">{t.panel.colState}</th>
-                    <th scope="col">{t.panel.colServices}</th>
                     <th scope="col">{t.panel.colAccess}</th>
-                    <th scope="col">{t.panel.colActions}</th>
+                    <th scope="col" class="num">{t.panel.colActions}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {shown.map((w) => <Row key={w.id} project={project} w={w} act={act} onRemove={() => setRemoving(w)} dockerDown={res.data?.docker.available === false} />)}
+                  {shown.map((w) => <Row key={w.id} project={project} w={w} act={act} picked={picked.has(w.id)} onPick={() => toggle(w.id)} onRemove={() => setRemoving(w)} dockerDown={dockerDown} />)}
                 </tbody>
               </table>
             </div>
@@ -143,11 +169,14 @@ export function ProjectPanel({ project, onRefreshMeta }: { project: string; onRe
         </>
       ) : null}
       {removing ? <RemoveFlow project={project} wt={removing} onClose={() => setRemoving(null)} onDone={() => { setRemoving(null); res.reload(); }} /> : null}
+      {drawer ? <NewInstance project={project} overview={res.data} onClose={closeDrawer} /> : null}
     </>
   );
 }
 
-function Row({ project, w, act, onRemove, dockerDown }: { project: string; w: Worktree; act: (w: Worktree, k: LifecycleKind) => void; onRemove: () => void; dockerDown: boolean }) {
+function Row({ project, w, act, picked, onPick, onRemove, dockerDown }: {
+  project: string; w: Worktree; act: (w: Worktree, k: LifecycleKind) => void; picked: boolean; onPick: () => void; onRemove: () => void; dockerDown: boolean;
+}) {
   const ops = useOps();
   const op = ops.find((o) => o.worktree === w.id && isActiveOp(o));
   const busyKind = op?.kind ?? w.busy?.kind ?? null;
@@ -157,55 +186,56 @@ function Row({ project, w, act, onRemove, dockerDown }: { project: string; w: Wo
   const view = worktreeStatus(w, busyKind);
   const st = w.state;
   const lock = busy || dockerDown;
-  const urls = urlsOf(w);
-  // The short form already reaches the default service: its long name is left out here (the detail lists every name).
-  const shortFor = (w.proxy_urls ?? []).find((l) => l.default)?.service;
-  const domains = (w.proxy_urls ?? []).filter((l) => l.running && (l.default || l.service !== shortFor));
+  const domains = (w.proxy_urls ?? []).filter((l) => l.running);
+  const first = domains.find((l) => l.default) ?? domains[0];
+  const url = first?.url ?? urlsOf(w)[0]?.url;
   const conflicts = conflictsOf(w);
   const composeChanged = (w.warnings ?? []).find((x) => x.kind === "compose-changed");
+  const active = ACTIVE.includes(st);
+  const failing = st === "partial" || st === "unhealthy";
+  const arg = wtArg(w);
+  const copy = (cmd: string) => { void copyText(cmd).then((ok) => announce(ok ? t.copy.copied : t.copy.failed)); };
+
+  let primary;
+  if (busy) primary = <button type="button" class="btn sm quiet" onClick={() => window.dispatchEvent(new CustomEvent("theo:show-operations", { cancelable: true }))}>{t.panel.progress}</button>;
+  else if (failing) primary = <a class="btn sm" href={href.detail(project, w.id, "logs")}>{t.instances.seeLogs}<span class="sr-only"> {name}</span></a>;
+  else if (active && url) primary = <a class="btn sm" href={url} target="_blank" rel="noopener noreferrer">{t.instances.open}<span class="sr-only"> {name} ({t.ports.newTab})</span> <Icon name="external" size={13} /></a>;
+  else if (active) primary = <button type="button" class="btn sm" disabled={lock} onClick={() => act(w, "stop")} aria-label={t.panel.pauseNamed(name)}><Icon name="stop" /> {t.panel.pause}</button>;
+  else primary = <button type="button" class="btn sm primary" disabled={lock} onClick={() => act(w, "up")} aria-label={t.panel.startNamed(name)}><Icon name="play" /> {t.panel.start}</button>;
+
   return (
-    <tr aria-busy={busy || undefined}>
+    <tr aria-busy={busy || undefined} class={picked ? "picked" : undefined}>
+      <td class="pick"><input type="checkbox" checked={picked} aria-label={t.instances.select(name)} onChange={onPick} /></td>
       <th scope="row">
-        <a href={href.detail(project, w.id)}>{name}</a>
-        <div class="small muted mono">{w.path.split(/[\\/]/).filter(Boolean).pop()}</div>
-        <div class="row">
+        <span class="row tight">
+          <a href={href.detail(project, w.id)}>{name}</a>
           {w.main ? <span class="tag">{t.panel.main}</span> : null}
-          {w.detached ? <span class="tag">{t.panel.detached}</span> : null}
-          {w.dirty ? <span class="tag"><Icon name="dot" size={10} /> {t.panel.dirty}</span> : null}
+          {w.dirty ? <span class="tag" title={t.panel.dirty}><Icon name="dot" size={10} /> {t.panel.dirty}</span> : null}
           {w.owner ? <span class="tag">{t.panel.owner(w.owner)}</span> : null}
           {composeChanged ? <span class="tag" title={composeChanged.fix ? `${composeChanged.message} (${composeChanged.fix})` : composeChanged.message}><Icon name="warn" size={10} /> {t.panel.composeChanged}</span> : null}
-        </div>
+        </span>
       </th>
-      <td>
-        <Badge view={view} />
-        {busy ? <div><button type="button" class="btn sm quiet" onClick={() => window.dispatchEvent(new CustomEvent("theo:show-operations", { cancelable: true }))}>{t.panel.progress}</button></div> : null}
-      </td>
-      <td class="nowrap">{counts ? t.panel.servicesCount(counts.running, counts.total) : t.panel.servicesNone}</td>
+      <td class="nowrap"><Badge view={view} /> {counts && counts.total > 0 ? <span class="small muted">{t.panel.servicesCount(counts.running, counts.total)}</span> : null}</td>
       <td class="url-list">
-        {conflicts.length > 0 ? (
-          <ul class="plain">{conflicts.map((c, i) => <li key={i}><span class="badge error"><Icon name="portbusy" /> <span>{t.panel.portBusy(c.port)}</span></span> <span class="small">{c.service}</span></li>)}</ul>
-        ) : null}
-        {domains.length > 0 ? (
-          <ul class="plain">{domains.map((u, i) => <li key={"d" + i}><ExternalLink href={u.url} label={u.service}>{u.url.replace(/^https?:\/\//, "")}</ExternalLink> <span class="small muted">{u.default ? "" : u.service}</span></li>)}</ul>
-        ) : null}
-        {urls.length > 0 ? (
-          <ul class={domains.length > 0 ? "plain small" : "plain"}>{urls.map((u, i) => <li key={i}><ExternalLink href={u.url} label={u.service}>{u.url.replace(/^https?:\/\//, "")}</ExternalLink> <span class="small muted">{u.service}</span></li>)}</ul>
-        ) : conflicts.length === 0 ? <span class="muted">{t.panel.noUrls}</span> : null}
+        {conflicts.length > 0 ? <span class="badge error"><Icon name="portbusy" /> <span>{t.panel.portBusy(conflicts[0]!.port)}</span></span>
+          : url && active ? <ExternalLink href={url} label={name}>{url.replace(/^https?:\/\//, "")}</ExternalLink>
+          : <span class="muted">—</span>}
       </td>
-      <td class="actions">
-        <div class="row">
-          <button type="button" class="btn sm" disabled={lock || st === "running"} onClick={() => act(w, "up")} aria-label={t.panel.startNamed(name)}><Icon name="play" /> {t.panel.start}</button>
-          <button type="button" class="btn sm" disabled={lock || st === "absent"} onClick={() => act(w, "down")} aria-label={t.panel.stopNamed(name)}><Icon name="stop" /> {t.panel.stop}</button>
-          <button type="button" class="btn sm" disabled={lock || st === "absent" || st === "stopped"} onClick={() => act(w, "restart")} aria-label={t.panel.restartNamed(name)}><Icon name="restart" /> {t.panel.restart}</button>
-          <details class="menu">
-            <summary class="btn sm" aria-label={t.app.moreFor(name)}>{t.app.more}</summary>
-            <div class="menu-list">
-              <a class="btn quiet sm" href={href.detail(project, w.id)}>{t.panel.details}<span class="sr-only"> {name}</span></a>
-              <a class="btn quiet sm" href={href.detail(project, w.id, "volumes")}>{t.panel.deleteData}<span class="sr-only"> {name}</span></a>
-              {!w.main ? <button type="button" class="btn quiet sm danger" onClick={(e) => { (e.currentTarget.closest("details") as HTMLDetailsElement).open = false; onRemove(); }}>{t.panel.removeWorktree}<span class="sr-only"> {name}</span></button> : null}
-            </div>
-          </details>
-        </div>
+      <td class="actions num">
+        <span class="row end">
+          {primary}
+          <MenuButton label={t.app.moreFor(name)} testid={`menu-${w.id}`} items={[
+            !active ? { label: t.panel.start, disabled: lock, onSelect: () => act(w, "up") } : null,
+            active ? { label: t.panel.pause, disabled: lock, onSelect: () => act(w, "stop") } : null,
+            st !== "absent" ? { label: t.panel.restart, disabled: lock || st === "stopped", onSelect: () => act(w, "restart") } : null,
+            st !== "absent" ? { label: t.instances.down, disabled: lock, onSelect: () => act(w, "down") } : null,
+            { label: t.panel.details, href: href.detail(project, w.id), sr: name },
+            { label: t.detail.tabLogs, href: href.detail(project, w.id, "logs"), sr: name },
+            { label: t.copy.upCommand, onSelect: () => copy(theoCmd("up", project, arg ? "-w" : "", arg)) },
+            { label: t.panel.deleteData, href: href.detail(project, w.id, "data"), sr: name },
+            !w.main ? { label: t.panel.removeWorktree, danger: true, onSelect: onRemove, sr: name } : null,
+          ]} />
+        </span>
       </td>
     </tr>
   );

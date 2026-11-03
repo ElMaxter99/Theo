@@ -6,6 +6,7 @@ import type { Meta } from "./api/types.ts";
 import { Shell } from "./components/Shell.tsx";
 import { startOpsStore } from "./ops/store.ts";
 import { startHealthStore } from "./lib/health.ts";
+import { startStatusStore } from "./lib/statusStore.ts";
 import { Banner, Loading } from "./components/ui.tsx";
 import { useRoute } from "./lib/router.ts";
 import { Router } from "./pages/Router.tsx";
@@ -34,10 +35,11 @@ export function App() {
     events.start();
     const stopOps = startOpsStore();
     const stopHealth = startHealthStore();
+    const stopStatus = startStatusStore();
     const onVis = () => events.focus(document.visibilityState === "visible");
     document.addEventListener("visibilitychange", onVis);
     onVis();
-    return () => { events.stop(); stopOps(); stopHealth(); document.removeEventListener("visibilitychange", onVis); };
+    return () => { events.stop(); stopOps(); stopHealth(); stopStatus(); document.removeEventListener("visibilitychange", onVis); };
   }, [phase]);
 
   const loadMeta = () => { api.get<Meta>("/meta").then(setMeta, () => undefined); };

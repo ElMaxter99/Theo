@@ -171,8 +171,21 @@ Same JSON as `theo project list --json` (`name`, `path`, `env_file?`, `worktree_
 ### `POST /projects` `{path, name?, env_file?}` -> 201 (the project)
 Errors: `already_exists` (409), engine text for "not a repository" (422).
 
-### `PATCH /projects/{p}` `{env_file?: string|null, worktree_dir?: string|null}` -> 200 (the project)
-`null` clears the setting; an absent key leaves it alone.
+### `PATCH /projects/{p}` `{env_file?, worktree_dir?, compose_files?, copy_on_add?}` -> 200 (the project)
+`env_file` and `worktree_dir` are a string or `null`; `compose_files` (like `theo project set --compose-file`, in
+merge order, each must exist in the main worktree) and `copy_on_add` (like `--copy-on-add`, root-relative patterns)
+are a list of strings or `null`. `null` clears the setting; an absent key leaves it alone. Any other key answers
+400 `unknown_field`.
+
+### `POST /projects/{p}/rename` `{name, yes?}` -> 200
+`theo project rename`: `{old, new, records, worktree_dir?, notes?}`. `yes` accepts that volumes kept under the old
+Compose names are not used by the renamed instances. Refused with 409 `busy` while an operation runs on the project.
+
+### `GET /projects/{p}/prune[?into=]` and `POST /projects/{p}/prune` `{confirm, into?}` -> 200
+`theo worktree prune`: the linked worktrees whose branch is merged into `into` (default: the main worktree's branch).
+`GET` only lists them (`{project, into, applied:false, merged[], not_merged}`; an entry with `reason` stays).
+`POST` removes the ones without a `reason` and needs the project name typed in `confirm` (409
+`confirmation_required` otherwise). Branches, volumes and clones are never touched.
 
 ### `DELETE /projects/{p}[?forget_records=1]` -> 200
 Only unregisters: `{"removed":true,"files_kept":true,"containers_kept":true,"records_dropped":false,"resources":{...}}`.
@@ -346,8 +359,9 @@ The overview item plus `settings`, `containers[]` (raw `docker compose ps`, same
 }
 ```
 
-### `POST /projects/{p}/worktrees` `{branch, new?, from?, path?, copy?}` -> 201
-Creates the worktree synchronously (`theo worktree add`). `notes[]` are things to show (for example a missing `.env`).
+### `POST /projects/{p}/worktrees` `{branch, new?, from?, path?, copy?, copy_files?, clone?, owner?}` -> 201
+Creates the worktree synchronously (`theo worktree add`). `copy_files` are one-off root-relative files copied from
+the main worktree, `clone` creates an independent clone (submodules) and `owner` labels the worktree. `notes[]` are things to show (for example a missing `.env`).
 Errors: `branch_checked_out` (409; the wizard disables such branches using `GET .../branches`, whose `worktree` is
 set when a worktree has the branch).
 ```json
@@ -430,10 +444,15 @@ and the branch are never removed. There is no generic `force`.
 ```
 
 ### Lifecycle operations
-`POST .../{wt}/up` `{build?, profiles?, auto_ports?, env_files?, start_shared?}`, `POST .../{wt}/down`,
-`POST .../{wt}/restart`, `POST .../{wt}/stop` -> **202** with the operation and `Location: /api/v1/operations/{id}`.
-`stop` stops the containers and keeps them, like `theo stop` (the panel's *Pause all* sends one per running
-instance).
+`POST .../{wt}/up` `{build?, profiles?, auto_ports?, env_files?, start_shared?, services?}`, `POST .../{wt}/down`,
+`POST .../{wt}/restart` `{services?}`, `POST .../{wt}/stop` `{services?}`, `POST .../{wt}/start` `{services?}`,
+`POST .../{wt}/recreate` `{services?, build?, profiles?, auto_ports?}` -> **202** with the operation and
+`Location: /api/v1/operations/{id}`.
+`services` limits the operation to those services (all when absent), like the service arguments of the CLI; `down`
+always takes the whole instance and answers 400 when given `services`.
+`stop` stops the containers and keeps them, like `theo stop`; `start` starts containers that exist and are stopped
+(`theo start`; it does not create them); `recreate` recreates the containers from the current image and
+configuration without touching their dependencies (`theo recreate`); named volumes are kept.
 `up` does what `theo up` does (shared services, ports with optional `auto_ports` that is remembered by the
 instance, generated overlay, `docker compose up --detach`). Send `Idempotency-Key: <uuid>`: the same key from the
 same session within 10 minutes returns the same operation. A second change on the same instance answers 409 `busy`
@@ -531,7 +550,10 @@ Bodies are never logged. Hypothesis not implemented: noting `reveal` in the hist
 ```
 
 ### Settings
-`GET|PATCH .../{wt}/settings` with `{neutralize_container_names?, auto_ports?}`.
+`GET|PATCH .../{wt}/settings` with `{neutralize_container_names?, auto_ports?, profiles?, owner?}`. `profiles`
+replaces the profiles the instance always starts with (`[]` clears them; each must be in `known_profiles`), and
+`owner` sets the worktree's owner label (`""` clears it), like `theo instance set --profile` and `theo worktree
+owner`.
 ```json
 // HTTP 200 (settings)
 {
@@ -540,7 +562,9 @@ Bodies are never logged. Hypothesis not implemented: noting `reveal` in the hist
   "profiles": [],
   "shared": [],
   "join": [],
-  "fixed_container_names": {}
+  "fixed_container_names": {},
+  "known_profiles": [],
+  "owner": ""
 }
 ```
 
@@ -591,6 +615,18 @@ the volumes in `affected` and the Compose project name in `confirm.expected`; wi
   }
 }
 ```
+
+### Volume backups, restores and clones
+- `GET .../{wt}/volumes/backups` lists the backups of this instance kept in Theo's data directory (the manifests of
+  `theo volumes backup`, with `file` and `manifest_file`), newest first.
+- `POST .../{wt}/volumes/backup` `{volumes?}` -> 202 (operation `volumes.backup`): `theo volumes backup` into the
+  default directory. The instance may be running; the log warns that its data may then be inconsistent.
+- `POST .../{wt}/volumes/restore` `{backup, volume?, confirm, replace?}` -> 202 (operation `volumes.restore`):
+  `backup` is the archive file name from the list above (paths are refused with 400). `confirm` must be the
+  instance's Compose project name (409 `confirmation_required` otherwise); `replace` allows overwriting a volume that
+  has data.
+- `POST .../{wt}/volumes/clone` `{from, volumes?, confirm, replace?}` -> 202 (operation `volumes.clone`): copies the
+  volumes of the worktree `from` (an id) into this instance, with the same confirmation.
 
 ### `GET .../{wt}/history?limit=&before=` and `GET /projects/{p}/history?limit=&before=`
 Same JSON as `theo history --json` (oldest first); the project form covers every worktree of the project.
@@ -643,6 +679,20 @@ exactly as the CLI does; the API keeps no history of its own.
   }
 ]
 ```
+
+### `GET /history?limit=&before=`
+The history of every project at once, with the same paging headers: what the home screen lists.
+
+### `GET /status[?project=]`
+The same JSON as `theo status --json`: every project, worktree and instance (or one project's), with one addition:
+each worktree carries its `id`, the same one the worktree routes take, so the interface can link to it.
+
+### `POST /stop-all` `{project?}` -> 202 (operation `stop-all`)
+`theo stop --all [project]`: stops every running instance (containers and volumes are kept). One at a time.
+
+### `GET /mcp/install?owner=&read_only=1&scope=`
+The same JSON as `theo mcp install --json` plus `claude_code_command`, the command as text: how to register Theo's
+MCP server with Claude Code and other clients, and the paragraph for a repository's AGENTS.md.
 
 ## 7. Operations
 

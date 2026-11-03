@@ -95,7 +95,7 @@ test("start from the interface: containers exist, state Running, link works, log
   await row(page, "main").locator(".badge:has-text('Running')").waitFor({ timeout: 120000 });
   const names = docker("ps", "--filter", `name=${prefix}`, "--format", "{{.Names}}");
   assert.ok(names.includes("web"), "container exists: " + names);
-  const link = row(page, "main").locator("a[rel='noopener noreferrer']").first();
+  const link = row(page, "main").locator("td.url-list a[rel='noopener noreferrer']").first();
   const href = await link.getAttribute("href");
   assert.match(href, new RegExp(`:${port}$`));
   const body = await (await fetch(`http://127.0.0.1:${port}/`)).text();
@@ -120,34 +120,30 @@ test("start from the interface: containers exist, state Running, link works, log
   await page.ctx.close();
 });
 
-test("History records the start; Ports & URLs and Services show real data", { skip }, async () => {
+test("Activity records the start; the Summary shows the real ports and services", { skip }, async () => {
   const page = await openApp(browser, adapter, { route: `#/p/${project}`, wait: "table.data" });
   await row(page, "main").getByRole("link", { name: "main", exact: true }).click();
-  await page.getByRole("tab", { name: "History" }).click();
+  await page.getByRole("tab", { name: "Activity" }).click();
   await page.locator("td:has-text('Succeeded')").first().waitFor();
   assert.ok(await page.locator("th[scope=row]:has-text('up')").count() >= 1);
-  await page.getByRole("tab", { name: "Ports & URLs" }).click();
+  await page.getByRole("tab", { name: "Summary" }).click();
   await page.locator("td:has-text('In use by this instance')").waitFor();
-  await page.getByRole("tab", { name: "Services" }).click();
-  await page.locator("th[scope=row]:has-text('web')").waitFor();
+  await page.locator("th[scope=row]:has-text('web')").first().waitFor();
   assert.ok(await page.locator(".badge:has-text('running')").count() >= 1);
   await shot(page, "34-real-services");
   assert.deepEqual(seriousOnly(await axeViolations(page)), []);
   await page.ctx.close();
 });
 
-test("UC-02: a new branch with the same fixed port: the wizard shows the clash, offers automatic ports, both instances run with distinct URLs", { skip }, async () => {
-  const page = await openApp(browser, adapter, { route: `#/p/${project}/new`, wait: ".stepper" });
-  await page.fill("#wz-new", "feat-two");
-  await page.getByRole("button", { name: "Next" }).click();
-  await page.getByRole("button", { name: "Next" }).click();
-  await page.waitForSelector("text=would clash", { timeout: 20000 });
-  assert.ok(await page.locator(`td:has-text("${port}")`).count() >= 1);
-  assert.ok(await page.getByRole("radio", { name: /Assign free ports automatically/ }).isChecked());
-  await shot(page, "35-real-wizard-conflict");
+test("UC-02: a new branch with the same fixed port: the new instance panel shows the clash, offers automatic ports, both instances run with distinct URLs", { skip }, async () => {
+  const page = await openApp(browser, adapter, { route: `#/p/${project}/new`, wait: "dialog.drawer" });
+  await page.fill("#ni-name", "feat-two");
+  await page.waitForSelector("text=These host ports are taken", { timeout: 20000 });
+  assert.match(await page.locator("#ni-ports-desc").innerText(), new RegExp(String(port)));
+  assert.ok(await page.locator("#ni-auto").isChecked());
+  await shot(page, "35-real-new-instance-conflict");
   assert.deepEqual(seriousOnly(await axeViolations(page)), []);
-  await page.getByRole("button", { name: "Next" }).click();
-  await page.getByRole("button", { name: "Create and start" }).click();
+  await page.locator("dialog.drawer").getByRole("button", { name: "Create and start" }).click();
   await page.waitForURL(/\/logs/, { timeout: 30000 });
   const call = await apiSession();
   const deadline = Date.now() + 180000;
@@ -174,8 +170,8 @@ test("remove: a worktree with containers is refused; after Stop, one with a chan
   const second = ov.worktrees.find((w) => w.branch === "feat-two");
   // a) with containers
   const page = await openApp(browser, adapter, { route: `#/p/${project}`, wait: "table.data" });
-  await row(page, "feat-two").locator("summary").click();
-  await row(page, "feat-two").getByRole("button", { name: /Remove worktree/ }).click();
+  await page.getByRole("button", { name: "More actions for feat-two" }).click();
+  await page.getByRole("menuitem", { name: /Remove worktree/ }).click();
   await page.getByRole("button", { name: "Remove worktree" }).click();
   await page.locator("dialog[open] >> text=This instance still has containers").waitFor();
   await shot(page, "36-real-remove-has-containers");
@@ -183,8 +179,8 @@ test("remove: a worktree with containers is refused; after Stop, one with a chan
   await row(page, "feat-two").locator(".badge:has-text('No containers')").waitFor({ timeout: 60000 });
   // b) uncommitted file
   writeFileSync(path.join(second.path, "notes.txt"), "work in progress\n");
-  await row(page, "feat-two").locator("summary").click();
-  await row(page, "feat-two").getByRole("button", { name: /Remove worktree/ }).click();
+  await page.getByRole("button", { name: "More actions for feat-two" }).click();
+  await page.getByRole("menuitem", { name: /Remove worktree/ }).click();
   await page.getByRole("button", { name: "Remove worktree" }).click();
   const dlg = page.locator("dialog[open]");
   await dlg.locator("text=notes.txt").waitFor();
@@ -211,14 +207,15 @@ test("variables: a secret is masked in the DOM and in the list response until Sh
   const call = await apiSession();
   const ov = (await call("GET", `/projects/${project}/overview`)).body;
   const main = ov.worktrees.find((w) => w.main);
-  const page = await openApp(browser, adapter, { route: `#/p/${project}/w/${main.id}/variables`, wait: "table.data, .empty" });
+  const page = await openApp(browser, adapter, { route: `#/p/${project}/w/${main.id}/config`, wait: "section[aria-labelledby=cfg-vars] table.data, section[aria-labelledby=cfg-vars] .empty" });
+  const vars = page.locator("section[aria-labelledby=cfg-vars]");
   const bodies = [];
   page.on("response", async (r) => { if (/\/env($|\?)/.test(r.url())) bodies.push(await r.text().catch(() => "")); });
-  await page.getByRole("button", { name: "Add variable" }).click();
+  await vars.getByRole("button", { name: "Add variable" }).click();
   await page.fill("#var-name", "UF_SECRET");
   await page.fill("#var-value", "hunter2-uf-secret");
   await page.check("#var-secret");
-  await page.getByRole("button", { name: "Save" }).click();
+  await vars.getByRole("button", { name: "Save" }).click();
   await page.locator("th:has-text('UF_SECRET')").waitFor();
   assert.equal((await page.locator("body").innerHTML()).includes("hunter2-uf-secret"), false);
   assert.ok(bodies.length > 0 && bodies.every((b) => !b.includes("hunter2-uf-secret")));
@@ -234,12 +231,13 @@ test("purge: after Stop, data is deleted only with the exact Compose project nam
   const ov = (await call("GET", `/projects/${project}/overview`)).body;
   const main = ov.worktrees.find((w) => w.main);
   const page = await openApp(browser, adapter, { route: `#/p/${project}`, wait: "table.data" });
-  await row(page, "main").getByRole("button", { name: /Stop main/ }).click();
+  await page.getByRole("button", { name: "More actions for main" }).click();
+  await page.getByRole("menuitem", { name: "Stop and remove containers" }).click();
   await row(page, "main").locator(".badge:has-text('No containers')").waitFor({ timeout: 60000 });
   // Only the volumes of main: the second instance's volume is kept after its worktree was removed, by design.
   const vols = () => docker("volume", "ls", "-q", "--filter", `name=${prefix}app_`).split("\n").filter(Boolean);
   assert.ok(vols().length >= 1, "volume kept after down; all volumes: " + docker("volume", "ls", "-q").split("\n").filter((v) => v.startsWith("uf")).join(","));
-  await page.goto(server.origin + `/#/p/${project}/w/${main.id}/volumes`);
+  await page.goto(server.origin + `/#/p/${project}/w/${main.id}/data`);
   await page.waitForSelector("table.data");
   await page.locator(".badge:has-text('Kept after down')").waitFor();
   await page.getByRole("button", { name: /Delete data of this instance/ }).click();

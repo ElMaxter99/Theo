@@ -122,7 +122,7 @@ func TestErrorsGoToStderr(t *testing.T) {
 		{[]string{"ps", "ghost", "--json"}, ExitError, `project "ghost"`},
 		{[]string{"worktrees", "ghost", "--json"}, ExitError, `project "ghost"`},
 		{[]string{"project", "add", "/no/such/dir", "--json"}, ExitError, "theo:"},
-		{[]string{"--explain"}, ExitUsage, "Usage:"},
+		{[]string{"--explain"}, ExitUsage, "needs a command"},
 		{[]string{"--explain", "up", "ghost"}, ExitError, `project "ghost"`},
 	}
 	for _, tt := range tests {

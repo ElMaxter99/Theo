@@ -8,10 +8,13 @@ import { normKind } from "../src/ops/kind.ts";
 import { t } from "../src/strings.ts";
 
 test("routes of shared services, health and settings parse and build consistently", () => {
-  assert.deepEqual(parseHash("#/health"), { name: "health" });
-  assert.deepEqual(parseHash("#/settings"), { name: "settings" });
-  assert.deepEqual(parseHash(href.shared("my shop")), { name: "shared", project: "my shop" });
-  assert.deepEqual(parseHash("#/p/shop/shared"), { name: "shared", project: "shop" });
+  assert.deepEqual(parseHash("#/health"), { name: "problems", tab: "problems" });
+  assert.deepEqual(parseHash(href.problems("cleanup")), { name: "problems", tab: "cleanup" });
+  assert.deepEqual(parseHash("#/settings"), { name: "settings", section: "preferences" });
+  assert.deepEqual(parseHash(href.settings("agents")), { name: "settings", section: "agents" });
+  assert.deepEqual(parseHash("#/settings/nope"), { name: "notfound" });
+  assert.deepEqual(parseHash(href.shared("my shop")), { name: "project", project: "my shop", tab: "shared" });
+  assert.deepEqual(parseHash("#/p/shop/shared"), { name: "project", project: "shop", tab: "shared" });
   assert.deepEqual(parseHash("#/health/extra"), { name: "notfound" });
   assert.deepEqual(parseHash("#/p/shop/shared/extra"), { name: "notfound" });
 });

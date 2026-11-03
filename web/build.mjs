@@ -5,7 +5,8 @@
 //   dist/assets/app-<hash>.js        the application (ES module)
 //   dist/assets/app-<hash>.css       the styles
 //   dist/assets/theme-<hash>.js      tiny classic script run in <head> to apply the saved theme before first paint
-//   dist/assets/THIRD-PARTY.txt      licence of the bundled runtime dependency
+//   dist/assets/fredoka-*-<hash>.woff2  heading typeface (SIL OFL 1.1)
+//   dist/assets/THIRD-PARTY.txt      licences of the bundled runtime dependency and typeface
 //   dist/brand/*                     provisional brand artwork (see public/brand/NOTICE.md)
 //
 // No inline script or style is ever produced: the page is served with a strict CSP.
@@ -33,6 +34,9 @@ const result = await build({
   legalComments: "none",
   metafile: true,
   logLevel: "warning",
+  // Fredoka (SIL OFL 1.1) for headings: bundled, so the page still loads nothing from the internet.
+  loader: { ".woff2": "file" },
+  assetNames: "[name]-[hash]",
 });
 
 const outputs = Object.keys(result.metafile.outputs).map((p) => basename(p));
@@ -76,7 +80,7 @@ cpSync(join(root, "public", "brand", "NOTICE.md"), join(dist, "brand", "NOTICE.m
 const preactLicence = readFileSync(join(root, "node_modules", "preact", "LICENSE"), "utf8");
 writeFileSync(
   join(dist, "assets", "THIRD-PARTY.txt"),
-  `The bundle contains Preact (MIT).\n\n${preactLicence}`,
+  `The bundle contains Preact (MIT) and the Fredoka typeface (SIL Open Font License 1.1).\n\n${preactLicence}\n\n${readFileSync(join(root, "src", "fonts", "OFL.txt"), "utf8")}`,
 );
 
 let total = 0;

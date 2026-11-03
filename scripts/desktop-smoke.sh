@@ -50,7 +50,7 @@ app1=$!
 pids+=("$app1")
 
 wait_for 40 "the session to be established" logged "POST /api/v1/session"
-wait_for 20 "the projects list to load" logged "GET /api/v1/projects"
+wait_for 20 "the home screen to load" logged "GET /api/v1/status"
 ok "page loaded and session established"
 
 lock="$THEO_HOME/ui.lock"

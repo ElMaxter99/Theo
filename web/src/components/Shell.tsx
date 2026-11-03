@@ -1,31 +1,41 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+// The frame of every screen (0.2): a header with the search (command palette) and the operations in progress, and a
+// sidebar with Home, the projects (each with its running instances), Problems and Settings. The theme and language
+// moved to Settings › Preferences.
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import type { Meta } from "../api/types.ts";
 import { brand } from "../brand.ts";
 import { t } from "../strings.ts";
 import { href, useRoute } from "../lib/router.ts";
-import { readTheme, saveTheme } from "../lib/theme.ts";
-import type { ThemePref } from "../lib/theme.ts";
 import { Banner } from "./ui.tsx";
 import { OpsIndicator } from "../ops/Operations.tsx";
 import { useHealth } from "../lib/health.ts";
+import { runningCount, useStatus } from "../lib/statusStore.ts";
 import { Icon } from "./Icon.tsx";
-import { LanguageSelect } from "./LanguageSelect.tsx";
+import { Modal } from "./Dialog.tsx";
+import { Palette, useShortcuts } from "./Palette.tsx";
+import { Toasts } from "./Toasts.tsx";
 import { startFocusGuard } from "../lib/focusguard.ts";
+
+const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
 export function Shell({ meta, onRefresh, children }: { meta: Meta | undefined; onRefresh: () => void; children: ComponentChildren }) {
   const route = useRoute();
-  const [theme, setTheme] = useState<ThemePref>(readTheme());
   const first = useRef(true);
   const appRef = useRef<HTMLDivElement>(null);
+  const [palette, setPalette] = useState(false);
+  const [help, setHelp] = useState(false);
   useEffect(() => (appRef.current ? startFocusGuard(appRef.current) : undefined), []);
+  const openPalette = useCallback(() => setPalette(true), []);
+  const openHelp = useCallback(() => setHelp(true), []);
+  useShortcuts(openPalette, openHelp);
 
   // After a navigation, move focus to the page heading so keyboard and screen-reader users land on the new content.
+  const key = [route.name, "project" in route ? route.project : "", "wt" in route ? route.wt : "", "tab" in route ? "" : ""].join("|");
   useEffect(() => {
     if (first.current) { first.current = false; return; }
     const before = document.activeElement;
     const id = window.setTimeout(() => {
-      // The user already moved on with the keyboard (Tab right after the page appeared): do not pull focus back.
       const now = document.activeElement;
       if (now && now !== before && now !== document.body && now.isConnected) return;
       const h = document.querySelector<HTMLElement>("main h1");
@@ -33,60 +43,67 @@ export function Shell({ meta, onRefresh, children }: { meta: Meta | undefined; o
       else document.getElementById("main")?.focus();
     }, 50);
     return () => clearTimeout(id);
-  }, [route.name, "project" in route ? route.project : "", "wt" in route ? route.wt : ""]);
-
-  useEffect(() => setTheme(readTheme()), [route.name]);
-
-  const changeTheme = (v: string) => {
-    const p = (v === "light" || v === "dark" ? v : "system") as ThemePref;
-    setTheme(p);
-    saveTheme(p);
-  };
+  }, [key]);
 
   const health = useHealth();
   const healthCount = health.summary?.findings;
   const healthDocker = health.summary?.status === "docker_unavailable";
+  const status = useStatus();
+  const projects = status.report?.projects ?? [];
+  const current = "project" in route ? route.project : "";
 
   const dockerDown = meta && !meta.docker.available;
   const gitDown = meta && !meta.git.available;
+  const inProjects = route.name === "projects" || route.name === "add";
 
   return (
     <div class="app" ref={appRef}>
       <a class="skip-link" href="#main" onClick={(e) => { e.preventDefault(); document.getElementById("main")?.focus(); }}>{t.app.skip}</a>
       <header class="app-header">
-        <a class="brand" href={href.projects()}>
+        <a class="brand" href={href.home()}>
           <img src={brand.mark} alt="" width="32" height="32" />
           <span>{t.app.name}</span>
         </a>
+        <button type="button" class="search-trigger" onClick={openPalette} aria-keyshortcuts={isMac ? "Meta+K" : "Control+K"} data-testid="open-palette">
+          <Icon name="search" />
+          <span class="grow">{t.palette.trigger}</span>
+          <kbd aria-hidden="true">{isMac ? "⌘K" : "Ctrl K"}</kbd>
+        </button>
         <span class="header-spacer" />
         <OpsIndicator />
-        <div class="row">
-          <label for="theme-select" class="small">{t.app.theme}</label>
-          <select id="theme-select" class="input auto" value={theme} onChange={(e) => changeTheme((e.currentTarget as HTMLSelectElement).value)}>
-            <option value="system">{t.app.themeSystem}</option>
-            <option value="light">{t.app.themeLight}</option>
-            <option value="dark">{t.app.themeDark}</option>
-          </select>
-        </div>
-        <div class="row">
-          <label for="lang-select" class="small">{t.app.language}</label>
-          <LanguageSelect id="lang-select" />
-        </div>
       </header>
       <nav class="app-nav" aria-label={t.app.nav}>
         <ul>
-          <li><a href={href.projects()} aria-current={["projects", "add", "project", "wizard", "detail", "shared"].includes(route.name) ? "page" : undefined}>{t.app.navProjects}</a></li>
+          <li><a href={href.home()} aria-current={route.name === "home" ? "page" : undefined}><span class="nav-icon" aria-hidden="true">⌂</span> {t.nav.home}</a></li>
           <li>
-            <a href={href.health()} aria-current={route.name === "health" ? "page" : undefined} data-testid="nav-health">
+            <a href={href.projects()} aria-current={inProjects ? "page" : undefined}><span class="nav-icon" aria-hidden="true">▤</span> {t.nav.projects}</a>
+            {projects.length > 0 ? (
+              <ul class="nav-sub" aria-label={t.nav.projectList}>
+                {projects.map((p) => {
+                  const n = runningCount(p);
+                  return (
+                    <li key={p.name}>
+                      <a href={href.project(p.name)} aria-current={current === p.name ? "page" : undefined}>
+                        <span class="grow">{p.name}</span>
+                        <span class="nav-count">{n > 0 ? `${n} ▶` : n}<span class="sr-only"> {t.nav.runningSr(n)}</span></span>
+                      </a>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+          </li>
+          <li>
+            <a href={href.problems()} aria-current={route.name === "problems" ? "page" : undefined} data-testid="nav-health">
               <Icon name={healthCount === undefined ? "dot" : healthCount > 0 ? "warn" : healthDocker ? "unknown" : "ok"} />
-              <span>{t.nav.health}</span>
+              <span class="grow">{t.nav.problems}</span>
               {healthCount !== undefined ? <span class="count-pill" data-testid="health-count">{healthCount}<span class="sr-only"> {t.nav.healthPillSr(healthCount, !!healthDocker)}</span></span> : null}
               {healthCount === undefined && health.error ? <span class="sr-only"> {t.reconcile.loadError}</span> : null}
             </a>
           </li>
-          <li><a href={href.settings()} aria-current={route.name === "settings" ? "page" : undefined}>{t.nav.settings}</a></li>
+          <li><a href={href.settings()} aria-current={route.name === "settings" ? "page" : undefined}><span class="nav-icon" aria-hidden="true">⚙</span> {t.nav.settings}</a></li>
         </ul>
-        {meta ? <p class="nav-foot">{t.app.version(meta.theo_version, meta.api_version)}<br />{t.app.footerLocal}</p> : null}
+        {meta ? <p class="nav-foot">{t.app.version(meta.theo_version, meta.api_version)}<br />{t.app.footerLocal}<br /><button type="button" class="linklike" onClick={openHelp}>{t.shortcuts.link}</button></p> : null}
       </nav>
       <main id="main" class="app-main" tabIndex={-1}>
         {dockerDown ? (
@@ -99,6 +116,16 @@ export function Shell({ meta, onRefresh, children }: { meta: Meta | undefined; o
         {gitDown ? <Banner tone="warn" title={t.banner.gitTitle}><p>{t.banner.gitBody}</p></Banner> : null}
         {children}
       </main>
+      <Toasts />
+      {palette ? <Palette onClose={() => setPalette(false)} /> : null}
+      {help ? (
+        <Modal title={t.shortcuts.title} onClose={() => setHelp(false)}>
+          <dl class="facts">
+            {t.shortcuts.list.map(([k, v]) => <><dt><kbd>{k}</kbd></dt><dd>{v}</dd></>)}
+          </dl>
+          <div class="dialog-actions"><button type="button" class="btn" autoFocus onClick={() => setHelp(false)}>{t.app.close}</button></div>
+        </Modal>
+      ) : null}
       <div id="live-region" class="sr-only" aria-live="polite" aria-atomic="true" />
     </div>
   );

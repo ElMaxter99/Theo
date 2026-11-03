@@ -12,13 +12,13 @@ import { announce } from "../lib/live.ts";
 import { t } from "../strings.ts";
 import { setTitle } from "./Router.tsx";
 
-export function Health() {
+export function Health({ embedded = false }: { embedded?: boolean } = {}) {
   const h = useHealth();
   const [project, setProject] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [confirming, setConfirming] = useState(false);
   const [forgetError, setForgetError] = useState<ApiError | undefined>();
-  useEffect(() => setTitle([t.reconcile.title]), []);
+  useEffect(() => { if (!embedded) setTitle([t.reconcile.title]); }, [embedded]);
   useEffect(() => {
     void refreshReport();
     let timer: number | undefined;
@@ -60,11 +60,18 @@ export function Health() {
 
   return (
     <>
-      <PageHead
-        title={t.reconcile.title}
-        sub={h.report ? t.reconcile.summary(all.length) : undefined}
-        actions={<button type="button" class="btn" disabled={h.loading} onClick={() => void refreshReport()}><Icon name="restart" /> {h.loading ? t.reconcile.checking : t.reconcile.refresh}</button>}
-      />
+      {embedded ? (
+        <div class="row between">
+          <p class="muted">{h.report ? t.reconcile.summary(all.length) : null}</p>
+          <button type="button" class="btn sm" disabled={h.loading} onClick={() => void refreshReport()}><Icon name="restart" /> {h.loading ? t.reconcile.checking : t.reconcile.refresh}</button>
+        </div>
+      ) : (
+        <PageHead
+          title={t.reconcile.title}
+          sub={h.report ? t.reconcile.summary(all.length) : undefined}
+          actions={<button type="button" class="btn" disabled={h.loading} onClick={() => void refreshReport()}><Icon name="restart" /> {h.loading ? t.reconcile.checking : t.reconcile.refresh}</button>}
+        />
+      )}
       <p>{t.reconcile.intro}</p>
       <p><strong>{t.reconcile.fixedNote}</strong></p>
       {h.loading && !h.report ? <Loading label={t.reconcile.checking} /> : null}

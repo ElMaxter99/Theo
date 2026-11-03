@@ -48,6 +48,6 @@ func TestMCPCommand(t *testing.T) {
 	if _, stderr, code := run("--explain", "mcp"); code != ExitUsage || !strings.Contains(stderr, "explain tool") {
 		t.Errorf("--explain mcp: %d %s", code, stderr)
 	}
-	stdout, _, _ = run("help")
+	stdout, _, _ = run("help", "all")
 	checkOutput(t, "help", stdout, "claude mcp add theo -- theo mcp")
 }

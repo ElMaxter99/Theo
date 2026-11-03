@@ -48,7 +48,7 @@ func (s *Server) routesTable() {
 	s.handle("GET", "/projects/{p}/worktrees/{wt}", authSession, s.handleWorktree)
 	s.handle("POST", "/projects/{p}/worktrees/{wt}/remove", authSession, s.handleRemoveWorktree)
 
-	for _, kind := range []string{"up", "down", "restart", "stop"} {
+	for _, kind := range []string{"up", "down", "restart", "stop", "start", "recreate"} {
 		s.handle("POST", "/projects/{p}/worktrees/{wt}/"+kind, authSession, s.lifecycle(kind))
 	}
 	s.handle("GET", "/projects/{p}/worktrees/{wt}/services", authSession, s.handleServices)
@@ -66,6 +66,7 @@ func (s *Server) routesTable() {
 	s.handle("GET", "/projects/{p}/worktrees/{wt}/history", authSession, s.handleHistory)
 
 	s.sharedRoutes()
+	s.redesignRoutes()
 	s.reconcileRoutes()
 
 	s.handle("GET", "/operations", authSession, s.handleOperations)
@@ -223,7 +224,7 @@ func (s *Server) handlePatchProject(w http.ResponseWriter, r *http.Request, _ *s
 		return v, true, nil
 	}
 	for k := range req {
-		if k != "env_file" && k != "worktree_dir" {
+		if k != "env_file" && k != "worktree_dir" && k != "compose_files" && k != "copy_on_add" {
 			return errf(http.StatusBadRequest, "unknown_field", "unknown field "+quote(k))
 		}
 	}
@@ -234,6 +235,38 @@ func (s *Server) handlePatchProject(w http.ResponseWriter, r *http.Request, _ *s
 	dir, hasDir, err := str("worktree_dir")
 	if err != nil {
 		return err
+	}
+	list := func(key string) ([]string, bool, error) {
+		raw, ok := req[key]
+		if !ok {
+			return nil, false, nil
+		}
+		if string(raw) == "null" {
+			return []string{}, true, nil
+		}
+		var v []string
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return nil, false, badRequest(key + " must be a list of strings or null")
+		}
+		return v, true, nil
+	}
+	files, hasFiles, err := list("compose_files")
+	if err != nil {
+		return err
+	}
+	copyOnAdd, hasCopy, err := list("copy_on_add")
+	if err != nil {
+		return err
+	}
+	if hasFiles {
+		if _, err := s.eng.SetComposeFiles(r.Context(), name, files); err != nil {
+			return fromEngine(err, &ResourceRef{Kind: "project", Project: name})
+		}
+	}
+	if hasCopy {
+		if _, err := s.eng.SetCopyOnAdd(name, copyOnAdd); err != nil {
+			return badRequest(err.Error())
+		}
 	}
 	if hasEnv {
 		if _, err := s.eng.SetEnvFile(name, envFile); err != nil {
@@ -353,6 +386,12 @@ func (s *Server) handleCreateWorktree(w http.ResponseWriter, r *http.Request, _ 
 		From   string `json:"from"`
 		Path   string `json:"path"`
 		Copy   bool   `json:"copy"`
+		// CopyFiles are one-off root-relative files copied from the main
+		// worktree; Clone creates an independent clone (submodules); Owner
+		// labels the worktree (an agent's name).
+		CopyFiles []string `json:"copy_files"`
+		Clone     bool     `json:"clone"`
+		Owner     string   `json:"owner"`
 	}
 	if err := decode(r, &req); err != nil {
 		return err
@@ -367,7 +406,15 @@ func (s *Server) handleCreateWorktree(w http.ResponseWriter, r *http.Request, _ 
 	if strings.HasPrefix(req.Branch, "-") || strings.HasPrefix(req.From, "-") {
 		return badRequest("branch and from must not start with \"-\"")
 	}
-	added, err := s.eng.AddWorktree(r.Context(), project, req.Branch, engine.AddWorktreeOptions{NewBranch: req.New, Base: req.From, Path: req.Path, Copy: req.Copy})
+	if req.Owner != "" {
+		owner, err := engine.ValidateOwner(req.Owner)
+		if err != nil {
+			return badRequest("owner: " + err.Error())
+		}
+		req.Owner = owner
+	}
+	added, err := s.eng.AddWorktree(r.Context(), project, req.Branch, engine.AddWorktreeOptions{NewBranch: req.New, Base: req.From, Path: req.Path,
+		Copy: req.Copy, CopyFiles: req.CopyFiles, Clone: req.Clone, Owner: req.Owner})
 	if err != nil {
 		return fromEngine(err, &ResourceRef{Kind: "project", Project: project})
 	}
@@ -426,6 +473,9 @@ type upRequest struct {
 	AutoPorts   bool     `json:"auto_ports"`
 	EnvFiles    []string `json:"env_files"`
 	StartShared bool     `json:"start_shared"`
+	// Services limits the operation to some services (all when empty). Not
+	// valid for down, which always takes the whole instance.
+	Services []string `json:"services"`
 }
 
 func (s *Server) lifecycle(kind string) handlerFunc {
@@ -435,8 +485,22 @@ func (s *Server) lifecycle(kind string) handlerFunc {
 		if err := decodeOptional(r, &req); err != nil {
 			return err
 		}
-		if kind != "up" && (req.Build || len(req.Profiles) > 0 || req.AutoPorts || len(req.EnvFiles) > 0) {
+		switch {
+		case kind == "recreate" && (len(req.EnvFiles) > 0 || req.StartShared):
+			return badRequest("env_files and start_shared are only valid for up")
+		case kind != "up" && kind != "recreate" && (req.Build || len(req.Profiles) > 0 || req.AutoPorts || len(req.EnvFiles) > 0 || req.StartShared):
 			return badRequest("options are only valid for up")
+		case kind == "down" && len(req.Services) > 0:
+			return badRequest("down takes the whole instance; use stop for some services")
+		}
+		for _, svc := range req.Services {
+			if strings.TrimSpace(svc) == "" || strings.HasPrefix(svc, "-") {
+				return badRequest("services must be service names")
+			}
+		}
+		what := "all services"
+		if len(req.Services) > 0 {
+			what = strings.Join(req.Services, ", ")
 		}
 		wt, err := s.resolveWorktree(r.Context(), project, id)
 		if err != nil {
@@ -460,13 +524,32 @@ func (s *Server) lifecycle(kind string) handlerFunc {
 				}
 				return "Stopped " + inst.Compose + ". Its volumes were kept.", nil
 			case "stop":
-				if err := s.eng.Stop(ctx, inst, nil, stdout, stderr); err != nil {
+				if err := s.eng.Stop(ctx, inst, req.Services, stdout, stderr); err != nil {
 					return "", err
 				}
+				if len(req.Services) > 0 {
+					return "Stopped " + what + " of " + inst.Compose + ". The containers were kept.", nil
+				}
 				return "Paused " + inst.Compose + ": its containers were stopped and kept.", nil
-			default:
-				if err := s.eng.Restart(ctx, inst, stdout, stderr); err != nil {
+			case "start":
+				if err := s.eng.Start(ctx, inst, req.Services, stdout, stderr); err != nil {
+					return "", fmt.Errorf("%w (start only starts containers that exist; up creates them)", err)
+				}
+				return "Started " + what + " of " + inst.Compose + ".", nil
+			case "recreate":
+				if _, err := s.applyPorts(ctx, inst, req, stderr); err != nil {
 					return "", err
+				}
+				if err := s.eng.Recreate(ctx, inst, compose.UpOptions{Build: req.Build, Profiles: req.Profiles, Services: req.Services}, stdout, stderr); err != nil {
+					return "", err
+				}
+				return "Recreated " + what + " of " + inst.Compose + ". Named volumes were kept.", nil
+			default:
+				if err := s.eng.RestartServices(ctx, inst, req.Services, stdout, stderr); err != nil {
+					return "", err
+				}
+				if len(req.Services) > 0 {
+					return "Restarted " + what + " of " + inst.Compose + ".", nil
 				}
 				return "Restarted " + inst.Compose + ".", nil
 			}
@@ -488,11 +571,6 @@ func (s *Server) lifecycle(kind string) handlerFunc {
 // the CLI prints on stderr into the operation's log.
 func (s *Server) runUp(ctx context.Context, inst *engine.Instance, req upRequest, stdout, stderr io.Writer) error {
 	e := s.eng
-	if req.AutoPorts {
-		if err := e.SetAutoPorts(inst, true); err != nil {
-			return err
-		}
-	}
 	warnings, err := e.EnsureShared(ctx, inst, req.StartShared, stdout, stderr)
 	if err != nil {
 		return err
@@ -500,9 +578,27 @@ func (s *Server) runUp(ctx context.Context, inst *engine.Instance, req upRequest
 	for _, w := range warnings {
 		fmt.Fprintf(stderr, "theo: warning: %s\n", w)
 	}
-	plan, err := e.ApplyInstance(ctx, inst, req.Profiles, req.AutoPorts)
-	if err != nil {
+	if _, err := s.applyPorts(ctx, inst, req, stderr); err != nil {
 		return err
+	}
+	if err := e.Up(ctx, inst, compose.UpOptions{Build: req.Build, Profiles: req.Profiles, Services: req.Services}, stdout, stderr); err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "Started %s.\n", inst.Compose)
+	return nil
+}
+
+// applyPorts applies the instance's settings before up or recreate and
+// writes the port notes the CLI prints on stderr into the operation's log.
+func (s *Server) applyPorts(ctx context.Context, inst *engine.Instance, req upRequest, stderr io.Writer) (*engine.PortPlan, error) {
+	if req.AutoPorts {
+		if err := s.eng.SetAutoPorts(inst, true); err != nil {
+			return nil, err
+		}
+	}
+	plan, err := s.eng.ApplyInstance(ctx, inst, req.Profiles, req.AutoPorts)
+	if err != nil {
+		return nil, err
 	}
 	for _, m := range plan.Mappings {
 		if m.Status == engine.PortReassigned || m.Status == engine.PortKept {
@@ -512,11 +608,7 @@ func (s *Server) runUp(ctx context.Context, inst *engine.Instance, req upRequest
 	for _, m := range plan.Conflicts() {
 		fmt.Fprintf(stderr, "theo: warning: host port %s (%s, container port %d/%s) is already in use\n", m.Configured, m.Service, m.Target, m.Protocol)
 	}
-	if err := e.Up(ctx, inst, compose.UpOptions{Build: req.Build, Profiles: req.Profiles}, stdout, stderr); err != nil {
-		return err
-	}
-	fmt.Fprintf(stdout, "Started %s.\n", inst.Compose)
-	return nil
+	return plan, nil
 }
 
 // --- read-only instance views ---
@@ -665,6 +757,10 @@ type SettingsView struct {
 	Shared                   []string          `json:"shared"`
 	Join                     []string          `json:"join"`
 	FixedContainerNames      map[string]string `json:"fixed_container_names"`
+	// KnownProfiles are the profiles the Compose files declare, the ones
+	// Profiles can take. Owner is the worktree's owner label.
+	KnownProfiles []string `json:"known_profiles"`
+	Owner         string   `json:"owner"`
 }
 
 func (s *Server) settingsView(inst *engine.Instance) *SettingsView {
@@ -683,28 +779,63 @@ func (s *Server) settingsView(inst *engine.Instance) *SettingsView {
 		names = map[string]string{}
 	}
 	return &SettingsView{NeutralizeContainerNames: cfg.NeutralizeContainerNames, AutoPorts: cfg.AutoPorts, Profiles: nz(inst.Profiles),
-		Shared: nz(cfg.Shared), Join: nz(cfg.Join), FixedContainerNames: names}
+		Shared: nz(cfg.Shared), Join: nz(cfg.Join), FixedContainerNames: names, KnownProfiles: nz(inst.KnownProfiles())}
+}
+
+func (s *Server) settingsWithOwner(inst *engine.Instance, owner string) *SettingsView {
+	v := s.settingsView(inst)
+	if v != nil {
+		v.Owner = owner
+	}
+	return v
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request, _ *session) error {
-	inst, _, err := s.instance(r)
+	inst, wt, err := s.instance(r)
 	if err != nil {
 		return err
 	}
-	return writeJSON(w, http.StatusOK, s.settingsView(inst))
+	return writeJSON(w, http.StatusOK, s.settingsWithOwner(inst, wt.Owner))
 }
 
 func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request, _ *session) error {
 	var req struct {
 		Neutralize *bool `json:"neutralize_container_names"`
 		AutoPorts  *bool `json:"auto_ports"`
+		// Profiles replaces the profiles the instance always starts with
+		// (an empty list clears them); Owner sets or, empty, clears the
+		// worktree's owner label.
+		Profiles *[]string `json:"profiles"`
+		Owner    *string   `json:"owner"`
 	}
 	if err := decode(r, &req); err != nil {
 		return err
 	}
-	inst, _, err := s.instance(r)
+	inst, wt, err := s.instance(r)
 	if err != nil {
 		return err
+	}
+	owner := wt.Owner
+	if req.Owner != nil {
+		if *req.Owner != "" {
+			if _, err := engine.ValidateOwner(*req.Owner); err != nil {
+				return badRequest("owner: " + err.Error())
+			}
+		}
+		updated, err := s.eng.SetOwner(r.Context(), r.PathValue("p"), wt.Path, *req.Owner)
+		if err != nil {
+			return err
+		}
+		owner = updated.Owner
+		s.cache.invalidate(r.PathValue("p"))
+	}
+	if req.Profiles != nil {
+		if err := s.eng.SetProfiles(inst, *req.Profiles); err != nil {
+			return badRequest(err.Error())
+		}
+		if inst, _, err = s.instance(r); err != nil {
+			return err
+		}
 	}
 	if req.Neutralize != nil {
 		if err := s.eng.SetNeutralizeContainerNames(inst, *req.Neutralize); err != nil {
@@ -716,7 +847,7 @@ func (s *Server) handlePatchSettings(w http.ResponseWriter, r *http.Request, _ *
 			return err
 		}
 	}
-	return writeJSON(w, http.StatusOK, s.settingsView(inst))
+	return writeJSON(w, http.StatusOK, s.settingsWithOwner(inst, owner))
 }
 
 func (s *Server) handleVolumes(w http.ResponseWriter, r *http.Request, _ *session) error {

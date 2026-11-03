@@ -5,7 +5,7 @@ import { SseParser } from "../src/api/sse.ts";
 import { stateView, portStatusView, volumeStatusView, operationStateView, containerCounts, isActiveOp, opErrorText, opErrorOutput, busyLabel } from "../src/lib/status.ts";
 import { clashesForNewInstance, hasFixedPorts } from "../src/lib/ports.ts";
 import { LogStore, visibleRange, MAX_STORED } from "../src/lib/logstore.ts";
-import { parseHash, href } from "../src/lib/router.ts";
+import { canonicalHash, parseHash, href } from "../src/lib/router.ts";
 import { stripAnsi, folderForBranch, suggestName, validBranchName, validEnvName, parseList, splitMatches, basename } from "../src/lib/format.ts";
 import { urlsOf, conflictsOf, shortSha } from "../src/lib/overview.ts";
 import { t } from "../src/strings.ts";
@@ -125,14 +125,30 @@ test("virtual window never exceeds the maximum and follows the scroll position",
 });
 
 test("routes parse and build consistently", () => {
-  assert.deepEqual(parseHash(""), { name: "projects" });
+  assert.deepEqual(parseHash(""), { name: "home" });
+  assert.deepEqual(parseHash("#/"), { name: "home" });
+  assert.deepEqual(parseHash("#/projects"), { name: "projects" });
   assert.deepEqual(parseHash("#/projects/new"), { name: "add" });
-  assert.deepEqual(parseHash("#/p/shop"), { name: "project", project: "shop" });
-  assert.deepEqual(parseHash("#/p/shop/new"), { name: "wizard", project: "shop" });
+  assert.deepEqual(parseHash("#/p/shop"), { name: "project", project: "shop", tab: "instances" });
+  assert.deepEqual(parseHash("#/p/shop/new"), { name: "project", project: "shop", tab: "instances", drawer: true });
+  assert.deepEqual(parseHash(href.wizard("shop")), { name: "project", project: "shop", tab: "instances", drawer: true });
+  assert.deepEqual(parseHash("#/p/shop/activity"), { name: "project", project: "shop", tab: "activity" });
+  assert.deepEqual(parseHash(href.projectSettings("my shop")), { name: "project", project: "my shop", tab: "settings" });
   assert.deepEqual(parseHash(href.detail("my shop", "wt_1", "logs")), { name: "detail", project: "my shop", wt: "wt_1", tab: "logs" });
   assert.deepEqual(parseHash("#/p/shop/w/wt_1/nonsense"), { name: "detail", project: "shop", wt: "wt_1", tab: "summary" });
   assert.deepEqual(parseHash("#/nope"), { name: "notfound" });
-  assert.deepEqual(parseHash("#/p/%E0%A4%A"), { name: "project", project: "%E0%A4%A" }, "malformed escapes do not throw");
+  assert.deepEqual(parseHash("#/p/%E0%A4%A"), { name: "project", project: "%E0%A4%A", tab: "instances" }, "malformed escapes do not throw");
+});
+
+test("addresses of 0.1 keep working and are rewritten to the new ones", () => {
+  assert.deepEqual(parseHash("#/p/shop/w/wt_1/variables"), { name: "detail", project: "shop", wt: "wt_1", tab: "config" });
+  assert.deepEqual(parseHash("#/p/shop/w/wt_1/volumes"), { name: "detail", project: "shop", wt: "wt_1", tab: "data" });
+  assert.deepEqual(parseHash("#/p/shop/w/wt_1/history"), { name: "detail", project: "shop", wt: "wt_1", tab: "activity" });
+  assert.deepEqual(parseHash("#/p/shop/w/wt_1/ports"), { name: "detail", project: "shop", wt: "wt_1", tab: "summary" });
+  assert.equal(canonicalHash("#/p/shop/w/wt_1/volumes"), "#/p/shop/w/wt_1/data");
+  assert.equal(canonicalHash("#/health"), "#/problems");
+  assert.equal(canonicalHash("#/p/shop/w/wt_1/logs"), "");
+  assert.equal(canonicalHash("#/projects"), "");
 });
 
 test("formatting helpers", () => {

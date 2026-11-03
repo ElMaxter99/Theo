@@ -42,11 +42,16 @@ test("welcome / empty state", async () => {
   await page.ctx.close();
 });
 
-test("project list", async () => {
+test("home and project list", async () => {
   await mock.reset();
   const page = await openApp(browser, mock);
-  await page.getByText("5 worktrees").waitFor();
+  await page.locator(".list-rows .list-row").first().waitFor();
   await page.waitForTimeout(500);
+  assert.equal(await page.locator(".mascot").count(), 0, "no mascot on the home screen");
+  await check(page, "02-home");
+  await page.evaluate(() => { location.hash = "#/projects"; });
+  await page.locator("table.data tbody tr").first().waitFor();
+  await page.waitForTimeout(300);
   assert.equal(await page.locator(".mascot").count(), 0, "no mascot on the project list");
   await check(page, "02-projects");
   await page.ctx.close();
@@ -85,7 +90,7 @@ test("project panel (all states) and docker-down state", async () => {
 test("instance detail tabs", async () => {
   await mock.reset();
   const ids = await shopId();
-  const tabs = ["summary", "services", "ports", "logs", "variables", "volumes", "history"];
+  const tabs = ["summary", "logs", "config", "data", "activity"];
   const page = await openApp(browser, mock, { route: `#/p/shop/w/${ids.main}/summary` });
   let n = 7;
   for (const tab of tabs) {
@@ -108,20 +113,16 @@ test("instance with risky mounts shows text + icon warnings", async () => {
   await page.ctx.close();
 });
 
-test("wizard steps", async () => {
+test("new instance panel", async () => {
   await mock.reset();
-  const page = await openApp(browser, mock, { route: "#/p/shop/new", wait: ".stepper" });
-  await page.fill("#wz-new", "fix-456");
-  await check(page, "15-wizard-1", { dark: false });
-  await page.getByRole("button", { name: "Next" }).click();
-  await page.waitForSelector("#wz-folder");
-  await check(page, "16-wizard-2", { dark: false });
-  await page.getByRole("button", { name: "Next" }).click();
-  await page.waitForSelector("text=would clash");
-  await check(page, "17-wizard-3-conflict");
-  await page.getByRole("button", { name: "Next" }).click();
-  await page.waitForSelector("text=This is exactly what will happen");
-  await check(page, "18-wizard-4", { dark: false });
+  const page = await openApp(browser, mock, { route: "#/p/shop/new", wait: "dialog.drawer" });
+  await page.fill("#ni-name", "fix-456");
+  await page.waitForSelector("text=These host ports are taken");
+  await check(page, "15-new-instance");
+  await page.locator("details.more summary").click();
+  await check(page, "16-new-instance-more", { dark: false });
+  await page.getByText("Existing branch").click();
+  await check(page, "17-new-instance-existing", { dark: false });
   await page.ctx.close();
 });
 

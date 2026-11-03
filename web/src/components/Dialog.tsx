@@ -7,7 +7,7 @@ import { t } from "../strings.ts";
 import { ErrorBanner } from "./ui.tsx";
 import { Icon } from "./Icon.tsx";
 
-export function Modal({ title, onClose, children, danger, wide }: { title: string; onClose: () => void; children: ComponentChildren; danger?: boolean; wide?: boolean }) {
+export function Modal({ title, onClose, children, danger, wide, drawer }: { title: string; onClose: () => void; children: ComponentChildren; danger?: boolean; wide?: boolean; drawer?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
   const id = useId();
   const closeRef = useRef(onClose);
@@ -31,7 +31,7 @@ export function Modal({ title, onClose, children, danger, wide }: { title: strin
   }, []);
 
   return (
-    <dialog ref={ref} aria-labelledby={id} class={danger ? "danger" : undefined} data-wide={wide ? "1" : undefined}>
+    <dialog ref={ref} aria-labelledby={id} class={[danger ? "danger" : "", drawer ? "drawer" : ""].filter(Boolean).join(" ") || undefined} data-wide={wide ? "1" : undefined}>
       <div class="dialog-body">
         <h2 id={id}>{danger ? <><Icon name="warn" size={20} /> </> : null}{title}</h2>
         {children}
