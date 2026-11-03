@@ -371,6 +371,26 @@ volumes:
 	if ports := sc["ports"].([]any); len(ports) != 1 || ports[0].(map[string]any)["url"] == "" {
 		t.Errorf("ports: %v", sc)
 	}
+	// With a proxy running, ports, status and proxy_routes give the local domains.
+	s.opts.ProxyPort = func() (int, bool) { return 7080, true }
+	host := "app-feature." + project + ".localhost:7080"
+	text, sc = mustCall(t, s, "ports", wt)
+	if links, _ := sc["proxy_urls"].([]any); len(links) != 2 || links[0].(map[string]any)["url"] != "http://"+host || !strings.Contains(text, "http://web."+host) {
+		t.Errorf("ports with a proxy: %s %v", text, sc["proxy_urls"])
+	}
+	text, _ = mustCall(t, s, "status", map[string]any{"project": project})
+	if !strings.Contains(text, "http://"+host) {
+		t.Errorf("status with a proxy: %s", text)
+	}
+	_, sc = mustCall(t, s, "proxy_routes", map[string]any{"project": project})
+	if sc["proxy_running"] != true || len(sc["routes"].([]any)) != 2 {
+		t.Errorf("proxy_routes: %v", sc)
+	}
+	s.opts.ProxyPort = func() (int, bool) { return 0, false }
+	if _, sc = mustCall(t, s, "ports", wt); sc["proxy_urls"] != nil {
+		t.Errorf("ports without a proxy: %v", sc["proxy_urls"])
+	}
+
 	text, sc = mustCall(t, s, "logs", with(map[string]any{"tail": 10}))
 	if !strings.Contains(sc["logs"].(string), "server ready") {
 		t.Errorf("logs: %s", text)
@@ -403,5 +423,16 @@ volumes:
 	_, sc = mustCall(t, s, "history", map[string]any{"project": project, "worktree": "feature/x"})
 	if n := len(sc["events"].([]any)); n < 2 {
 		t.Errorf("history after up and down: %d event(s)", n)
+	}
+}
+
+func TestProxyRoutesWithoutInstances(t *testing.T) {
+	s, project, _, _ := setup(t, nil, Options{ProxyPort: func() (int, bool) { return 0, false }})
+	text, sc := mustCall(t, s, "proxy_routes", map[string]any{"project": project})
+	if sc["proxy_running"] != false || sc["port"].(float64) != 7080 || len(sc["routes"].([]any)) != 0 {
+		t.Errorf("proxy_routes: %v", sc)
+	}
+	if !strings.Contains(text, "No proxy is running") {
+		t.Errorf("proxy_routes text: %s", text)
 	}
 }

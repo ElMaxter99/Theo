@@ -124,7 +124,17 @@ Fields marked *optional* are left out when they do not apply.
 | `config-error` | `docker compose config` fails for this worktree (first line of the error) |
 | `fixed-container-name` | a linked worktree's services set `container_name`, so a second instance collides |
 | `docker-unavailable` | Docker could not be asked |
+| `compose-changed` | the instance has containers, and the configuration `docker compose config` resolves now differs from the one its last successful `up` or `recreate` started from; `fix` is the `theo up` command that applies it |
 | `project missing`, `worktree missing`, `containers removed`, `orphan containers`, `orphan volumes`, `stale settings`, `stale ports`, `stale files` | findings of `theo reconcile`, reused as they are (`fix` carries its advice) |
+
+`compose-changed` compares a digest of the whole `docker compose config`
+output, so any change counts: a Compose file, an included or extended file,
+the `.env` it reads, or a variable exported in the shell that runs `theo`
+(the web interface and `theo-desktop` may see a different environment from
+your terminal). Instances started before v0.2, or by something other than
+Theo, have no recorded digest and never get the warning. `theo env set`
+does not trigger it: those variables are Theo's own and apply at the next
+`up` anyway.
 
 ## Notes for consumers
 

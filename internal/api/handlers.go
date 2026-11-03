@@ -32,6 +32,9 @@ func (s *Server) routesTable() {
 	s.stream("GET", "/events", s.handleEvents)
 	s.handle("POST", "/events/focus", authSession, s.handleFocus)
 	s.handle("GET", "/fs/browse", authSession, s.handleBrowse)
+	s.handle("GET", "/proxy", authSession, s.handleProxyStatus)
+	s.handle("POST", "/proxy/start", authSession, s.handleProxyStart)
+	s.handle("POST", "/proxy/stop", authSession, s.handleProxyStop)
 
 	s.handle("GET", "/projects", authSession, s.handleProjects)
 	s.handle("POST", "/projects", authSession, s.handleAddProject)
@@ -45,7 +48,7 @@ func (s *Server) routesTable() {
 	s.handle("GET", "/projects/{p}/worktrees/{wt}", authSession, s.handleWorktree)
 	s.handle("POST", "/projects/{p}/worktrees/{wt}/remove", authSession, s.handleRemoveWorktree)
 
-	for _, kind := range []string{"up", "down", "restart"} {
+	for _, kind := range []string{"up", "down", "restart", "stop"} {
 		s.handle("POST", "/projects/{p}/worktrees/{wt}/"+kind, authSession, s.lifecycle(kind))
 	}
 	s.handle("GET", "/projects/{p}/worktrees/{wt}/services", authSession, s.handleServices)
@@ -269,7 +272,7 @@ func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request, _ *sessi
 	if err != nil {
 		return err
 	}
-	return writeJSON(w, http.StatusOK, ov)
+	return writeJSON(w, http.StatusOK, s.withProxyLinks(ov))
 }
 
 func (s *Server) handleBranches(w http.ResponseWriter, r *http.Request, _ *session) error {
@@ -291,7 +294,7 @@ func (s *Server) handleWorktrees(w http.ResponseWriter, r *http.Request, _ *sess
 	if err != nil {
 		return err
 	}
-	return writeJSON(w, http.StatusOK, ov.Worktrees)
+	return writeJSON(w, http.StatusOK, s.withProxyLinks(ov).Worktrees)
 }
 
 // instance resolves the worktree of the request and its instance.
@@ -336,6 +339,9 @@ func (s *Server) handleWorktree(w http.ResponseWriter, r *http.Request, _ *sessi
 	}
 	out.Counts = out.WorktreeView.Containers
 	out.Busy = s.busyRef(project, out.ID)
+	if one := s.withProxyLinks(&Overview{Project: project, Worktrees: []WorktreeView{out.WorktreeView}}); len(one.Worktrees) == 1 {
+		out.ProxyURLs = one.Worktrees[0].ProxyURLs
+	}
 	return writeJSON(w, http.StatusOK, out)
 }
 
@@ -453,6 +459,11 @@ func (s *Server) lifecycle(kind string) handlerFunc {
 					return "", err
 				}
 				return "Stopped " + inst.Compose + ". Its volumes were kept.", nil
+			case "stop":
+				if err := s.eng.Stop(ctx, inst, nil, stdout, stderr); err != nil {
+					return "", err
+				}
+				return "Paused " + inst.Compose + ": its containers were stopped and kept.", nil
 			default:
 				if err := s.eng.Restart(ctx, inst, stdout, stderr); err != nil {
 					return "", err

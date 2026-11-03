@@ -5,6 +5,8 @@ package compose
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -17,6 +19,11 @@ type Project struct {
 	Services map[string]Service       `json:"services"`
 	Volumes  map[string]VolumeConfig  `json:"volumes"`
 	Networks map[string]NetworkConfig `json:"networks"`
+	// Digest is the SHA-256 of the whole `docker compose config` output this
+	// project was parsed from, so a change to any setting (not only the ones
+	// Theo reads) can be noticed. Empty when the project did not come from
+	// ParseConfig.
+	Digest string `json:"-"`
 }
 
 // NetworkConfig is a top-level network of the resolved Compose model.
@@ -139,6 +146,8 @@ func ParseConfig(out []byte) (*Project, error) {
 	if err := json.Unmarshal(out, &p); err != nil {
 		return nil, fmt.Errorf("unexpected docker compose config output: %w", err)
 	}
+	sum := sha256.Sum256(out)
+	p.Digest = hex.EncodeToString(sum[:])
 	return &p, nil
 }
 

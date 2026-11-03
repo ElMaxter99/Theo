@@ -130,7 +130,8 @@ type SettingsStatus struct {
 // StatusWarning is something the user should look at.
 type StatusWarning struct {
 	// Kind is one of: port-conflict, foreign-stack, missing-env-file,
-	// config-error, fixed-container-name, docker-unavailable, or a
+	// config-error, fixed-container-name, docker-unavailable,
+	// compose-changed, or a
 	// `theo reconcile` finding kind ("worktree missing", "containers
 	// removed", ...).
 	Kind    string `json:"kind"`
@@ -320,6 +321,11 @@ func (e *Engine) instanceStatus(ctx context.Context, p registry.Project, ws *Wor
 	}
 	ws.Instance.State, ws.Instance.Counts, ws.Instance.Services = summarize(cfg, containers)
 	ws.Instance.InstanceState = InstanceState(containers, expectedServices(cfg), true)
+	if len(containers) > 0 {
+		if ch := e.ConfigChanged(inst); ch != nil {
+			ws.Warnings = append(ws.Warnings, ComposeChangedWarning(inst, ch, statusSelector(ws)))
+		}
+	}
 
 	plan, err := e.PlanPorts(ctx, inst, nil, false)
 	if err != nil {

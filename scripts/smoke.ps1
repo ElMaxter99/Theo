@@ -205,7 +205,11 @@ try {
   Check ok "proxy: unknown host lists the routes (404)" { $c = & $Curl -s -o $NullDev -w "%{http_code}" -H "Host: nope.$P.localhost" "http://localhost:$PX/"; "HTTP $c"; "$c" -eq "404" }
   T ok   "proxy routes --json" { theo proxy routes $P --port $PX --json }
   T ok   "proxy routes --hosts" { theo proxy routes $P --port $PX --hosts }
+  function OpenIs([string]$want) { $o = ((theo open $P --print 2>&1 | ForEach-Object { "$_" }) -join "`n").Trim(); $o; $o -eq $want }
+  Check ok "open --print gives the local domain while the proxy runs" { OpenIs "http://main.$P.localhost:$PX" }
   Stop-Process -Id $script:Proxy.Id -ErrorAction SilentlyContinue; $script:Proxy = $null
+  Start-Sleep -Milliseconds 500
+  Check ok "open --print gives localhost without the proxy" { OpenIs "http://localhost:8080" }
   T fail "proxy refuses a non-loopback address" { theo proxy --addr 0.0.0.0 --port $PX }
   Check ok "mcp --read-only: tools/list and status" {
     $msgs = @(
@@ -221,6 +225,18 @@ try {
     ($o -match '"list_projects"') -and -not ($o -match '"name":"up"') -and ($o -match '"id":3') -and ($o -match [regex]::Escape($P))
   }
   Check ok "doctor --json identifies the engine" { $o = (theo doctor --json 2>&1 | ForEach-Object { "$_" }) -join "`n"; $o -match '"engine"' }
+  T ok   "mcp install --json" { theo mcp install --json }
+  function ChangedWarns { $o = (theo status $P --json 2>&1 | ForEach-Object { "$_" }) -join "`n"; $o -match '"compose-changed"' }
+  Check fail "no compose-changed right after up" { ChangedWarns }
+  (Get-Content .env) -replace '^GREETING=.*', 'GREETING=Hello again from Theo' | Set-Content .env
+  Check ok "status warns compose-changed after editing .env" { ChangedWarns }
+  T ok   "up applies the change" { theo up $P }
+  Web 8080 "Hello again"
+  Check fail "no compose-changed after up" { ChangedWarns }
+  T ok   "stop --all" { theo stop --all $P }
+  T fail "stopped instance does not answer" { & $Curl -sf --max-time 5 "http://localhost:8080/" }
+  T ok   "start after stop --all" { theo start $P }
+  Web 8080 "greeting"
 
   Section "C. Worktrees and clones"
   T ok   "project set --copy-on-add .env" { theo project set $P --copy-on-add .env }
@@ -300,6 +316,8 @@ try {
   T fail "worktree remove with changes (refused)" { theo worktree remove $P feature/c }
   T ok   "worktree remove --discard-changes" { theo worktree remove $P feature/c --discard-changes --confirm (Split-Path $fc -Leaf) }
   T ok   "volumes purge feature/x" { theo volumes purge $P -w feature/x --confirm "$P-feature-x" }
+  T ok   "worktree prune --merged (dry run)" { theo worktree prune $P --merged }
+  Check ok "dry run removed nothing" { Test-Path $fx }
   if (Test-Path $fx) { Remove-Item -Recurse -Force $fx }
   T ok   "reconcile (reports only)" { theo reconcile $P }
   T ok   "reconcile --apply" { theo reconcile $P --apply }

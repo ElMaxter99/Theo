@@ -216,3 +216,27 @@ func ParseWorktrees(out []byte) ([]Worktree, error) {
 	}
 	return list, sc.Err()
 }
+
+// IsMerged reports whether every commit of branch is already in into (a
+// branch, remote branch or commit): the branch was merged without squashing
+// or rebasing. An unknown branch or into is an error.
+func (Git) IsMerged(ctx context.Context, dir, branch, into string) (bool, error) {
+	if err := checkRef("branch", branch); err != nil {
+		return false, err
+	}
+	if err := checkRef("branch", into); err != nil {
+		return false, err
+	}
+	head, err := execx.Run(ctx, dir, "git", "rev-parse", "--verify", "--quiet", "refs/heads/"+branch+"^{commit}")
+	if err != nil {
+		return false, fmt.Errorf("branch %s: %w", branch, err)
+	}
+	if _, err := execx.Run(ctx, dir, "git", "rev-parse", "--verify", "--quiet", into+"^{commit}"); err != nil {
+		return false, fmt.Errorf("%s is not a branch or commit of this repository", into)
+	}
+	base, err := execx.Run(ctx, dir, "git", "merge-base", "refs/heads/"+branch, into)
+	if err != nil {
+		return false, nil // no common history
+	}
+	return strings.TrimSpace(string(base)) == strings.TrimSpace(string(head)), nil
+}

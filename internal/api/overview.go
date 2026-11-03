@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ElMaxter99/Theo/internal/engine"
+	"github.com/ElMaxter99/Theo/internal/proxy"
 )
 
 // worktreeID is the id of a worktree in URLs: wt_ and the first 10 hex
@@ -69,26 +70,29 @@ type ContainerCount struct {
 
 // WorktreeView is a worktree and its instance, as the panel shows it.
 type WorktreeView struct {
-	ID             string                 `json:"id"`
-	Path           string                 `json:"path"`
-	Branch         string                 `json:"branch,omitempty"`
-	Head           string                 `json:"head,omitempty"`
-	Detached       bool                   `json:"detached"`
-	Locked         bool                   `json:"locked"`
-	Prunable       bool                   `json:"prunable"`
-	Bare           bool                   `json:"bare"`
-	Main           bool                   `json:"main"`
-	Kind           string                 `json:"kind"`
-	Owner          string                 `json:"owner,omitempty"`
-	Dirty          bool                   `json:"dirty"`
-	ComposeProject string                 `json:"compose_project,omitempty"`
-	EnvFile        *engine.EnvFile        `json:"env_file,omitempty"`
-	State          string                 `json:"state"`
-	Containers     ContainerCount         `json:"containers"`
-	Ports          []engine.PortStatus    `json:"ports"`
-	Warnings       []engine.StatusWarning `json:"warnings"`
-	Error          string                 `json:"error,omitempty"`
-	Busy           *BusyRef               `json:"busy"`
+	ID             string              `json:"id"`
+	Path           string              `json:"path"`
+	Branch         string              `json:"branch,omitempty"`
+	Head           string              `json:"head,omitempty"`
+	Detached       bool                `json:"detached"`
+	Locked         bool                `json:"locked"`
+	Prunable       bool                `json:"prunable"`
+	Bare           bool                `json:"bare"`
+	Main           bool                `json:"main"`
+	Kind           string              `json:"kind"`
+	Owner          string              `json:"owner,omitempty"`
+	Dirty          bool                `json:"dirty"`
+	ComposeProject string              `json:"compose_project,omitempty"`
+	EnvFile        *engine.EnvFile     `json:"env_file,omitempty"`
+	State          string              `json:"state"`
+	Containers     ContainerCount      `json:"containers"`
+	Ports          []engine.PortStatus `json:"ports"`
+	// ProxyURLs are the local domains of the instance while a proxy runs
+	// (the interface's own or `theo proxy`); absent otherwise.
+	ProxyURLs []proxy.Link           `json:"proxy_urls,omitempty"`
+	Warnings  []engine.StatusWarning `json:"warnings"`
+	Error     string                 `json:"error,omitempty"`
+	Busy      *BusyRef               `json:"busy"`
 }
 
 // Overview is the answer of GET /projects/{p}/overview.
@@ -308,6 +312,15 @@ func (s *Server) fillInstance(ctx context.Context, project string, wt engine.Wor
 	}
 	v.State = engine.InstanceState(containers, s.eng.ExpectedServices(inst), true)
 	v.Containers.Total = len(containers)
+	if len(containers) > 0 {
+		if ch := s.eng.ConfigChanged(inst); ch != nil {
+			sel := wt.Branch
+			if sel == "" {
+				sel = wt.Path
+			}
+			v.Warnings = append(v.Warnings, engine.ComposeChangedWarning(inst, ch, sel))
+		}
+	}
 	for _, c := range containers {
 		if c.State == "running" {
 			v.Containers.Running++

@@ -55,6 +55,9 @@ func normalizeJSON(v any, tmp string, key string) any {
 		}
 		return x
 	case string:
+		if key == "config_digest" && x != "" {
+			return "<DIGEST>" // a hash of the configuration, which holds temporary paths
+		}
 		if goldenHome != "" {
 			x = strings.ReplaceAll(x, goldenHome, "<HOME>")
 		}

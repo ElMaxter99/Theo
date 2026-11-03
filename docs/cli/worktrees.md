@@ -156,6 +156,30 @@ workspace has one), in the `theo: ...` line printed by commands that act on an
 instance (`[owner: x]`, `[clone]`), in `ps -w --json`, and in `reconcile`
 findings about a missing workspace.
 
+The web interface shows the label on each worktree of the project panel and
+in its Summary tab, and filters the panel by owner (the text filter matches it
+too).
+
+## Removing merged worktrees
+
+```
+theo worktree prune shop --merged                      # what could go; changes nothing
+theo worktree prune shop --merged --confirm shop       # removes them
+theo worktree prune shop --merged --into develop       # merged into develop instead
+```
+
+`--merged` lists the linked worktrees whose branch has no commit that is not
+already in the main worktree's branch (or in `--into`, a branch, remote branch
+or commit). Of those, it removes (only with `--confirm` and the project name)
+the ones whose instance has no containers and that have no uncommitted or
+untracked files, through the same checks as `worktree remove`; the others are
+listed with the reason they stay. Branches and volumes are always kept;
+independent clones and the main worktree are never touched. A branch merged
+by squash or rebase has different commits, so it does not count as merged:
+remove it with `worktree remove`. `--json` prints the report (`into`,
+`applied`, `merged[]` with `path`, `branch`, `owner`, `reason`, `removed`, and
+`not_merged`).
+
 ## JSON schema (stable for the GUI)
 
 Fields are only ever added. Absent optional fields mean "empty or false".

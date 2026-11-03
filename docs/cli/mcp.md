@@ -22,7 +22,23 @@ the tool results.
 
 ## Registering it
 
-Claude Code:
+`theo mcp install` prints everything below for this machine, with the right
+path to `theo`, and a paragraph for the repository's `AGENTS.md` or
+`CLAUDE.md` that tells agents when and how to use the server:
+
+```
+theo mcp install [--owner <name>] [--read-only] [--scope local|user|project] [--name theo]
+theo mcp install --apply           # runs the claude mcp add command for you
+theo mcp install --snippet >> AGENTS.md
+theo mcp install --json            # the command, the mcpServers entry and the paragraph
+```
+
+It writes nothing except through `--apply`, which runs `claude mcp add` (it
+must be on `PATH`). It names the binary `theo` when that is the `theo` on
+`PATH`, so the registration survives upgrades, and its absolute path
+otherwise.
+
+By hand, Claude Code:
 
 ```
 claude mcp add theo -- theo mcp
@@ -63,15 +79,16 @@ worktree), the same selection as `-w` in the CLI.
 | `add_worktree`    | `branch`*, `new`, `from`, `path`, `owner`, `clone`, `copy`, `copy_files`        | yes     | `worktree add`; `owner` defaults to `--owner` |
 | `remove_worktree` | `worktree`*, `discard_changes`, `confirm`                                       | yes, destructive | `worktree remove`, same refusals |
 | `services`        | -                                                                               | no      | `services --json` |
-| `ports`           | `profiles`, `auto_ports`                                                        | no      | `ports --json`, plus a `url` per port |
-| `up`              | `build`, `auto_ports`, `profiles`, `services`, `force_recreate`, `start_shared` | yes     | returns ports with URLs, warnings and the end of Docker's output |
+| `ports`           | `profiles`, `auto_ports`                                                        | no      | `ports --json`, plus a `url` per port, and `proxy_urls` while a proxy runs |
+| `up`              | `build`, `auto_ports`, `profiles`, `services`, `force_recreate`, `start_shared` | yes     | returns ports with URLs, `proxy_urls`, warnings and the end of Docker's output |
 | `down`            | -                                                                               | yes, destructive | volumes are always kept |
 | `restart`         | `services`                                                                      | yes     | |
 | `stop`            | `services`                                                                      | yes     | nothing is removed |
 | `start`           | `services`                                                                      | yes     | only existing containers |
 | `ps`              | -                                                                               | no      | without `worktree`: every worktree |
 | `logs`            | `services`, `tail`                                                              | no      | never follows; bounded (see Limits) |
-| `status`          | `project` (optional)                                                            | no      | `status --json` |
+| `status`          | `project` (optional)                                                            | no      | `status --json`, with `proxy_urls` while a proxy runs and the `compose-changed` warning |
+| `proxy_routes`    | `project` (optional)                                                            | no      | `proxy routes --json`: every local domain, its target and whether it runs, and `proxy_running` |
 | `env_list`        | -                                                                               | no      | secrets always masked |
 | `env_set`         | `name`*, `value`*, `secret`, `services`                                         | yes     | applies at the next `up` |
 | `env_unset`       | `name`*                                                                         | yes     | |

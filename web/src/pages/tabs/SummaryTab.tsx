@@ -1,6 +1,6 @@
 import { api, wtPath } from "../../api/client.ts";
 import type { InstanceSettings, Services, WorktreeDetail } from "../../api/types.ts";
-import { Banner, ErrorBanner, Loading } from "../../components/ui.tsx";
+import { Banner, ErrorBanner, ExternalLink, Loading } from "../../components/ui.tsx";
 import { useAction, useResource } from "../../lib/hooks.ts";
 import { announce } from "../../lib/live.ts";
 import { containerCounts } from "../../lib/status.ts";
@@ -43,6 +43,13 @@ export function SummaryTab({ project, w }: { project: string; w: WorktreeDetail 
         <dt>{t.summary.compose}</dt><dd class="mono">{w.compose_project ?? "—"}</dd>
         <dt>{t.summary.envFile}</dt><dd>{t.summary.envSource[src] ?? src}{w.env_file?.path ? <> — <span class="mono">{w.env_file.path}</span></> : null}</dd>
         <dt>{t.summary.containers}</dt><dd>{counts ? `${counts.running}/${counts.total}` : "—"}</dd>
+        <dt>{t.summary.owner}</dt><dd>{w.owner ?? <span class="muted">{t.summary.noOwner}</span>}</dd>
+        <dt>{t.summary.domains}</dt>
+        <dd>
+          {(w.proxy_urls ?? []).length > 0
+            ? <ul class="plain">{(w.proxy_urls ?? []).map((l, i) => <li key={i}><ExternalLink href={l.url} label={l.service}>{l.url.replace(/^https?:\/\//, "")}</ExternalLink>{l.default ? null : <span class="small muted"> {l.service}</span>}</li>)}</ul>
+            : <span class="muted">{t.summary.noDomains}</span>}
+        </dd>
       </dl>
 
       <section aria-labelledby="sum-warn">

@@ -25,6 +25,11 @@ theo restart shop api db      # restarts those two
 theo stop shop                # no service named: all of them
 ```
 
+`theo stop --all` stops every instance that has running containers, in every
+project (`theo stop --all shop`: only that project), to free memory without
+removing anything. It takes no `-w` or services. The web interface's
+**Pause all** button does the same for the project on screen.
+
 * `stop` keeps the containers (and volumes); it does not remove anything.
   `down` is what removes containers and networks.
 * `start` only starts containers that exist. For a service that was never

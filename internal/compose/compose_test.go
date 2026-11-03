@@ -192,3 +192,17 @@ func TestNetworkNotFound(t *testing.T) {
 		}
 	}
 }
+
+func TestParseConfigDigestFollowsTheWholeOutput(t *testing.T) {
+	a, err := ParseConfig([]byte(`{"name":"x","services":{"web":{"image":"nginx","command":["a"]}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := ParseConfig([]byte(`{"name":"x","services":{"web":{"image":"nginx","command":["b"]}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Digest == "" || a.Digest == b.Digest {
+		t.Errorf("digests %q and %q: a setting Theo does not parse must still change the digest", a.Digest, b.Digest)
+	}
+}

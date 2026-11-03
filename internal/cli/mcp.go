@@ -20,11 +20,23 @@ AI agents:
                                                --read-only offers only tools that change nothing;
                                                --owner labels the worktrees agents create. Deleting
                                                data stays with you. See docs/cli/mcp.md
+  mcp install [--owner <name>] [--read-only] [--scope local|user|project] [--apply | --json | --snippet]
+                                               How to register the server: the claude mcp add command,
+                                               the JSON other clients read, and a paragraph for the
+                                               repository's AGENTS.md or CLAUDE.md. --apply runs the
+                                               claude command; nothing else is written
 `)
-	registerCompletion(cmdSpec{name: "mcp", flags: []flagSpec{{names: []string{"--read-only"}}, {[]string{"--owner"}, "text"}}})
+	ownerFlag := flagSpec{[]string{"--owner"}, "text"}
+	registerCompletion(cmdSpec{name: "mcp", flags: []flagSpec{{names: []string{"--read-only"}}, ownerFlag},
+		subs: []cmdSpec{{name: "install", flags: []flagSpec{ownerFlag, {names: []string{"--read-only"}}, {[]string{"--scope"}, "text"},
+			{[]string{"--name"}, "text"}, {names: []string{"--apply"}}, jsonFlag, {names: []string{"--snippet"}}}}},
+	})
 }
 
 func runMCP(e *engine.Engine, args []string, stdout, stderr io.Writer) error {
+	if len(args) > 0 && args[0] == "install" {
+		return runMCPInstall(args[1:], stdout, stderr)
+	}
 	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
 	readOnly := fs.Bool("read-only", false, "offer only the tools that change nothing")
 	owner := fs.String("owner", "", "owner of the worktrees created through MCP without one")

@@ -56,6 +56,9 @@ type Options struct {
 	Owner string
 	// Version is reported as the server's version. Empty means engine.Version.
 	Version string
+	// ProxyPort says on which port `theo proxy` listens, when one runs. Nil
+	// looks in Theo's data directory (proxy.json).
+	ProxyPort func() (int, bool)
 }
 
 // Server is an MCP server. Create it with New and run it with Serve.

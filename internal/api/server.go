@@ -108,6 +108,7 @@ type Server struct {
 	log    *log.Logger
 	assets fs.FS
 
+	proxy  *proxyManager
 	cache  *overviewCache
 	meta   *metaCache
 	health *healthCache
@@ -175,6 +176,7 @@ func New(cfg Config) (*Server, error) {
 	s.eng.EnableConfigCache(cfg.ConfigCacheTTL)
 	s.hub = newHub()
 	s.ops = newOperations(s)
+	s.proxy = &proxyManager{s: s}
 	s.cache = newOverviewCache(2 * time.Second)
 	s.meta = &metaCache{}
 	s.health = &healthCache{}
@@ -223,6 +225,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	errc := make(chan error, 1)
 	go func() { errc <- s.srv.Serve(s.ln) }()
 	go s.hub.pollLoop(s)
+	s.proxy.autostart()
 	idle := time.NewTicker(idleCheckEvery(s.cfg.IdleTimeout))
 	defer idle.Stop()
 	for {
@@ -257,7 +260,9 @@ func idleCheckEvery(d time.Duration) time.Duration {
 
 // idleFor is how long the server has had no SSE client and no operation.
 func (s *Server) idleFor() time.Duration {
-	if s.sse.Load() > 0 || s.ops.running() > 0 {
+	// The interface's own proxy keeps it running: the names must keep
+	// answering while the switch is on, tab open or not.
+	if s.sse.Load() > 0 || s.ops.running() > 0 || s.proxy.managed() {
 		s.touch()
 		return 0
 	}
@@ -268,6 +273,7 @@ func (s *Server) idleFor() time.Duration {
 func (s *Server) Close() { s.stopOnce.Do(func() { close(s.stopped) }) }
 
 func (s *Server) shutdown() error {
+	s.proxy.stop()
 	s.cancelWork()
 	s.hub.close()
 	s.ops.cancelAll()

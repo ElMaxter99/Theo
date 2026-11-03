@@ -442,9 +442,13 @@ func (e *Engine) resolvedConfig(ctx context.Context, inst *Instance, profiles []
 func (inst *Instance) GeneratedFiles() []string { return inst.generated }
 
 func (e *Engine) record(inst *Instance, op string, err error) {
+	e.recordWith(inst, op, err, "")
+}
+
+func (e *Engine) recordWith(inst *Instance, op string, err error, digest string) {
 	ev := instances.Event{
 		Time: e.now().UTC(), User: currentUser(), Project: inst.Project, Workspace: inst.Workspace,
-		Compose: inst.Compose, Operation: op, Result: "ok",
+		Compose: inst.Compose, Operation: op, Result: "ok", ConfigDigest: digest,
 	}
 	if err != nil {
 		ev.Result, ev.Error = "error", err.Error()
