@@ -58,7 +58,7 @@ test("switching to Español in the settings changes the visible text and the lan
   await page.waitForSelector("table.data");
   assert.ok(await page.getByRole("button", { name: "Iniciar feature-x" }).count(), "the panel is in Spanish");
   assert.equal(await page.getByRole("button", { name: "Start feature-x" }).count(), 0);
-  assert.match(await page.locator("table.data thead").innerText(), /Estado/);
+  assert.match(await page.locator("table.data thead").innerText(), /Actividad/);
   // The choice survives a reload, and System goes back to the browser's language (English here).
   await page.reload();
   await page.waitForSelector("table.data");

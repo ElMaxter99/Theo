@@ -455,6 +455,8 @@ export interface StatusWorktree {
     proxy_urls?: string[];
   };
   warnings: WtWarning[];
+  /** Where the workspace is in its life (ADR-0016); absent for the main worktree. */
+  lifecycle?: Lifecycle;
 }
 
 /** GET|POST /projects/{p}/prune. */
@@ -494,5 +496,96 @@ export interface RenameResult {
   new: string;
   records: number;
   worktree_dir?: string;
+  notes?: string[];
+}
+
+/** Lifecycle of a workspace (ADR-0016). */
+export type LifeState = "missing" | "in-use" | "kept" | "merged" | "inactive" | "unpushed" | "new" | "pushed";
+
+export interface Lifecycle {
+  state?: LifeState;
+  activity_at?: string;
+  activity_source?: "commit" | "files" | "mcp" | "instance" | "created";
+  idle_days: number;
+  base?: string;
+  base_recorded?: boolean;
+  ahead: number;
+  behind: number;
+  upstream?: string;
+  upstream_gone?: boolean;
+  unpushed: number;
+  merged_by?: "ancestor" | "content";
+  changes: number;
+  running?: boolean;
+  origin?: string;
+  created_at?: string;
+  last_seen?: string;
+  kept?: boolean;
+  kept_until?: string;
+  keep_note?: string;
+  size_bytes?: number;
+  reason?: string;
+  problem?: string;
+}
+
+/** One workspace of GET /projects/{p}/lifecycle. */
+export interface LifeWorktree extends Lifecycle {
+  id: string;
+  path: string;
+  branch?: string;
+  head?: string;
+  detached?: boolean;
+  locked?: boolean;
+  prunable?: boolean;
+  kind: string;
+  owner?: string;
+  dirty: boolean;
+}
+
+export interface ParkedWorktree {
+  branch: string;
+  path: string;
+  base?: string;
+  owner?: string;
+  note?: string;
+  parked_at: string;
+  branch_gone?: boolean;
+}
+
+/** GET /projects/{p}/lifecycle. */
+export interface LifeReport {
+  project: string;
+  inactive_after_days: number;
+  worktrees: LifeWorktree[];
+  parked: ParkedWorktree[];
+  notes: string[];
+}
+
+export interface CleanEntry {
+  path: string;
+  branch?: string;
+  owner?: string;
+  state: LifeState;
+  merged_by?: "ancestor" | "content";
+  idle_days: number;
+  note?: string;
+  reason?: string;
+  closed: boolean;
+  went_down?: boolean;
+  branch_deleted?: boolean;
+  images_removed?: string[];
+  problems?: string[];
+}
+
+/** GET|POST /projects/{p}/clean. */
+export interface CleanReport {
+  project: string;
+  applied: boolean;
+  inactive_after_days: number;
+  close: CleanEntry[];
+  inactive: CleanEntry[];
+  kept: CleanEntry[];
+  leftovers: { id: string; kind: string; subject: string; detail: string; fix?: string; forgettable?: boolean }[];
+  forgot?: number;
   notes?: string[];
 }

@@ -14,12 +14,12 @@ test("the owner of a worktree is shown and can be filtered by", async () => {
   const page = await openApp(browser, mock, { route: "#/p/shop", wait: "table.data" });
   await row(page, "fix-123").locator(".tag:has-text('Owner: agent-1')").waitFor();
   await page.getByLabel("Owner").selectOption("agent-1");
-  assert.equal(await page.locator("tbody tr").count(), 1);
+  assert.equal(await page.locator("tbody tr:not(.group)").count(), 1);
   await page.getByLabel("Owner").selectOption("-");
   assert.equal(await row(page, "fix-123").count(), 0);
   await page.getByLabel("Owner").selectOption("");
   await page.getByLabel("Filter worktrees").fill("agent");
-  assert.equal(await page.locator("tbody tr").count(), 1, "the text filter matches the owner too");
+  assert.equal(await page.locator("tbody tr:not(.group)").count(), 1, "the text filter matches the owner too");
   assert.deepEqual(seriousOnly(await axeViolations(page)), []);
   await page.ctx.close();
 });

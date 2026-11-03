@@ -20,7 +20,7 @@ export type Route =
   | { name: "projects" }
   | { name: "add" }
   | { name: "project"; project: string; tab: ProjectTab; drawer?: boolean }
-  | { name: "problems"; tab: "problems" | "cleanup" }
+  | { name: "problems"; tab: "problems" | "cleanup"; project?: string }
   | { name: "settings"; section: SettingsSection }
   | { name: "detail"; project: string; wt: string; tab: TabId }
   | { name: "notfound" };
@@ -36,6 +36,7 @@ export function parseHash(hash: string): Route {
     if (parts[1] === "new" && parts.length === 2) return { name: "add" };
     return { name: "notfound" };
   }
+  if (parts[0] === "problems" && parts[1] === "cleanup" && parts.length === 3 && parts[2]) return { name: "problems", tab: "cleanup", project: parts[2] };
   if ((parts[0] === "problems" || parts[0] === "health") && parts.length <= 2) {
     if (parts.length === 1) return { name: "problems", tab: "problems" };
     if (parts[0] === "problems" && (parts[1] === "cleanup" || parts[1] === "problems")) return { name: "problems", tab: parts[1] };
@@ -84,7 +85,7 @@ export const href = {
   projectSettings: (p: string) => `#/p/${e(p)}/settings`,
   /** The instances of the project with the "New instance" panel open. */
   wizard: (p: string) => `#/p/${e(p)}/new`,
-  problems: (tab: "problems" | "cleanup" = "problems") => (tab === "cleanup" ? "#/problems/cleanup" : "#/problems"),
+  problems: (tab: "problems" | "cleanup" = "problems", project?: string) => (tab === "cleanup" ? (project ? `#/problems/cleanup/${e(project)}` : "#/problems/cleanup") : "#/problems"),
   /** 0.1 name of the problems screen. */
   health: () => "#/problems",
   settings: (section: SettingsSection = "preferences") => (section === "preferences" ? "#/settings" : `#/settings/${section}`),

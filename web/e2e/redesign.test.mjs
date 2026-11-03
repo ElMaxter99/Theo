@@ -115,7 +115,7 @@ for (const [route, sel] of [["#/projects", "table.data tbody tr:last-child [aria
     await mock.reset();
     const page = await openApp(browser, mock, { route, viewport: { width: 1100, height: 640 }, wait: "table.data tbody tr" });
     await waitIdle(page, 400);
-    await page.locator(sel).click();
+    await page.locator(sel).last().click();
     await page.locator("[role=menu] [role=menuitem]").first().waitFor();
     await waitIdle(page, 200);
     const hidden = await page.evaluate(() => {

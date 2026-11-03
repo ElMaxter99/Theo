@@ -286,6 +286,83 @@ async function runOp(o, project, w, body) {
 
 
 // ---------------------------------------------------------------- 0.2 additions
+// ---------------------------------------------------------------- lifecycle (ADR-0016)
+const daysAgo = (d) => new Date(Date.now() - d * 864e5).toISOString();
+function lifeOf(proj, w) {
+  if (w.main) return { idle_days: 0, ahead: 0, behind: 0, unpushed: 0, changes: w.dirty ? 1 : 0 };
+  const running = ["running", "partial", "unhealthy"].includes(derive(w));
+  const k = (S.kept ??= new Map()).get(w.id);
+  const base = { base: "main", base_recorded: true, behind: 3, origin: "theo", created_at: daysAgo(30), changes: w.dirty ? 3 : 0, running, size_bytes: 220 * 2 ** 20 };
+  let l;
+  if (w.branch === "draft-post") l = { ...base, state: "merged", merged_by: "content", ahead: 2, unpushed: 0, upstream: "origin/draft-post", upstream_gone: true, activity_at: daysAgo(12), activity_source: "commit", idle_days: 12, reason: "its changes are in the base (squash or rebase merge)" };
+  else if (w.branch === "old-spike") l = { ...base, state: "inactive", ahead: 5, unpushed: 5, activity_at: daysAgo(19), activity_source: "files", idle_days: 19, reason: "no activity for 19 days (threshold 7)" };
+  else if (w.branch === "feature-x") l = { ...base, state: "unpushed", ahead: 2, unpushed: 2, activity_at: daysAgo(0.1), activity_source: "files", idle_days: 0, reason: "2 commit(s) on no remote branch" };
+  else if (running) l = { ...base, state: "in-use", ahead: 2, unpushed: 2, activity_at: daysAgo(0.003), activity_source: w.owner ? "mcp" : "instance", idle_days: 0, reason: "its instance is running" };
+  else l = { ...base, state: "pushed", ahead: 4, unpushed: 0, upstream: `origin/${w.branch}`, activity_at: daysAgo(3), activity_source: "commit", idle_days: 3, reason: "everything is pushed" };
+  if (k) l = { ...l, state: "kept", kept: true, kept_until: k.until || undefined, keep_note: k.note || undefined, reason: "kept with `theo worktree keep`" };
+  return l;
+}
+const lifeView = (proj, w) => ({ id: w.id, path: w.path, branch: w.branch || undefined, head: w.head, detached: w.detached, kind: w.kind, owner: w.owner, dirty: w.dirty, ...lifeOf(proj, w) });
+function cleanOf(proj, applied = false) {
+  const views = proj.wts.filter((w) => !w.main).map((w) => lifeView(proj, w));
+  const entry = (v) => ({ path: v.path, branch: v.branch, owner: v.owner, state: v.state, merged_by: v.merged_by, idle_days: v.idle_days, note: v.keep_note, closed: false });
+  return {
+    project: proj.name, applied, inactive_after_days: proj.inactive_after_days ?? 7,
+    close: views.filter((v) => v.state === "merged").map((v) => ({ ...entry(v), reason: v.running ? "its instance is running; add --down" : undefined })),
+    inactive: views.filter((v) => v.state === "inactive").map(entry),
+    kept: views.filter((v) => v.state === "kept").map(entry),
+    leftovers: S.findings.filter((f) => f.project === proj.name && /orphan|stale/.test(f.kind) && !S.forgotten.includes(fid(f))).map(withId),
+  };
+}
+
+async function lifecycleRoutes(req, res, proj, seg) {
+  const m = req.method;
+  if (seg[2] === "lifecycle" && m === "GET") {
+    return send(res, 200, { project: proj.name, inactive_after_days: proj.inactive_after_days ?? 7, worktrees: proj.wts.map((w) => lifeView(proj, w)), parked: proj.parked ?? [], notes: [] }), true;
+  }
+  if (seg[2] === "clean" && seg.length === 3) {
+    if (m === "GET") return send(res, 200, cleanOf(proj)), true;
+    if (m === "POST") {
+      const b = (await readJson(req)) ?? {};
+      if (b.confirm !== proj.name) return send(res, 409, { error: { code: "confirmation_required", level: 3, message: "closing worktrees needs the project name as confirmation", confirm: { expected: proj.name } } }), true;
+      const plan = cleanOf(proj, true);
+      for (const e of plan.close) {
+        if (e.reason && !b.down) continue;
+        proj.wts = proj.wts.filter((w) => w.path !== e.path);
+        e.closed = true; e.reason = undefined; e.branch_deleted = !!b.delete_branches;
+      }
+      emitGlobal("state.changed", { project: proj.name });
+      return send(res, 200, plan), true;
+    }
+  }
+  if (seg[2] === "resume" && m === "POST") {
+    const b = (await readJson(req)) ?? {};
+    const pk = (proj.parked ?? []).find((x) => x.branch === b.branch);
+    if (!pk) return err(res, 404, "not_found", `${b.branch} is not parked`), true;
+    proj.parked = proj.parked.filter((x) => x !== pk);
+    const w = mkWorktree(proj.name, base(pk.path), pk.branch); w.owner = pk.owner; proj.wts.push(w);
+    emitGlobal("state.changed", { project: proj.name });
+    return send(res, 200, { id: w.id, path: w.path, branch: w.branch, kind: "worktree", env_file: w.env_file }), true;
+  }
+  if (seg[2] === "worktrees" && (seg[4] === "park" || seg[4] === "keep") && m === "POST") {
+    const w = findWt(proj, seg[3]);
+    if (!w) return err(res, 404, "worktree_not_found", "no such worktree"), true;
+    const b = (await readJson(req)) ?? {};
+    if (seg[4] === "keep") {
+      if (b.clear) S.kept.delete(w.id); else (S.kept ??= new Map()).set(w.id, { until: b.until ? `${b.until}T23:59:59Z` : "", note: b.note ?? "" });
+      emitGlobal("state.changed", { project: proj.name });
+      return send(res, 200, { path: w.path, kind: w.kind, kept: !b.clear }), true;
+    }
+    if (w.dirty) return err(res, 400, "invalid_request", `${w.path} has 3 uncommitted or untracked file(s); commit them first`), true;
+    if (b.confirm !== base(w.path)) return send(res, 409, { error: { code: "confirmation_required", level: 3, message: "files Git ignores would be lost", confirm: { expected: base(w.path) }, affected: [{ kind: "file", name: ".env.local", detail: "ignored" }] } }), true;
+    proj.wts = proj.wts.filter((x) => x !== w);
+    (proj.parked ??= []).push({ branch: w.branch, path: w.path, base: "main", owner: w.owner, note: b.note || undefined, parked_at: now() });
+    emitGlobal("state.changed", { project: proj.name });
+    return send(res, 200, { branch: w.branch, path: w.path, unpushed: 2 }), true;
+  }
+  return false;
+}
+
 function statusOf() {
   return {
     projects: S.projects.map((p) => ({
@@ -294,7 +371,7 @@ function statusOf() {
         const st = derive(w);
         const li = listItem(w);
         return {
-          id: w.id, path: w.path, branch: w.branch || undefined, kind: w.kind, dirty: w.dirty, warnings: warningsOf(w),
+          id: w.id, path: w.path, branch: w.branch || undefined, kind: w.kind, dirty: w.dirty, warnings: warningsOf(w), lifecycle: w.main ? undefined : lifeOf(p, w),
           instance: st === "absent" ? undefined : { compose_project: w.compose_project, instance_state: st, counts: li.containers, ports: portStatuses(w), proxy_urls: (proxyLinks(w) ?? []).map((l) => l.url) },
         };
       }),
@@ -496,9 +573,10 @@ async function api(req, res, url) {
   const { wts, ...pub } = proj;
   if (seg.length === 2) {
     if (m === "GET") return send(res, 200, pub);
-    if (m === "PATCH") { const b = await readJson(req); for (const k of ["env_file", "worktree_dir"]) if (k in b) proj[k] = b[k] ?? ""; for (const k of ["compose_files", "copy_on_add"]) if (k in b) proj[k] = b[k] ?? undefined; const { wts: _w, ...out } = proj; return send(res, 200, out); }
+    if (m === "PATCH") { const b = await readJson(req); for (const k of ["env_file", "worktree_dir"]) if (k in b) proj[k] = b[k] ?? ""; for (const k of ["compose_files", "copy_on_add"]) if (k in b) proj[k] = b[k] ?? undefined; if ("inactive_after_days" in b) proj.inactive_after_days = b.inactive_after_days ?? undefined; const { wts: _w, ...out } = proj; return send(res, 200, out); }
     if (m === "DELETE") { S.projects = S.projects.filter((p) => p !== proj); return send(res, 200, { files_kept: true, containers_kept: true }); }
   }
+  if (await lifecycleRoutes(req, res, proj, seg)) return;
   if (await projectExtras(req, res, proj, seg, q)) return;
   if (seg[2] === "overview") return send(res, 200, { project: proj.name, path: proj.path, docker: scenario.docker ? { available: true } : { available: false, error: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock" }, worktrees: wts.map(listItem), generated_at: now() });
   if (seg[2] === "shared") return sharedRoutes(req, res, proj, seg);
