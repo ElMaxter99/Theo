@@ -2,7 +2,7 @@
 
 Notable changes per release. Each release on GitHub also lists every merged pull request.
 
-## Unreleased
+## v0.3.1
 
 ### Fixed
 - **Interface, row menus (⋯):** the menu of a table row opened inside the table and was cut by its border (Projects, the instances of a project, the services of an instance). It now opens over the page, upwards when there is no room below, and follows its button when something scrolls.
