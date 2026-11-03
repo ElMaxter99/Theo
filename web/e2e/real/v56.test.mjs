@@ -129,11 +129,11 @@ test("health: a worktree deleted by hand is reported; forgetting touches only Th
   assert.equal(set.status, 200, JSON.stringify(set.body));
   rmSync(created.body.path, { recursive: true, force: true });
 
-  const page = await openApp(browser, adapter, { route: "#/health", wait: "h1" });
+  const page = await openApp(browser, adapter, { route: "#/problems", wait: "h1" });
   await page.getByRole("heading", { name: /Worktree missing/ }).waitFor({ timeout: 20000 });
   const staleHeading = page.getByRole("heading", { name: /Stale settings/ });
   await staleHeading.waitFor();
-  assert.match(await page.getByTestId("nav-health").textContent(), /Health\s*[1-9]/);
+  assert.match(await page.getByTestId("nav-health").textContent(), /Problems\s*[1-9]/);
   assert.deepEqual(seriousOnly(await axeViolations(page)), []);
   await shot(page, "63-real-health");
   const before = (await call("GET", "/reconcile")).body.findings;
@@ -160,7 +160,7 @@ test("health: a worktree deleted by hand is reported; forgetting touches only Th
 test("health with Docker unreachable: docker_error is shown (simulated by an unreachable DOCKER_HOST)", { skip: skip || "needs a server started with a broken DOCKER_HOST; covered against the mock and by the backend tests" }, async () => {});
 
 test("settings: diagnostics from the real doctor, Compose minimum, report text", { skip }, async () => {
-  const page = await openApp(browser, adapter, { route: "#/settings", wait: "h1" });
+  const page = await openApp(browser, adapter, { route: "#/settings/diagnostics", wait: "h1" });
   await page.locator("table tbody tr", { hasText: /compose/i }).first().waitFor();
   const text = await page.locator("main").textContent();
   assert.match(text, /Everything Theo needs works|does not work/);
@@ -189,7 +189,7 @@ test("history: the real server pages with the Theo-History-Next header and the t
   const p1 = await call("GET", `/projects/${project}/worktrees/${main.id}/history?limit=1`);
   assert.equal(p1.body.length, 1);
   assert.ok(p1.headers.get("theo-history-next"), "there is an older page");
-  const page = await openApp(browser, adapter, { route: `#/p/${project}/w/${main.id}/history`, wait: "[role=tabpanel] table" });
+  const page = await openApp(browser, adapter, { route: `#/p/${project}/w/${main.id}/activity`, wait: "[role=tabpanel] table" });
   assert.ok((await page.locator("[role=tabpanel] tbody tr").count()) >= 2);
   assert.equal(await page.getByRole("button", { name: "Load older events" }).count(), 0, "everything fits in one page");
   await shot(page, "65-real-history");
