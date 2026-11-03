@@ -301,6 +301,23 @@ func (o *operations) busy(key string) *Operation {
 	return nil
 }
 
+// busyProject returns an active operation on any instance of a project, or
+// on its shared services, or nil.
+func (o *operations) busyProject(project string) *Operation {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	prefix := strings.ToLower(project) + "/"
+	for key, op := range o.active {
+		if op == nil || !op.active() {
+			continue
+		}
+		if strings.HasPrefix(key, prefix) || key == sharedKey(project) || key == stopAllKey {
+			return op
+		}
+	}
+	return nil
+}
+
 // startRequest describes an operation to start.
 type startRequest struct {
 	kind, project, worktree, key, session, idemKey string
