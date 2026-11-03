@@ -176,9 +176,105 @@ untracked files, through the same checks as `worktree remove`; the others are
 listed with the reason they stay. Branches and volumes are always kept;
 independent clones and the main worktree are never touched. A branch merged
 by squash or rebase has different commits, so it does not count as merged:
-remove it with `worktree remove`. `--json` prints the report (`into`,
+close it with `worktree clean`, which detects squash and rebase (see
+[Forgotten work](#forgotten-work-states-clean-park-resume-keep)). `--json` prints the report (`into`,
 `applied`, `merged[]` with `path`, `branch`, `owner`, `reason`, `removed`, and
 `not_merged`).
+
+## Forgotten work: states, clean, park, resume, keep
+
+Worktrees pile up: a branch is merged by squash on GitHub and its folder stays,
+an agent leaves a spike behind, an instance keeps running for a week. Theo now
+gives every linked worktree and clone a **state** and offers to close the ones
+that are done (ADR-0016).
+
+```
+theo worktrees shop                         # STATE and ACTIVITY columns, and a footer
+theo worktrees shop --state merged          # only one state
+theo worktrees shop --parked --size         # also the parked branches, and disk size
+theo worktree clean shop                    # what could be closed; changes nothing
+theo worktree clean shop --confirm shop     # closes them
+theo worktree clean --all --down --delete-branches --images --confirm all
+theo worktree park shop old-spike --note "waiting for the API"
+theo worktree resume shop old-spike
+theo worktree keep shop demo --until 2026-12-01 --note "client demo"
+theo worktree keep shop demo --clear
+theo worktree base shop feature-x --set develop
+theo project set shop --inactive-after 14
+```
+
+### States
+
+A worktree has the first state that applies, in this order:
+
+| state      | meaning |
+|------------|---------|
+| `missing`  | its folder is gone |
+| `in-use`   | its instance has running containers, or its owner's MCP server called a tool on it in the last 30 minutes |
+| `kept`     | `worktree keep` says to leave it alone (until a date, or until cleared) |
+| `merged`   | no uncommitted files, and its branch is in the base: by merge, fast-forward, or by content (squash or rebase) |
+| `inactive` | not merged and no activity for longer than the threshold (default 7 days, 1 to 90 with `project set --inactive-after`), with or without commits of its own |
+| `unpushed` | uncommitted files, commits not pushed, or commits and no upstream (or its upstream is gone) |
+| `new`      | nothing done yet: no commits of its own and no upstream |
+| `pushed`   | everything is pushed |
+
+**Activity** is the most recent of: the last commit, the newest change of a
+tracked or untracked file, the owner's MCP calls, the instance's last start,
+and when Theo created the worktree. The `ACTIVITY` column says which one.
+
+**Base**: the branch a worktree is compared with. Theo records it when it
+creates the worktree, in Git's own config (`branch.<name>.gh-merge-base`, the
+key GitHub's CLI uses too), and falls back to the main worktree's branch.
+`worktree base` shows it, `--set` changes it and `--clear` forgets it. The
+comparison uses both the local base and `origin/<base>`, so a branch merged on
+GitHub counts once you fetch. A squash is detected when merging the branch
+into the base changes nothing (`git merge-tree --write-tree`); the answer is
+cached per pair of commits in the data directory.
+
+### Clean
+
+`worktree clean` lists the worktrees that can be closed: `merged` and
+`missing`. With `--confirm <project>` (or `--all --confirm all`) it closes
+them through the same checks as `worktree remove`: running instances stay
+unless `--down` takes them down first, and anything uncommitted stays.
+`--delete-branches` deletes the local branch after checking again that it is
+merged; `--images` removes the images Compose built for those instances.
+Remote branches, volumes, kept worktrees and the main worktree are never
+touched. The report also lists the inactive worktrees (to park or keep, never
+closed by `clean`), the kept ones, and the leftovers of `reconcile`. `theo`
+with no arguments shows a **Forgotten work** section when there is any.
+
+`worktree prune --merged` still works as before.
+
+### Park and resume
+
+`worktree park` puts unfinished work away: it takes the instance down, removes
+the folder and keeps the branch, its owner, its base and a note, listed with
+`worktrees --parked`. It refuses uncommitted changes (commit or stash first).
+Ignored files such as `.env` or `node_modules` would be lost, so it lists them
+and asks for `--confirm <folder name>`. Unpushed commits are kept on the
+branch, and the report says how many. `worktree resume` creates the worktree
+again from the parked branch (`--copy` copies the project's `copy_on_add`
+files again) and restores its owner and note.
+
+### Keep
+
+`worktree keep` marks a worktree as one to leave alone: it is never offered
+for cleaning and gives no warnings. `--until <date>` ends it on that day,
+`--note` says why, `--clear` removes it.
+
+### Warnings
+
+`theo status` (and the interface) add `worktree-merged`, `worktree-inactive`
+and `instance-idle` (an instance running in an inactive worktree), each with
+the command that fixes it. See [status](status.md#warning-kinds).
+
+### For agents
+
+MCP servers started with `--owner` mark the worktrees of that owner as in use
+while they work, `finish_worktree` lets an agent close its own worktree once
+the branch is merged or pushed, and `clean_worktrees` lists what could be
+closed. See [mcp](mcp.md).
 
 ## JSON schema (stable for the GUI)
 
@@ -202,6 +298,17 @@ clones in registration order. `--owner <name>` filters it.
 | `bare`     | boolean | omitted when false                                                   |
 | `locked`   | boolean | omitted when false                                                   |
 | `prunable` | boolean | the directory no longer exists (also for a clone); omitted when false |
+| `state`    | string  | `missing`, `in-use`, `kept`, `merged`, `inactive`, `unpushed`, `new` or `pushed`; omitted for the main worktree |
+| `activity_at`, `activity_source` | string | last activity (RFC 3339) and what it was: `commit`, `files`, `mcp`, `instance` or `created` |
+| `idle_days` | number | whole days since `activity_at` |
+| `base`, `base_recorded` | string, boolean | the branch it is compared with, and whether it is recorded in Git's config |
+| `ahead`, `behind`, `unpushed`, `changes` | number | commits against the base, commits not pushed, uncommitted files |
+| `upstream`, `upstream_gone` | string, boolean | the tracked branch, and whether it was deleted on the remote |
+| `merged_by` | string | `ancestor` or `content` (squash or rebase) when merged |
+| `running` | boolean | the instance has running containers |
+| `origin`, `created_at`, `last_seen` | string | `theo` when Theo created it; when; the owner's last MCP call |
+| `kept`, `kept_until`, `keep_note` | | from `worktree keep` |
+| `size_bytes` | number | only with `--size` |
 
 ```json
 [
@@ -238,6 +345,12 @@ listed as a local branch with that clone as `worktree`.
 | `not_copied` | object[] | `{"path": ..., "reason": ...}`                                  |
 
 ### Other JSON that gained fields
+
+- `theo worktrees <project> --parked --json`: an object `{project, inactive_after_days, worktrees[], parked[]}`;
+  a parked entry has `branch`, `path`, `base`, `owner`, `note`, `parked_at` and `branch_gone`.
+- `theo worktree clean ... --json`: `{project, applied, inactive_after_days, close[], inactive[], kept[], leftovers[], notes}`;
+  an entry has `path`, `branch`, `owner`, `state`, `merged_by`, `idle_days`, `note`, `reason` (why it stays),
+  `closed`, `went_down`, `branch_deleted`, `images_removed` and `problems`.
 
 - `theo ps <project> --json`: each item has `worktree`, `stacks` and now `kind`
   and `owner`.

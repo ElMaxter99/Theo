@@ -126,6 +126,9 @@ Fields marked *optional* are left out when they do not apply.
 | `docker-unavailable` | Docker could not be asked |
 | `url-in-data` | the application stores its own address in its data (`project set --url-in-data`) and the instance answers on another one; `previous`, `current` and `service` say which, `command` is the application's own fix when Theo knows one (WP-CLI for WordPress), and `fix` is `theo instance set ... --data-address-updated` |
 | `compose-changed` | the instance has containers, and the configuration `docker compose config` resolves now differs from the one its last successful `up` or `recreate` started from; `fix` is the `theo up` command that applies it |
+| `worktree-merged` | the worktree's branch is merged (also by squash or rebase) and nothing is uncommitted; `fix` is `theo worktree clean` |
+| `worktree-inactive` | no activity for longer than the project's threshold; `fix` parks it (or keep it with `worktree keep`) |
+| `instance-idle` | the instance runs in an inactive worktree; `fix` is `theo stop <project> -w <worktree>` |
 | `project missing`, `worktree missing`, `containers removed`, `orphan containers`, `orphan volumes`, `stale settings`, `stale ports`, `stale files` | findings of `theo reconcile`, reused as they are (`fix` carries its advice) |
 
 `compose-changed` compares a digest of the whole `docker compose config`

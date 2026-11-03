@@ -2,6 +2,16 @@
 
 Notable changes per release. Each release on GitHub also lists every merged pull request.
 
+## Unreleased (v0.4)
+
+### New
+- **Forgotten work (ADR-0016):** every worktree has a state (`missing`, `in-use`, `kept`, `merged`, `inactive`, `unpushed`, `new`, `pushed`) and its last activity, in `theo worktrees`, `theo status`, MCP, the API and the interface. Merged includes branches merged by squash or rebase on GitHub. `theo` lists the forgotten work.
+- **`theo worktree clean`** closes the merged worktrees and the ones whose folder is gone, for one project or `--all`, after a typed confirmation; `--down`, `--delete-branches` and `--images` go further. Remote branches and volumes are never touched. The interface's Cleanup screen does the same.
+- **`theo worktree park` / `resume`** put unfinished work away (folder removed, branch kept with a note) and bring it back; **`theo worktree keep`** leaves one alone until a date; **`theo worktree base`** shows or records the branch a worktree is compared with; **`theo project set --inactive-after <days>`** sets when a worktree counts as inactive (default 7).
+- **MCP:** `finish_worktree` lets an agent close its own worktree once its branch is merged or pushed, `clean_worktrees` lists what could be closed, `list_worktrees` carries the state, and a server with `--owner` marks its owner's worktrees as in use while it works.
+- **Interface:** the instances table shows the state, last activity and Git summary, groups by state or owner, and offers Park, Keep and Resume; home shows a Forgotten work card.
+- New status warnings: `worktree-merged`, `worktree-inactive`, `instance-idle`.
+
 ## v0.3.1
 
 ### Fixed
