@@ -141,7 +141,11 @@ func (e *Engine) Clean(ctx context.Context, project string, opts CleanOptions) (
 			entry.State = LifeMerged
 			switch {
 			case !ws.Running:
-				entry.Reason = "its owner used Theo's MCP server in the last 30 minutes"
+				who := ws.Owner
+				if who == "" {
+					who = "its owner"
+				}
+				entry.Reason = fmt.Sprintf("in use (%s, %s ago)", who, agoText(e.now().Sub(ws.LastSeen)))
 			case !opts.Down:
 				entry.Reason = fmt.Sprintf("its instance is running; add --down to take it down, or `theo down %s -w %s`", p.Name, selectorOf(ws.Worktree.Worktree))
 			}
@@ -503,67 +507,99 @@ type ignoredLister interface {
 	IgnoredEntries(ctx context.Context, dir string) ([]string, error)
 }
 
-// Park puts away a linked worktree whose work is unfinished: it removes the
-// directory and keeps the branch, and records it so Resume brings it back.
-// It refuses uncommitted or untracked changes (commit them first), an
-// instance with containers, the main worktree and clones.
-func (e *Engine) Park(ctx context.Context, project, selector string, opts ParkOptions) (registry.Parked, error) {
+// ParkResult is the answer of Park.
+type ParkResult struct {
+	registry.Parked
+	// WentDown is the Compose project of the instance Park took down, if any
+	// (containers and networks; volumes are kept).
+	WentDown string `json:"went_down,omitempty"`
+	// Unpushed counts the commits of the branch that are on no remote.
+	Unpushed int `json:"unpushed"`
+}
+
+// Park puts away a linked worktree whose work is unfinished: it takes its
+// instance down (volumes are kept), removes the directory, keeps the branch,
+// and records it so Resume brings it back. It refuses uncommitted or
+// untracked changes (commit them first), the main worktree and clones.
+func (e *Engine) Park(ctx context.Context, project, selector string, opts ParkOptions) (ParkResult, error) {
 	p, err := e.Project(project)
 	if err != nil {
-		return registry.Parked{}, err
+		return ParkResult{}, err
 	}
 	list, err := e.worktreeList(ctx, p)
 	if err != nil {
-		return registry.Parked{}, err
+		return ParkResult{}, err
 	}
 	wt, err := selectWorktree(list, selector)
 	if err != nil {
-		return registry.Parked{}, fmt.Errorf("project %q: %w", p.Name, err)
+		return ParkResult{}, fmt.Errorf("project %q: %w", p.Name, err)
 	}
 	switch workspaceKind(p, list, wt.Path) {
 	case KindMain:
-		return registry.Parked{}, fmt.Errorf("%s is the main worktree of %q; it cannot be parked", wt.Path, p.Name)
+		return ParkResult{}, fmt.Errorf("%s is the main worktree of %q; it cannot be parked", wt.Path, p.Name)
 	case KindClone:
-		return registry.Parked{}, fmt.Errorf("%s is an independent clone; only linked worktrees can be parked (their branch stays in the project)", wt.Path)
+		return ParkResult{}, fmt.Errorf("%s is an independent clone; only linked worktrees can be parked (their branch stays in the project)", wt.Path)
 	}
 	if wt.Branch == "" {
-		return registry.Parked{}, fmt.Errorf("%s has no branch checked out (detached HEAD), so nothing would bring it back; create a branch there first", wt.Path)
+		return ParkResult{}, fmt.Errorf("%s has no branch checked out (detached HEAD), so nothing would bring it back; create a branch there first", wt.Path)
 	}
 	if wt.Prunable {
-		return registry.Parked{}, fmt.Errorf("the directory of %s no longer exists; `theo worktree clean %s` forgets it", wt.Path, p.Name)
+		return ParkResult{}, fmt.Errorf("the directory of %s no longer exists; `theo worktree clean %s` forgets it", wt.Path, p.Name)
 	}
 	if wt.Locked {
-		return registry.Parked{}, fmt.Errorf("%s is locked with git worktree lock", wt.Path)
+		return ParkResult{}, fmt.Errorf("%s is locked with git worktree lock", wt.Path)
 	}
 	changes, err := e.git.Changes(ctx, wt.Path)
 	if err != nil {
-		return registry.Parked{}, err
+		return ParkResult{}, err
 	}
 	if len(changes) > 0 {
-		return registry.Parked{}, fmt.Errorf("%s has %d uncommitted or untracked file(s); commit them (a work-in-progress commit is fine) and park it again, so nothing is lost", wt.Path, len(changes))
+		return ParkResult{}, fmt.Errorf("%s has %d uncommitted or untracked file(s); commit them (a work-in-progress commit is fine) and park it again, so nothing is lost", wt.Path, len(changes))
 	}
 	name := filepath.Base(wt.Path)
 	if il, ok := e.git.(ignoredLister); ok {
 		ignored, err := il.IgnoredEntries(ctx, wt.Path)
 		if err != nil {
-			return registry.Parked{}, err
+			return ParkResult{}, err
 		}
 		if len(ignored) > 0 && opts.Confirm != name {
-			return registry.Parked{}, &ParkError{Path: wt.Path, Name: name, Ignored: ignored}
+			return ParkResult{}, &ParkError{Path: wt.Path, Name: name, Ignored: ignored}
 		}
 	}
 	note := strings.TrimSpace(opts.Note)
 	if len([]rune(note)) > 200 {
-		return registry.Parked{}, errors.New("the note is too long (200 characters at most)")
+		return ParkResult{}, errors.New("the note is too long (200 characters at most)")
 	}
 	_, base, _, _ := e.WorktreeBase(ctx, p.Name, wt.Path)
 	rec, _ := workspaceRecord(p, wt.Path)
 	parked := registry.Parked{Branch: wt.Branch, Path: wt.Path, Base: base, Owner: rec.Owner, Note: note, ParkedAt: e.now().UTC().Truncate(time.Second)}
 
+	res := ParkResult{Parked: parked}
+	if lg, ok := e.git.(lifecycleGit); ok {
+		in := stateInput{p: p, wt: Worktree{Worktree: wt, Kind: KindWorktree}, rec: rec, mainBranch: list[0].Branch, now: e.now(), threshold: InactiveAfter(p)}
+		in.mainRefs, _ = lg.LocalBranches(ctx, p.Path)
+		l, _ := e.lifecycleOf(ctx, lg, in)
+		res.Unpushed = l.Unpushed
+	}
+	if overview, err := e.Overview(ctx, p.Name); err == nil {
+		for _, o := range overview {
+			if samePath(o.Worktree.Path, wt.Path) && len(o.Stacks) > 0 {
+				inst, err := e.Instance(ctx, p.Name, wt.Path, nil)
+				if err != nil {
+					return ParkResult{}, fmt.Errorf("its instance has containers and cannot be taken down: %w", err)
+				}
+				if err := e.Down(ctx, inst, io.Discard, io.Discard); err != nil {
+					return ParkResult{}, fmt.Errorf("cannot take its instance down: %w", err)
+				}
+				res.WentDown = inst.Compose
+			}
+		}
+	}
+
 	// RemoveWorkspace checks the containers and the shared services again.
 	// Ignored files do not stop git worktree remove.
 	if _, err := e.RemoveWorkspace(ctx, p.Name, wt.Path, RemoveWorktreeOptions{}); err != nil {
-		return registry.Parked{}, err
+		return res, err
 	}
 	if dirExists(wt.Path) {
 		_ = os.RemoveAll(wt.Path) // what Git left: ignored files, already confirmed
@@ -579,9 +615,9 @@ func (e *Engine) Park(ctx context.Context, project, selector string, opts ParkOp
 		return nil
 	})
 	if err != nil {
-		return parked, fmt.Errorf("%s was removed and branch %s kept, but it could not be recorded as parked: %w. `theo worktree add %s %s` brings it back", wt.Path, wt.Branch, err, p.Name, wt.Branch)
+		return res, fmt.Errorf("%s was removed and branch %s kept, but it could not be recorded as parked: %w. `theo worktree add %s %s` brings it back", wt.Path, wt.Branch, err, p.Name, wt.Branch)
 	}
-	return parked, nil
+	return res, nil
 }
 
 // ResumeOptions configures Resume.
@@ -590,7 +626,7 @@ type ResumeOptions struct {
 }
 
 // Resume brings back a parked worktree: it creates it again for its branch,
-// in the same directory when that is free, with the same owner.
+// in the same directory when that is free, with the same owner and note.
 func (e *Engine) Resume(ctx context.Context, project, branch string, opts ResumeOptions) (*AddedWorktree, error) {
 	p, err := e.Project(project)
 	if err != nil {
@@ -626,6 +662,12 @@ func (e *Engine) Resume(ctx context.Context, project, branch string, opts Resume
 			if pk.Branch == branch {
 				sp.Parked = append(sp.Parked[:i:i], sp.Parked[i+1:]...)
 				break
+			}
+		}
+		if parked.Note != "" {
+			if rec, i := workspaceRecord(*sp, added.Path); i >= 0 {
+				rec.KeepNote = parked.Note
+				putRecord(sp, rec)
 			}
 		}
 		return nil

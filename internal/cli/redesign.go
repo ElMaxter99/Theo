@@ -214,6 +214,7 @@ func printSummary(w io.Writer, r *engine.StatusReport, here string, color bool) 
 			fmt.Fprintf(w, "  … %d more not running (theo status %s)\n", hidden, p.Name)
 		}
 	}
+	printForgotten(w, r.Projects, color)
 	fmt.Fprintln(w)
 	switch {
 	case warnings == 1:

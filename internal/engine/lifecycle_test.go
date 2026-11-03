@@ -335,7 +335,7 @@ func TestParkAndResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if parked.Branch != "work" || parked.Base != "main" || parked.Note != "waiting for the API" {
+	if parked.Branch != "work" || parked.Base != "main" || parked.Note != "waiting for the API" || parked.Unpushed != 2 { // its commit and the merge
 		t.Errorf("parked = %+v", parked)
 	}
 	if _, err := os.Stat(paths["work"]); !os.IsNotExist(err) {
@@ -421,4 +421,3 @@ func TestContentMergedNeedsNewGit(t *testing.T) {
 		t.Errorf("ContentMerged after a squash = %v, %v", ok, err)
 	}
 }
-

@@ -46,7 +46,7 @@ func runBranches(e *engine.Engine, args []string, stdout io.Writer) error {
 
 func runWorktree(e *engine.Engine, args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return usageErrorf("worktree needs a subcommand: add, remove, prune or owner")
+		return usageErrorf("worktree needs a subcommand: add, remove, clean, park, resume, keep, base, prune or owner")
 	}
 	ctx := context.Background()
 	switch args[0] {
@@ -103,6 +103,16 @@ func runWorktree(e *engine.Engine, args []string, stdout io.Writer) error {
 
 	case "prune":
 		return runWorktreePrune(ctx, e, args[1:], stdout)
+	case "clean":
+		return runWorktreeClean(ctx, e, args[1:], stdout)
+	case "park":
+		return runWorktreePark(ctx, e, args[1:], stdout)
+	case "resume":
+		return runWorktreeResume(ctx, e, args[1:], stdout)
+	case "keep":
+		return runWorktreeKeep(ctx, e, args[1:], stdout)
+	case "base":
+		return runWorktreeBase(ctx, e, args[1:], stdout)
 
 	case "remove":
 		fs := flag.NewFlagSet("worktree remove", flag.ContinueOnError)

@@ -242,7 +242,7 @@ func (e *Engine) WorktreeStates(ctx context.Context, project string, opts States
 
 	running := map[int]bool{}
 	if overview, err := e.Overview(ctx, p.Name); err != nil {
-		report.Notes = append(report.Notes, "Docker could not be asked, so `in-use` only counts recent MCP calls: "+firstLine(err.Error()))
+		report.Notes = append(report.Notes, "Docker could not be asked, so in-use only counts recent calls of agents through MCP")
 	} else {
 		for i, o := range overview {
 			for _, s := range o.Stacks {

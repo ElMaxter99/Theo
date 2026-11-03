@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/ElMaxter99/Theo/internal/compose"
 	"github.com/ElMaxter99/Theo/internal/registry"
@@ -61,7 +62,10 @@ type WorktreeStatus struct {
 	// Instance and Settings are absent for a bare or missing worktree.
 	Instance *InstanceStatus `json:"instance,omitempty"`
 	Settings *SettingsStatus `json:"settings,omitempty"`
-	Warnings []StatusWarning `json:"warnings"`
+	// Lifecycle is where the workspace is in its life (ADR-0016); absent for
+	// the main worktree and when it cannot be told.
+	Lifecycle *Lifecycle      `json:"lifecycle,omitempty"`
+	Warnings  []StatusWarning `json:"warnings"`
 }
 
 // InstanceStatus is the state of the Compose project of a worktree.
@@ -131,7 +135,8 @@ type SettingsStatus struct {
 type StatusWarning struct {
 	// Kind is one of: port-conflict, foreign-stack, missing-env-file,
 	// config-error, fixed-container-name, docker-unavailable,
-	// compose-changed, url-in-data, or a
+	// compose-changed, url-in-data, worktree-merged, worktree-inactive,
+	// instance-idle, or a
 	// `theo reconcile` finding kind ("worktree missing", "containers
 	// removed", ...).
 	Kind    string `json:"kind"`
@@ -237,6 +242,11 @@ func (e *Engine) projectStatus(ctx context.Context, p registry.Project, drift *R
 		}
 		return ps
 	}
+	var states []WorktreeState
+	threshold := InactiveAfter(p)
+	if r, err := e.WorktreeStates(ctx, p.Name, StatesOptions{}); err == nil && len(r.Worktrees) == len(list) {
+		states = r.Worktrees
+	}
 	for i, wt := range list {
 		ws := WorktreeStatus{
 			Path: wt.Path, Branch: wt.Branch, Head: wt.Head, Kind: KindWorktree, Detached: wt.Detached,
@@ -250,6 +260,11 @@ func (e *Engine) projectStatus(ctx context.Context, p registry.Project, drift *R
 		}
 		if !wt.Bare && !wt.Prunable {
 			e.instanceStatus(ctx, p, &ws, dockerDown)
+		}
+		if i > 0 && states != nil && states[i].State != "" {
+			l := states[i].Lifecycle
+			ws.Lifecycle = &l
+			ws.Warnings = append(ws.Warnings, lifecycleWarnings(p.Name, states[i], threshold, e.now())...)
 		}
 		for _, f := range drift.Findings {
 			if strings.EqualFold(f.Project, p.Name) && f.Worktree != "" && samePath(f.Worktree, wt.Path) {
@@ -491,4 +506,27 @@ func statusSelector(ws *WorktreeStatus) string {
 func firstLine(s string) string {
 	line, _, _ := strings.Cut(strings.TrimSpace(s), "\n")
 	return line
+}
+
+// lifecycleWarnings are the warnings of forgotten work for one workspace.
+func lifecycleWarnings(project string, ws WorktreeState, threshold int, now time.Time) []StatusWarning {
+	sel := selectorOf(ws.Worktree.Worktree)
+	var out []StatusWarning
+	switch ws.State {
+	case LifeMerged:
+		how := "its branch is merged into " + ws.Base
+		if ws.MergedBy == MergedContent {
+			how += " (squash or rebase)"
+		}
+		out = append(out, StatusWarning{Kind: "worktree-merged", Message: how + ", so the worktree can go",
+			Fix: fmt.Sprintf("theo worktree clean %s --confirm %s", project, project)})
+	case LifeInactive:
+		out = append(out, StatusWarning{Kind: "worktree-inactive", Message: fmt.Sprintf("no activity for %d days (threshold %d days)", ws.IdleDays, threshold),
+			Fix: fmt.Sprintf("park it or keep it: theo worktree park %s %s", project, sel)})
+	}
+	if ws.Running && !ws.ActivityAt.IsZero() && now.Sub(ws.ActivityAt) > time.Duration(threshold)*24*time.Hour {
+		out = append(out, StatusWarning{Kind: "instance-idle", Message: fmt.Sprintf("running in an inactive worktree (no activity for %d days)", ws.IdleDays),
+			Fix: fmt.Sprintf("theo stop %s -w %s", project, sel)})
+	}
+	return out
 }
