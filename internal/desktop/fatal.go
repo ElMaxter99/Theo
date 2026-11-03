@@ -19,14 +19,24 @@ const WebView2DownloadURL = "https://developer.microsoft.com/microsoft-edge/webv
 func ReportFatal(w io.Writer, err error) {
 	msg := fmt.Sprintf("theo-desktop: %v", err)
 	fmt.Fprintln(w, msg)
-	if errors.Is(err, ErrNoWebview) && showMissingWebView2(WebView2Message(err)) {
-		if oerr := systemOpen(WebView2DownloadURL); oerr != nil {
-			fmt.Fprintf(w, "theo-desktop: %v\n", oerr)
+	if errors.Is(err, ErrNoWebview) {
+		if askMissingWebView2(WebView2Message(err)) {
+			if oerr := openURL(WebView2DownloadURL); oerr != nil {
+				fmt.Fprintf(w, "theo-desktop: %v\n", oerr)
+			}
 		}
 		return
 	}
-	showFatal(msg)
+	fatalDialog(msg)
 }
+
+// The dialogs and the browser, replaced in tests: a real dialog would wait
+// for a click that never comes.
+var (
+	fatalDialog        = showFatal
+	askMissingWebView2 = showMissingWebView2
+	openURL            = systemOpen
+)
 
 // WebView2Message is the text of the missing-WebView2 dialog, in Spanish like
 // the interface (Q-029). The technical detail goes last, for bug reports.
