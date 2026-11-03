@@ -383,9 +383,9 @@ func (e *Engine) updateRecord(ctx context.Context, project, selector string, fn 
 }
 
 // Touch records that the owner of a workspace called Theo's MCP server about
-// it now, so the workspace counts as in use for InUseWindow. It writes at
-// most once a minute per workspace.
-func (e *Engine) Touch(ctx context.Context, project, selector string) error {
+// it now, so the workspace counts as in use for InUseWindow. It only touches
+// a workspace owned by owner, and writes at most once a minute per workspace.
+func (e *Engine) Touch(ctx context.Context, project, selector, owner string) error {
 	p, err := e.Project(project)
 	if err != nil {
 		return err
@@ -403,7 +403,8 @@ func (e *Engine) Touch(ctx context.Context, project, selector string) error {
 	if err != nil || workspaceKind(p, all, wt.Path) == KindMain {
 		return err
 	}
-	if rec, i := workspaceRecord(p, wt.Path); i >= 0 && now.Sub(rec.LastSeen) < time.Minute {
+	rec, i := workspaceRecord(p, wt.Path)
+	if i < 0 || !strings.EqualFold(rec.Owner, strings.TrimSpace(owner)) || now.Sub(rec.LastSeen) < time.Minute {
 		return nil
 	}
 	_, err = e.updateRecord(ctx, p.Name, wt.Path, func(rec *registry.Workspace) { rec.LastSeen = now })

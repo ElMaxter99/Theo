@@ -43,7 +43,7 @@ func allTools() []*tool {
 		},
 		{
 			name: "list_worktrees", title: "List worktrees", readOnly: true,
-			description: "List the workspaces of a project (main worktree, linked worktrees and clones) with branch, kind, owner and whether they have uncommitted changes.",
+			description: "List the workspaces of a project (main worktree, linked worktrees and clones) with branch, kind, owner, changes and lifecycle state (in-use, unpushed, pushed, new, merged, inactive, kept, missing) with why.",
 			params:      []param{pProject, {name: "owner", kind: "string", description: "Only the workspaces with this owner."}},
 			run:         runListWorktrees,
 		},
@@ -235,6 +235,22 @@ func allTools() []*tool {
 			},
 			run: runExplain,
 		},
+		{
+			name: "finish_worktree", title: "Finish your worktree", destructive: true,
+			description: "Close the worktree you own once your work is done: its branch must be merged, or pushed with nothing left to push, and it must have no uncommitted files and no running instance (call down first). " +
+				"The branch stays in the repository and on its remote; volumes are kept. Only the owner of the worktree can finish it.",
+			params: []param{pProject,
+				{name: "worktree", kind: "string", description: "Your worktree: branch, directory name or path.", required: true},
+				{name: "owner", kind: "string", description: "Who you are. Default: the server's --owner."},
+			},
+			run: runFinishWorktree,
+		},
+		{
+			name: "clean_worktrees", title: "Forgotten worktrees", readOnly: true,
+			description: "List the worktrees of a project that are merged (also by squash or rebase) or whose folder is gone, which `theo worktree clean` can close, and the inactive ones. It changes nothing: closing them is the user's call.",
+			params:      []param{pProject},
+			run:         runCleanWorktrees,
+		},
 	}
 }
 
@@ -265,11 +281,12 @@ func runProjectShow(_ context.Context, s *Server, a args) (*result, error) {
 }
 
 func runListWorktrees(ctx context.Context, s *Server, a args) (*result, error) {
-	list, err := s.opts.Engine.Worktrees(ctx, a.str("project"))
+	report, err := s.opts.Engine.WorktreeStates(ctx, a.str("project"), engine.StatesOptions{})
 	if err != nil {
 		return nil, err
 	}
-	kept := []engine.Worktree{}
+	list := report.Worktrees
+	kept := []engine.WorktreeState{}
 	owner := a.str("owner")
 	for _, wt := range list {
 		if owner == "" || wt.Owner == owner {
@@ -285,6 +302,9 @@ func runListWorktrees(ctx context.Context, s *Server, a args) (*result, error) {
 		state := "clean"
 		if wt.Dirty {
 			state = "uncommitted changes"
+		}
+		if wt.State != "" {
+			state = wt.State + ": " + wt.Reason
 		}
 		line := fmt.Sprintf("- %s [%s, %s] %s", ref, wt.Kind, state, wt.Path)
 		if wt.Owner != "" {

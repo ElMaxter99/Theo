@@ -64,6 +64,7 @@ func Snippet(name, owner string, readOnly bool) string {
 		b.WriteString("- After `up`, `restart` or `stop`, call `wait_for` (it returns when the instance is running, failed or stopped) instead of polling `status`.\n")
 		b.WriteString("- Read `logs` and `status`; `status` warns when the Compose files changed since the last `up`.\n")
 		b.WriteString("- Call `down` when you are done. Volumes are kept; deleting data is left to the user.\n")
+		b.WriteString("- When your branch is merged or pushed and nothing is left to commit, call `down` and then `finish_worktree` to close your worktree, so worktrees do not pile up. Never close someone else's.\n")
 	}
 	if owner != "" {
 		fmt.Fprintf(&b, "- Worktrees you create are labelled with the owner %q; `list_worktrees` with `owner` lists only yours.\n", owner)

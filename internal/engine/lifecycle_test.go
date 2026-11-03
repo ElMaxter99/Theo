@@ -211,7 +211,7 @@ func TestKeepAndHeartbeat(t *testing.T) {
 	if _, err := e.Keep(ctx, "app", "squash", KeepOptions{Until: time.Now().Add(-time.Hour)}); err == nil {
 		t.Error("a date in the past should fail")
 	}
-	if err := e.Touch(ctx, "app", "work"); err != nil {
+	if err := e.Touch(ctx, "app", "work", ""); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := statesByBranch(t, e)
@@ -386,7 +386,7 @@ func TestFinishWorktree(t *testing.T) {
 	testutil.Git(t, main, "init", "-q", "--bare", remote)
 	testutil.Git(t, main, "remote", "add", "origin", remote)
 	testutil.Git(t, added.Path, "push", "-q", "-u", "origin", "agent/task")
-	if err := e.Touch(ctx, "app", "agent/task"); err != nil {
+	if err := e.Touch(ctx, "app", "agent/task", "agent-1"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.FinishWorktree(ctx, "app", "agent/task", FinishOptions{Owner: "agent-1"}); err != nil {

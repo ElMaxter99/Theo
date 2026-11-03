@@ -288,6 +288,7 @@ func (s *Server) call(ctx context.Context, t *tool, raw json.RawMessage) (res *r
 	if err != nil {
 		return toolError(fmt.Errorf("%w: %s", errBadArgs, err.Error()))
 	}
+	s.heartbeat(ctx, t, a)
 	if t.name != "explain" { // explain takes the lock exclusively itself
 		s.explainMu.RLock()
 		defer s.explainMu.RUnlock()
