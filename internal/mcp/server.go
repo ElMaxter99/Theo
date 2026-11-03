@@ -4,7 +4,7 @@
 // It is hand-rolled on purpose (Theo keeps its dependencies to a minimum) and
 // implements the part of the protocol a tool server needs: initialize, ping,
 // tools/list and tools/call, plus the initialized and cancelled
-// notifications. The tools call the same engine functions as the CLI, never
+// notifications, and notifications/progress while a mutating tool runs. The tools call the same engine functions as the CLI, never
 // the theo binary, and return the same JSON shapes as its --json output.
 package mcp
 
@@ -56,6 +56,9 @@ type Options struct {
 	Owner string
 	// Version is reported as the server's version. Empty means engine.Version.
 	Version string
+	// Resources serves theo://status resources with subscriptions
+	// (experimental; see resources.go).
+	Resources bool
 	// ProxyPort says on which port `theo proxy` listens, when one runs. Nil
 	// looks in Theo's data directory (proxy.json).
 	ProxyPort func() (int, bool)
@@ -80,6 +83,8 @@ type Server struct {
 
 	callsMu sync.Mutex
 	calls   map[string]context.CancelFunc // in-flight tools/call by request id
+
+	subs subscriptions
 }
 
 // New returns a server with the given options.
@@ -138,6 +143,12 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 	r := bufio.NewReaderSize(in, 64<<10)
 	var wg sync.WaitGroup
 	defer wg.Wait()
+	if s.opts.Resources {
+		s.subs.wakeup = make(chan struct{}, 1)
+		watchCtx, stop := context.WithCancel(ctx)
+		defer stop()
+		go s.watch(watchCtx)
+	}
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -214,6 +225,9 @@ func (s *Server) handle(ctx context.Context, line []byte, wg *sync.WaitGroup) {
 		var p struct {
 			Name      string          `json:"name"`
 			Arguments json.RawMessage `json:"arguments"`
+			Meta      struct {
+				ProgressToken json.RawMessage `json:"progressToken"`
+			} `json:"_meta"`
 		}
 		if err := strictObject(req.Params, &p); err != nil || p.Name == "" {
 			s.send(response{ID: req.ID, Error: &rpcError{Code: codeInvalidParams, Message: `invalid params: tools/call needs {"name": <tool>, "arguments": {...}}`}})
@@ -228,7 +242,7 @@ func (s *Server) handle(ctx context.Context, line []byte, wg *sync.WaitGroup) {
 			s.send(response{ID: req.ID, Error: &rpcError{Code: codeInvalidParams, Message: msg}})
 			return
 		}
-		callCtx, cancel := context.WithCancel(ctx)
+		callCtx, cancel := context.WithCancel(withProgress(ctx, s, p.Meta.ProgressToken))
 		key := string(req.ID)
 		s.callsMu.Lock()
 		s.calls[key] = cancel
@@ -249,6 +263,12 @@ func (s *Server) handle(ctx context.Context, line []byte, wg *sync.WaitGroup) {
 			s.send(response{ID: req.ID, Result: res})
 		}()
 	default:
+		if s.opts.Resources {
+			if r, ok := s.handleResource(ctx, req); ok {
+				s.reply(req.ID, r)
+				return
+			}
+		}
 		s.send(response{ID: req.ID, Error: &rpcError{Code: codeMethodNotFound, Message: fmt.Sprintf("method %q not found", req.Method)}})
 	}
 }
@@ -325,9 +345,13 @@ func (s *Server) initialize(params json.RawMessage) rpcResult {
 			version = v
 		}
 	}
+	caps := map[string]any{"tools": map[string]any{"listChanged": false}}
+	if s.opts.Resources {
+		caps["resources"] = map[string]any{"subscribe": true, "listChanged": false}
+	}
 	return rpcResult{result: map[string]any{
 		"protocolVersion": version,
-		"capabilities":    map[string]any{"tools": map[string]any{"listChanged": false}},
+		"capabilities":    caps,
 		"serverInfo":      map[string]any{"name": "theo", "title": "Theo", "version": s.opts.Version},
 		"instructions":    s.instructions(),
 	}}
@@ -337,6 +361,7 @@ func (s *Server) instructions() string {
 	text := "Theo runs an isolated Docker Compose environment per Git worktree of a registered project. " +
 		"Start with list_projects, then list_worktrees; select a worktree by branch, directory name or path (empty means the main worktree). " +
 		"Typical flow: add_worktree, up, ports (URLs), logs, down, remove_worktree. explain shows the Git and Docker commands of up or down without running them. " +
+		"After up, restart or stop, call wait_for instead of polling status. " +
 		"Volumes are always kept; deleting data (volume purge, restore, clone) and removing projects are left to the human."
 	if s.opts.ReadOnly {
 		text += " This server is read-only: only tools that change nothing are available."

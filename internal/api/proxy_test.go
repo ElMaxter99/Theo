@@ -1,10 +1,13 @@
 package api_test
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -151,4 +154,67 @@ func TestInterfaceProxyAutostart(t *testing.T) {
 		t.Fatalf("after a start with the switch on: %+v", st)
 	}
 	e.c.call("POST", "/api/v1/proxy/stop", map[string]any{}, nil)
+}
+
+func TestInterfaceProxyServesHTTPS(t *testing.T) {
+	e := newEnv(t)
+	port, httpsPort := freePort(t), freePort(t)
+	var st struct {
+		proxyStatus
+		HTTPS     bool `json:"https"`
+		HTTPSPort int  `json:"https_port"`
+		Authority *struct {
+			Path         string `json:"path"`
+			Trusted      bool   `json:"trusted"`
+			CanTrustHere bool   `json:"can_trust_here"`
+			Command      string `json:"command"`
+		} `json:"authority"`
+	}
+	if code := e.c.call("POST", "/api/v1/proxy/start", map[string]any{"port": port, "https": true, "https_port": httpsPort}, &st); code != 200 || !st.HTTPS || st.HTTPSPort != httpsPort {
+		t.Fatalf("start with HTTPS = %d %+v", code, st)
+	}
+	t.Cleanup(func() { e.c.call("POST", "/api/v1/proxy/stop", map[string]any{}, nil) })
+	if st.Authority == nil || st.Authority.Path != filepath.Join(e.dataDir, "proxy", "ca.pem") || st.Authority.Command != "theo proxy trust" {
+		t.Fatalf("authority = %+v", st.Authority)
+	}
+	if rec, ok := proxy.Running(e.dataDir); !ok || rec.HTTPSPort != httpsPort {
+		t.Errorf("proxy.json = %+v %v", rec, ok)
+	}
+	if data, _ := os.ReadFile(filepath.Join(e.dataDir, "proxy-ui.json")); !strings.Contains(string(data), `"https": true`) {
+		t.Errorf("proxy-ui.json does not remember HTTPS: %s", data)
+	}
+
+	var ov struct {
+		Worktrees []struct {
+			ProxyURLs []struct {
+				HTTPSURL string `json:"https_url"`
+			} `json:"proxy_urls"`
+		}
+	}
+	e.c.call("GET", "/api/v1/projects/ubapp/overview", nil, &ov)
+	if want := "https://main.ubapp.localhost:" + strconv.Itoa(httpsPort); len(ov.Worktrees) == 0 || len(ov.Worktrees[0].ProxyURLs) == 0 || ov.Worktrees[0].ProxyURLs[0].HTTPSURL != want {
+		t.Errorf("overview proxy_urls = %+v, want %s", ov.Worktrees, want)
+	}
+
+	// A browser that trusts the authority gets a valid certificate.
+	ca, err := proxy.LoadCA(e.dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(ca.Cert)
+	conn, err := tls.Dial("tcp", "127.0.0.1:"+strconv.Itoa(httpsPort), &tls.Config{ServerName: "main.ubapp.localhost", RootCAs: roots})
+	if err != nil {
+		t.Fatalf("TLS handshake: %v", err)
+	}
+	conn.Close()
+
+	if runtime.GOOS == "linux" {
+		var ae struct {
+			Error struct{ Code, Hint string }
+		}
+		if code := e.c.call("POST", "/api/v1/proxy/trust", map[string]any{}, &ae); code != 409 || ae.Error.Code != "needs_terminal" || !strings.Contains(ae.Error.Hint, "theo proxy trust") {
+			t.Errorf("trust on Linux = %d %+v", code, ae)
+		}
+	}
 }

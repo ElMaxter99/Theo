@@ -87,6 +87,9 @@ func printStatus(w io.Writer, r *engine.StatusReport) error {
 		for _, wt := range p.Worktrees {
 			for _, warn := range wt.Warnings {
 				fmt.Fprintf(w, "  ! %s: %s [%s]\n", statusRef(wt), warn.Message, warn.Kind)
+				if warn.Command != "" {
+					fmt.Fprintf(w, "      -> %s\n", warn.Command)
+				}
 				if warn.Fix != "" {
 					fmt.Fprintf(w, "      -> %s\n", warn.Fix)
 				}

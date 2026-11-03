@@ -110,10 +110,10 @@ func TestProxyRunningState(t *testing.T) {
 
 func TestProxyCompletion(t *testing.T) {
 	t.Setenv(registry.EnvHome, t.TempDir())
-	if got := suggest(t, "", "proxy"); !reflect.DeepEqual(got, []string{"routes"}) {
+	if got := suggest(t, "", "proxy"); !reflect.DeepEqual(got, []string{"routes", "trust", "untrust"}) {
 		t.Errorf("proxy = %v", got)
 	}
-	if got := suggest(t, "--", "proxy"); !strings.Contains(strings.Join(got, " "), "--allow-remote") {
+	if got := suggest(t, "--", "proxy"); !strings.Contains(strings.Join(got, " "), "--allow-remote") || !strings.Contains(strings.Join(got, " "), "--https-port") {
 		t.Errorf("proxy flags = %v", got)
 	}
 	if got := suggest(t, "--ho", "proxy", "routes"); !reflect.DeepEqual(got, []string{"--hosts"}) {

@@ -131,12 +131,19 @@ type SettingsStatus struct {
 type StatusWarning struct {
 	// Kind is one of: port-conflict, foreign-stack, missing-env-file,
 	// config-error, fixed-container-name, docker-unavailable,
-	// compose-changed, or a
+	// compose-changed, url-in-data, or a
 	// `theo reconcile` finding kind ("worktree missing", "containers
 	// removed", ...).
 	Kind    string `json:"kind"`
 	Message string `json:"message"`
 	Fix     string `json:"fix,omitempty"`
+	// For url-in-data: the address the data was made for, the current one,
+	// the service, and the application's own command that updates the data
+	// (empty when Theo does not know one).
+	Previous string `json:"previous,omitempty"`
+	Current  string `json:"current,omitempty"`
+	Service  string `json:"service,omitempty"`
+	Command  string `json:"command,omitempty"`
 }
 
 // Status builds the dashboard of one project, or of every registered project
@@ -339,6 +346,11 @@ func (e *Engine) instanceStatus(ctx context.Context, p registry.Project, ws *Wor
 		ws.Instance.Ports = append(ws.Instance.Ports, PortStatus{
 			Service: m.Service, ContainerPort: m.Target, Protocol: m.Protocol, HostPort: port, URL: m.URL(), Status: m.Status,
 		})
+	}
+	if len(containers) > 0 {
+		if w := e.URLInDataWarning(inst, plan, statusSelector(ws)); w != nil {
+			ws.Warnings = append(ws.Warnings, *w)
+		}
 	}
 	for _, m := range plan.Conflicts() {
 		warn("port-conflict", fmt.Sprintf("host port %s (%s, container port %d/%s) is already in use", m.Configured, m.Service, m.Target, m.Protocol),

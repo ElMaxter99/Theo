@@ -150,6 +150,7 @@ func allTools() []*tool {
 			params:      []param{{name: "project", kind: "string", description: "Only this project. Empty: all of them."}},
 			run:         runStatus,
 		},
+		waitForTool(),
 		{
 			name: "proxy_routes", title: "Local domains", readOnly: true,
 			description: "The names `theo proxy` serves each instance on (http://<service>.<instance>.<project>.localhost:7080, and <instance>.<project> for its web, app, api or frontend service), " +
@@ -806,7 +807,14 @@ func (s *Server) mutate(ctx context.Context, a args, op string, fn func(e *engin
 	defer release()
 	mask := masker(e, inst)
 	out := newTailBuffer(outputLimit)
-	res, err := fn(e, inst, out)
+	var w io.Writer = out
+	if pr := progressOf(ctx); pr != nil {
+		pr.mask = mask
+		pr.notify(fmt.Sprintf("%s %s", op, inst.Compose), true)
+		w = io.MultiWriter(out, pr)
+		defer pr.notify(fmt.Sprintf("%s %s: finished", op, inst.Compose), true)
+	}
+	res, err := fn(e, inst, w)
 	text, truncated := out.Text()
 	text = mask(text)
 	if err != nil {
@@ -1100,6 +1108,19 @@ func (s *Server) proxyPort() (int, bool) {
 	return proxy.RunningPort(dir)
 }
 
+// proxyHTTPSPort is the HTTPS port of the running proxy; 0 when it serves
+// only HTTP (or under test).
+func (s *Server) proxyHTTPSPort() int {
+	if s.opts.ProxyPort != nil {
+		return 0
+	}
+	dir, err := registry.DefaultDir()
+	if err != nil {
+		return 0
+	}
+	return proxy.RunningHTTPSPort(dir)
+}
+
 // proxyLinks are the proxy addresses of an instance while a proxy runs; nil
 // otherwise.
 func (s *Server) proxyLinks(inst *engine.Instance, views []portView) []proxy.Link {
@@ -1118,7 +1139,7 @@ func (s *Server) proxyLinks(inst *engine.Instance, views []portView) []proxy.Lin
 	targets := proxy.InstanceTargets(proxy.Instance{
 		Project: inst.Project, Worktree: inst.Workspace, Branch: inst.Branch, Main: inst.Main, ComposeProject: inst.Compose,
 	}, statuses)
-	return proxy.Links(targets, port)[inst.Workspace]
+	return proxy.Links(targets, port, s.proxyHTTPSPort())[inst.Workspace]
 }
 
 func linksText(links []proxy.Link) string {

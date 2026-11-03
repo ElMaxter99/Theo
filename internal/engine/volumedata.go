@@ -689,5 +689,10 @@ func (e *Engine) CloneVolumes(ctx context.Context, src, dst *Instance, opts Clon
 		return nil
 	}()
 	e.record(dst, "volumes clone", err)
+	if err == nil {
+		if w := e.urlInDataAfterClone(ctx, src, dst); w != "" {
+			report.Warnings = append(report.Warnings, w)
+		}
+	}
 	return report, err
 }

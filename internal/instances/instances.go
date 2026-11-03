@@ -48,11 +48,24 @@ type Config struct {
 	// Profiles are the Compose profiles the instance always starts with, on
 	// top of the ones given to `up`.
 	Profiles []string `json:"profiles,omitempty"`
+	// DataAddress is the address the instance's data was made for, kept for
+	// applications that store their own address in their data (Q-020).
+	DataAddress *DataAddress `json:"data_address,omitempty"`
+}
+
+// DataAddress is the address an instance's data holds, and where it came
+// from: "start" (the first start Theo saw), "clone" (copied from From) or
+// "confirmed" (the user said the data was updated).
+type DataAddress struct {
+	URL    string    `json:"url"`
+	Source string    `json:"source"`
+	From   string    `json:"from,omitempty"`
+	Since  time.Time `json:"since"`
 }
 
 // Empty reports whether nothing is configured.
 func (c Config) Empty() bool {
-	return len(c.Env) == 0 && !c.NeutralizeContainerNames && len(c.Shared) == 0 && len(c.Join) == 0 && !c.AutoPorts && len(c.Profiles) == 0
+	return len(c.Env) == 0 && !c.NeutralizeContainerNames && len(c.Shared) == 0 && len(c.Join) == 0 && !c.AutoPorts && len(c.Profiles) == 0 && c.DataAddress == nil
 }
 
 // SharedSet is the group of services a project shares between instances.

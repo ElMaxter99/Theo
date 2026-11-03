@@ -75,7 +75,9 @@ function reset() {
     ],
     ops: new Map(),
     idem: new Map(),
-    proxy: { running: false, managed: false, port: 7080, autostart: false },
+    proxy: { running: false, managed: false, port: 7080, autostart: false, https: false, https_port: 7443 },
+    authority: null, // created the first time HTTPS is switched on
+    trusted: false,
     opSeq: 0,
     // Findings of the reconcile report; "forgettable" ones are Theo's own records.
     findings: [
@@ -170,10 +172,13 @@ function proxyLinks(w) {
   const inst = w.main ? "main" : w.compose_project.replace(new RegExp("^" + project.name + "-"), "");
   const host = `${inst}.${project.name}.localhost:${S.proxy.port}`;
   const running = w.rt.services.web === "running";
-  return [{ service: "web", url: `http://${host}`, default: true, running }, ...SERVICES.map((x) => ({ service: x.name, url: `http://${x.name}.${host}`, running: w.rt.services[x.name] === "running" }))];
+  const tls = S.proxy.https ? `${inst}.${project.name}.localhost:${S.proxy.https_port}` : "";
+  return [{ service: "web", url: `http://${host}`, https_url: tls ? `https://${tls}` : undefined, default: true, running },
+    ...SERVICES.map((x) => ({ service: x.name, url: `http://${x.name}.${host}`, https_url: tls ? `https://${x.name}.${tls}` : undefined, running: w.rt.services[x.name] === "running" }))];
 }
 function proxyStatus() {
-  return { ...S.proxy, pid: S.proxy.running ? 4242 : undefined, url: S.proxy.running ? `http://localhost:${S.proxy.port}/` : undefined };
+  const authority = S.authority ? { ...S.authority, trust: { system: S.trusted }, trusted: S.trusted, can_trust_here: true, command: "theo proxy trust" } : undefined;
+  return { ...S.proxy, pid: S.proxy.running ? 4242 : undefined, url: S.proxy.running ? `http://localhost:${S.proxy.port}/` : undefined, authority };
 }
 function containersOf(w) {
   // Same shape as the real server: raw `docker compose ps` records (capitalised keys).
@@ -465,7 +470,9 @@ async function api(req, res, url) {
   if (seg[0] === "diagnostics") return send(res, 200, diagnostics());
   if (seg[0] === "proxy") {
     if (!seg[1] && m === "GET") return send(res, 200, proxyStatus());
-    if (seg[1] === "start" && m === "POST") { const b = await readJson(req); S.proxy = { running: true, managed: true, port: b.port || 7080, autostart: true }; emitGlobal("state.changed", {}); return send(res, 200, proxyStatus()); }
+    if (seg[1] === "start" && m === "POST") { const b = await readJson(req); S.proxy = { running: true, managed: true, port: b.port || 7080, autostart: true, https: !!b.https, https_port: b.https_port || 7443 };
+      if (b.https && !S.authority) S.authority = { path: "/home/dev/.theo/proxy/ca.pem", created: new Date().toISOString(), fingerprint: "3F2A…" }; emitGlobal("state.changed", {}); return send(res, 200, proxyStatus()); }
+    if ((seg[1] === "trust" || seg[1] === "untrust") && m === "POST") { await readJson(req); S.trusted = seg[1] === "trust"; emitGlobal("state.changed", {}); return send(res, 200, proxyStatus()); }
     if (seg[1] === "stop" && m === "POST") { await readJson(req); S.proxy = { ...S.proxy, running: false, managed: false, autostart: false }; emitGlobal("state.changed", {}); return send(res, 200, proxyStatus()); }
   }
   if (await topLevel(req, res, seg, q)) return;

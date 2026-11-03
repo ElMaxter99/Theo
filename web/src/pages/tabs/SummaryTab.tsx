@@ -1,7 +1,10 @@
 import { api, wtPath } from "../../api/client.ts";
-import type { Services, WorktreeDetail } from "../../api/types.ts";
-import { Banner, ExternalLink } from "../../components/ui.tsx";
-import { useResource } from "../../lib/hooks.ts";
+import type { Services, WorktreeDetail, WtWarning } from "../../api/types.ts";
+import { Banner, ErrorBanner, ExternalLink } from "../../components/ui.tsx";
+import { CopyCommand } from "../../components/CopyCommand.tsx";
+import { useAction, useResource } from "../../lib/hooks.ts";
+import { announce } from "../../lib/live.ts";
+import { href } from "../../lib/router.ts";
 import { ServicesTab } from "./ServicesTab.tsx";
 import { PortsTab } from "./PortsTab.tsx";
 import { containerCounts } from "../../lib/status.ts";
@@ -35,7 +38,9 @@ export function SummaryTab({ project, w, lock }: { project: string; w: WorktreeD
         <section aria-labelledby="sum-warn">
           <h2 id="sum-warn">{t.summary.warnings}</h2>
           {warnings.map((x, i) => <Banner key={i} tone="warn"><p>{x}</p></Banner>)}
-          {(w.warnings ?? []).map((x, i) => <Banner key={"w" + i} tone="warn"><p>{x.message}</p>{x.fix ? <p>{x.fix}</p> : null}</Banner>)}
+          {(w.warnings ?? []).map((x, i) => x.kind === "url-in-data" && x.previous && x.current
+            ? <UrlInDataCard key={"w" + i} project={project} w={w} warning={x} />
+            : <Banner key={"w" + i} tone="warn"><p>{x.message}</p>{x.fix ? <p>{x.fix}</p> : null}</Banner>)}
         </section>
       ) : null}
 
@@ -62,11 +67,45 @@ export function SummaryTab({ project, w, lock }: { project: string; w: WorktreeD
           <dt>{t.summary.domains}</dt>
           <dd>
             {(w.proxy_urls ?? []).length > 0
-              ? <ul class="plain">{(w.proxy_urls ?? []).map((l, i) => <li key={i}><ExternalLink href={l.url} label={l.service}>{l.url.replace(/^https?:\/\//, "")}</ExternalLink>{l.default ? null : <span class="small muted"> {l.service}</span>}</li>)}</ul>
+              ? <ul class="plain">{(w.proxy_urls ?? []).map((l, i) => <li key={i}><ExternalLink href={l.url} label={l.service}>{l.url.replace(/^https?:\/\//, "")}</ExternalLink>{l.https_url ? <> · <ExternalLink href={l.https_url} label={`${l.service} HTTPS`}>HTTPS</ExternalLink></> : null}{l.default ? null : <span class="small muted"> {l.service}</span>}</li>)}</ul>
               : <span class="muted">{t.summary.noDomains}</span>}
           </dd>
         </dl>
       </section>
     </div>
+  );
+}
+
+// Q-020: the application keeps its own address in its data and the instance now answers elsewhere (board
+// "V-05 Instancia › Resumen con aviso Q-020"). Theo only warns; "It is fixed" records the current address.
+function UrlInDataCard({ project, w, warning }: { project: string; w: WorktreeDetail; warning: WtWarning }) {
+  const u = t.urlInData;
+  const app = /^(\S+) stores its own address/.exec(warning.message)?.[1] ?? warning.service ?? "";
+  const done = useAction(async () => {
+    await api.patch(`${wtPath(project, w.id)}/settings`, { data_address_updated: true });
+    announce(u.doneMsg);
+  });
+  return (
+    <section class="card stack url-in-data" aria-labelledby={`uid-${w.id}`}>
+      <div class="row">
+        <span class="badge warn">{u.chip}</span>
+        <h3 id={`uid-${w.id}`}>{u.title(app)}</h3>
+      </div>
+      <p class="small">{u.body(app)}</p>
+      <dl class="facts small">
+        <dt>{u.before}</dt><dd class="mono">{warning.previous}</dd>
+        <dt>{u.now}</dt><dd class="mono">{warning.current}</dd>
+      </dl>
+      <p class="small"><strong>{u.how}</strong></p>
+      {warning.command ? <><p class="small">{u.command}</p><pre class="mono cmd">{warning.command}</pre></> : null}
+      <p class="small">{warning.command ? u.envHint : u.envOnly}</p>
+      <ErrorBanner error={done.error} />
+      <div class="row">
+        {warning.command ? <CopyCommand command={warning.command} label={u.copy} /> : null}
+        <a class="btn sm" href={href.detail(project, w.id, "config")}>{u.variables}</a>
+        <button type="button" class="btn sm" disabled={done.busy} onClick={() => void done.run()}>{u.done}</button>
+        <a class="btn sm quiet" href={href.projectSettings(project)}>{u.notMine}</a>
+      </div>
+    </section>
   );
 }

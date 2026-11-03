@@ -115,7 +115,7 @@ func pickOpenURL(inst *engine.Instance, plan *engine.PortPlan, service string) (
 	if port, on := proxyPortForCLI(); on {
 		links := proxy.Links(proxy.InstanceTargets(proxy.Instance{
 			Project: inst.Project, Worktree: inst.Workspace, Branch: inst.Branch, Main: inst.Main, ComposeProject: inst.Compose,
-		}, statuses), port)[inst.Workspace]
+		}, statuses), port, 0)[inst.Workspace]
 		for _, l := range links {
 			// Without a service, the short form <instance>.<project>.
 			if l.Service == service && l.Default != named {

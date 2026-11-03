@@ -32,6 +32,8 @@ export interface Project {
   compose_files?: string[];
   /** Root-relative patterns copied from the main worktree into a new one (`project set --copy-on-add`). */
   copy_on_add?: string[];
+  /** Whether the app stores its own address in its data (Q-020): absent means auto (by image). */
+  url_in_data?: "on" | "off";
   added_at: string;
 }
 
@@ -59,6 +61,11 @@ export interface WtWarning {
   kind: string;
   message: string;
   fix?: string;
+  /** url-in-data (Q-020): the address the data was made for, the current one, the service, and the app's own command. */
+  previous?: string;
+  current?: string;
+  service?: string;
+  command?: string;
 }
 
 export interface UrlInfo {
@@ -105,6 +112,8 @@ export interface Worktree {
 export interface ProxyLink {
   service: string;
   url: string;
+  /** The same address over HTTPS, while the proxy serves it. */
+  https_url?: string;
   /** The short form <instance>.<project>, for the web, app, api or frontend service. */
   default?: boolean;
   running: boolean;
@@ -120,6 +129,23 @@ export interface ProxyStatus {
   pid?: number;
   autostart: boolean;
   error?: string;
+  /** The running proxy also serves HTTPS (or, while off, the switch asks for it). */
+  https: boolean;
+  https_port: number;
+  /** Theo's local certificate authority, once it exists (ADR-0015). */
+  authority?: ProxyAuthority;
+}
+
+export interface ProxyAuthority {
+  /** The certificate, the file to import in Firefox. */
+  path: string;
+  created: string;
+  fingerprint: string;
+  trust: { system: boolean; nss?: "trusted" | "not-trusted" | "unknown" };
+  trusted: boolean;
+  /** Windows and macOS: the interface can trust it itself. Elsewhere it shows `command`. */
+  can_trust_here: boolean;
+  command: string;
 }
 
 export interface Overview {

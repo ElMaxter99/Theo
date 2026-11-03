@@ -15,10 +15,12 @@ const stateFile = "proxy.json"
 
 // State is what a running proxy writes.
 type State struct {
-	Addr    string    `json:"addr"`
-	Port    int       `json:"port"`
-	PID     int       `json:"pid"`
-	Started time.Time `json:"started"`
+	Addr string `json:"addr"`
+	Port int    `json:"port"`
+	// HTTPSPort is where it also serves HTTPS; 0 when it does not.
+	HTTPSPort int       `json:"https_port,omitempty"`
+	PID       int       `json:"pid"`
+	Started   time.Time `json:"started"`
 }
 
 // WriteState records a running proxy and returns the function that removes

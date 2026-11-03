@@ -5,7 +5,9 @@ with `--auto-ports`:
 
 ```sh
 theo proxy                      # foreground; Ctrl+C stops it
+theo proxy --https              # also https://…localhost:7443 (see HTTPS below)
 theo proxy routes [project]     # the table of names
+theo proxy trust | untrust      # trust Theo's local authority on this machine
 ```
 
 ```
@@ -125,6 +127,64 @@ curl 8.5 resolves `*.localhost` by itself while `getent` and Go's resolver do
 not. The browser rows come from the browsers' documented behaviour; the macOS,
 Windows and Safari rows are not verified by Theo's tests.
 
+## HTTPS
+
+Browsers already treat `*.localhost` as a secure context over plain HTTP, so
+most work needs nothing more. Some things need a real `https://`: OAuth
+providers that only accept HTTPS callbacks, `SameSite=None; Secure` cookies
+across domains, HSTS, or trying the production configuration. For those:
+
+```sh
+theo proxy --https [--https-port 7443]
+theo proxy trust                # once per machine
+```
+
+```
+http://main.shop.localhost:7080     as before
+https://main.shop.localhost:7443    the same instance over HTTPS
+```
+
+* The first time, Theo creates its **local authority** in `proxy/` of its data
+  directory (`ca.pem`, and `ca-key.pem` readable only by you). Its key never
+  leaves that folder. The authority carries *name constraints*: it can only
+  sign `localhost` and names under it, and no IP address, so even a leaked key
+  could not vouch for any other site (Chrome, Edge, Go and curl enforce this).
+* The proxy signs a certificate per name when a browser first asks for it,
+  valid for 30 days, and makes new ones each time it starts. An address typed
+  as an IP (`https://127.0.0.1:7443`) gets no valid certificate: use the names.
+* HTTP keeps working on its port; HTTPS is an addition, never a replacement.
+  The application sees `X-Forwarded-Proto: https` on HTTPS requests.
+* `theo proxy routes` and `--json` add the HTTPS address of each route
+  (`https_url`) while the proxy serves HTTPS.
+
+Until the machine trusts the authority, browsers warn on every name.
+`theo proxy trust` adds it, with the system's own tool, and the system asks
+you to confirm:
+
+| System | Where | What it runs |
+|---|---|---|
+| Windows | Your user's trusted roots (no administrator needed) | `certutil -user -addstore Root` |
+| macOS | Your login keychain | `security add-trusted-cert -r trustRoot` |
+| Linux | The system's store (needs `sudo`) and Chrome's store, `~/.pki/nssdb` | `update-ca-certificates` or `update-ca-trust`, and `certutil` (package `libnss3-tools` or `nss-tools`) |
+
+Restart the browser afterwards. `theo proxy untrust` removes it again; the
+files stay in the data directory, so trusting again later is the same
+authority. To start over, run `theo proxy untrust` and delete the `proxy/`
+folder.
+
+### Firefox
+
+Firefox keeps a store of its own on Linux and macOS (on Windows it trusts the
+system's roots by default). Theo does not change it. To trust the authority
+there: Settings → Privacy & Security → Certificates → View Certificates →
+Authorities → Import, choose `ca.pem` from `proxy/` in Theo's data directory,
+and tick "Trust this CA to identify websites".
+
+Switching an instance to HTTPS changes its address. Applications that keep
+their address in their data (WordPress and others) may keep sending you to
+the old one: Theo warns about it (see
+[`volumes.md`](volumes.md) and the `url-in-data` warning of `theo status`).
+
 ## With the web interface
 
 The interface (`theo ui` and `theo-desktop`) can run the proxy itself:
@@ -142,6 +202,13 @@ project panel shows each running instance's local domains above its
 `localhost:<port>` links, and the Summary tab lists every name. A proxy
 started with `theo proxy` is shown in Settings but can only be stopped in its
 terminal.
+
+**Also serve HTTPS on port** (7443 by default) does what `--https` does; it
+is remembered with the switch. Below it, the local authority shows whether this
+machine trusts it. On Windows and macOS, **Trust on this machine** and **Stop
+trusting** run `theo proxy trust` and `untrust` (the system shows its own
+confirmation); on Linux, where it needs `sudo`, the interface shows the
+command to run in a terminal.
 
 The two servers are separate: the interface listens on
 a random `127.0.0.1` port, the proxy on 7080. Browsers treat each

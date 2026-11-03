@@ -25,6 +25,7 @@ export function ProjectSettings({ project }: { project: string }) {
   const [envFile, setEnvFile] = useState("");
   const [dir, setDir] = useState("");
   const [copyOn, setCopyOn] = useState("");
+  const [urlMode, setUrlMode] = useState("auto");
   const [renaming, setRenaming] = useState(false);
   const [removing, setRemoving] = useState(false);
   useEffect(() => setTitle([t.projectTabs.settings, project]), [project]);
@@ -35,7 +36,8 @@ export function ProjectSettings({ project }: { project: string }) {
     setEnvFile(p.env_file ?? "");
     setDir(p.worktree_dir ?? "");
     setCopyOn((p.copy_on_add ?? []).join("\n"));
-  }, [p?.name, p?.compose_files?.join("|"), p?.env_file, p?.worktree_dir, p?.copy_on_add?.join("|")]);
+    setUrlMode(p.url_in_data ?? "auto");
+  }, [p?.name, p?.compose_files?.join("|"), p?.env_file, p?.worktree_dir, p?.copy_on_add?.join("|"), p?.url_in_data]);
 
   const save = useAction(async () => {
     await api.patch(projectPath(project), {
@@ -43,6 +45,7 @@ export function ProjectSettings({ project }: { project: string }) {
       env_file: envFile.trim() || null,
       worktree_dir: dir.trim() || null,
       copy_on_add: lines(copyOn).length > 0 ? lines(copyOn) : null,
+      url_in_data: urlMode === "auto" ? null : urlMode,
     });
     announce(ps.saved);
     res.reload();
@@ -68,6 +71,11 @@ export function ProjectSettings({ project }: { project: string }) {
         </Field>
         <Field id="ps-copy" label={ps.copyOnAdd} hint={ps.copyOnAddHint}>
           <textarea id="ps-copy" class="input mono" rows={3} value={copyOn} placeholder=".env.local" onInput={(e) => setCopyOn((e.currentTarget as HTMLTextAreaElement).value)} {...describedBy("ps-copy", ps.copyOnAddHint)} />
+        </Field>
+        <Field id="ps-url" label={ps.urlInData} hint={ps.urlInDataHint}>
+          <select id="ps-url" class="input auto" value={urlMode} onChange={(e) => setUrlMode((e.currentTarget as HTMLSelectElement).value)} {...describedBy("ps-url", ps.urlInDataHint)}>
+            {["auto", "on", "off"].map((m) => <option key={m} value={m}>{ps.urlInDataOptions[m]}</option>)}
+          </select>
         </Field>
         <ErrorBanner error={save.error} />
         <div class="row">

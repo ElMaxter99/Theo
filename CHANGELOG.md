@@ -2,7 +2,17 @@
 
 Notable changes per release. Each release on GitHub also lists every merged pull request.
 
-## v0.2.0 (unreleased)
+## v0.3.0 (unreleased)
+
+### New
+- **HTTPS for the local domains:** `theo proxy --https` (and **Also serve HTTPS** in Settings → Local domains) also serves every instance at `https://<instance>.<project>.localhost:7443`. Certificates come from a local authority Theo creates in its data directory, limited with name constraints to `localhost` and the names under it, so its key cannot vouch for any other site. `theo proxy trust` and `untrust` add it to or remove it from this machine's trusted roots (on Windows and macOS also from the interface; on Linux with `sudo`, plus Chrome's own store). Routes, `--json`, the API and the interface show the HTTPS address (`https_url`) while it runs. See [docs/cli/proxy.md](docs/cli/proxy.md#https).
+- **MCP, knowing when things change:** `up`, `down`, `restart`, `stop` and `start` send `notifications/progress` with Docker's latest line when the client asks for progress (Claude Code does); the new read-only tool **`wait_for`** waits until an instance is running, stopped or changed (at most 120 s) and returns early when it fails; and `theo mcp --resources` (experimental) serves `theo://status` resources with subscriptions. The paragraph of `theo mcp install` tells agents to use `wait_for`. See [docs/cli/mcp.md](docs/cli/mcp.md#knowing-when-things-change).
+- **Address stored in the data (Q-020):** for applications that keep their own address in their data (WordPress, Ghost, Drupal, Joomla, Matomo, Nextcloud, or any project with `theo project set --url-in-data on`), Theo warns (`url-in-data`) when an instance answers on another address than the one its data was made for: after `volumes clone`, after `up`, in `theo status`, MCP and the interface (a card on the instance summary with the old and the new address and what to do). Theo never changes data. `theo instance set --data-address-updated` records the new address once the data is updated.
+
+### Changed
+- **Desktop, missing WebView2 (Windows):** the dialog now explains in Spanish what is missing, offers to open Microsoft's download page (Yes / No) and points to `theo ui` in the meantime. The technical detail stays at the end for bug reports.
+
+## v0.2.0
 
 ### New
 - **Redesigned interface.** The web interface and the desktop app are reorganised around what you do most:

@@ -297,6 +297,7 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 		var composeFiles stringList
 		fs.Var(&composeFiles, "compose-file", "Compose file, relative to each worktree (repeatable; the order matters)")
 		defaultCompose := fs.Bool("default-compose-files", false, "go back to the Compose files Compose finds by itself")
+		urlInData := fs.String("url-in-data", "", "whether the application stores its own address in its data: auto (by image), on or off")
 		asJSON := fs.Bool("json", false, "print the project as JSON")
 		pos, err := parse(fs, args[1:])
 		if err != nil {
@@ -304,6 +305,23 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 		}
 		if len(pos) != 1 {
 			return usageErrorf("project set needs exactly one project name")
+		}
+		if *urlInData != "" {
+			p, err := e.SetURLInData(pos[0], *urlInData)
+			if err != nil {
+				return err
+			}
+			switch p.URLInData {
+			case engine.URLInDataOn:
+				fmt.Fprintf(stdout, "Project %q stores its address in its data: Theo warns when an instance answers elsewhere\n", p.Name)
+			case engine.URLInDataOff:
+				fmt.Fprintf(stdout, "Project %q does not store its address in its data: no url-in-data warnings\n", p.Name)
+			default:
+				fmt.Fprintf(stdout, "Project %q: url-in-data warnings when an image is known to store its address (WordPress, Ghost, Drupal, Joomla, Matomo, Nextcloud)\n", p.Name)
+			}
+			if *envFile == "" && !*noEnvFile && *worktreeDir == "" && !*defaultDir && len(composeFiles) == 0 && !*defaultCompose && len(copyOnAdd) == 0 && !*noCopyOnAdd {
+				return nil
+			}
 		}
 		if len(copyOnAdd) > 0 || *noCopyOnAdd {
 			if len(copyOnAdd) > 0 && *noCopyOnAdd {

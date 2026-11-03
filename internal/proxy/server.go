@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"html"
@@ -31,6 +32,9 @@ type Handler struct {
 	Source func(context.Context) ([]Target, error)
 	// Port is the proxy's own port, for the URLs it shows.
 	Port int
+	// HTTPSPort is the port it also serves HTTPS on, for the URLs it shows
+	// (0 when it does not).
+	HTTPSPort int
 	// TTL is how long a table is used before it is read again (DefaultTTL
 	// when zero).
 	TTL time.Duration
@@ -67,10 +71,12 @@ func (h *Handler) Table(ctx context.Context, force bool) (*Table, error) {
 	if err != nil {
 		if h.table == nil {
 			h.table = BuildTable(nil, h.Port)
+			h.table.SetHTTPS(h.HTTPSPort)
 		}
 		return h.table, err // keep serving what was known
 	}
 	h.table = BuildTable(targets, h.Port)
+	h.table.SetHTTPS(h.HTTPSPort)
 	return h.table, nil
 }
 
@@ -91,7 +97,7 @@ func (h *Handler) proxy() *httputil.ReverseProxy {
 				}
 				writePage(w, http.StatusBadGateway, "Bad gateway",
 					fmt.Sprintf("%s (%s of %s, instance %s) did not answer on %s: %v. %s",
-						rt.Host, rt.Service, rt.Project, rt.Instance, rt.Target, err, startHint(rt)), nil)
+						rt.Host, rt.Service, rt.Project, rt.Instance, rt.Target, err, startHint(rt)), nil, false)
 			},
 		}
 		if h.ErrorLog == nil {
@@ -130,13 +136,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			msg += " Theo could not read the instances: " + firstLine(err.Error())
 		}
-		writePage(w, status, title, msg, tbl.Routes)
+		writePage(w, status, title, msg, tbl.Routes, r.TLS != nil)
 		return
 	}
 	if !rt.Running {
 		writePage(w, http.StatusBadGateway, "Not running",
 			fmt.Sprintf("%s goes to %s of %s (instance %s), which is not running. %s",
-				rt.Host, rt.Service, rt.Project, rt.Instance, startHint(rt)), nil)
+				rt.Host, rt.Service, rt.Project, rt.Instance, startHint(rt)), nil, false)
 		return
 	}
 	h.proxy().ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), routeKey{}, rt)))
@@ -144,7 +150,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // writePage answers with a small page that lists the routes: HTML for a
 // browser, plain text for curl and scripts.
-func writePage(w http.ResponseWriter, status int, title, msg string, routes []Route) {
+func writePage(w http.ResponseWriter, status int, title, msg string, routes []Route, secure bool) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	var b strings.Builder
@@ -170,8 +176,12 @@ func writePage(w http.ResponseWriter, status int, title, msg string, routes []Ro
 			if !r.Running {
 				state, class = "not running", " class=\"off\""
 			}
+			link := r.URL
+			if secure && r.HTTPSURL != "" {
+				link = r.HTTPSURL
+			}
 			fmt.Fprintf(&b, "<tr%s><td><a href=\"%s/\">%s</a></td><td>%s</td><td>%s</td><td>%s</td><td><code>%s</code></td><td>%s</td></tr>\n",
-				class, html.EscapeString(r.URL), html.EscapeString(r.Host), html.EscapeString(r.Project), html.EscapeString(r.Instance),
+				class, html.EscapeString(link), html.EscapeString(r.Host), html.EscapeString(r.Project), html.EscapeString(r.Instance),
 				html.EscapeString(r.Service), html.EscapeString(r.Target), state)
 		}
 		b.WriteString("</table>\n")
@@ -199,6 +209,12 @@ func CheckAddr(addr string, allowRemote bool) (string, error) {
 		return "", fmt.Errorf("--addr %s is not a loopback address: other machines could reach your instances through it. Pass --allow-remote if that is what you want", addr)
 	}
 	return ip.String(), nil
+}
+
+// ServeTLS runs the proxy over HTTPS on ln, with the certificates of ca,
+// until ctx is done.
+func ServeTLS(ctx context.Context, ln net.Listener, h *Handler, ca *CA) error {
+	return Serve(ctx, tls.NewListener(ln, ca.TLSConfig()), h)
 }
 
 // Serve runs the proxy on ln until ctx is done, then stops it, waiting a

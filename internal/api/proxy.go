@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,6 +32,8 @@ const proxyPrefsFile = "proxy-ui.json"
 type proxyPrefs struct {
 	Autostart bool `json:"autostart"`
 	Port      int  `json:"port,omitempty"`
+	HTTPS     bool `json:"https,omitempty"`
+	HTTPSPort int  `json:"https_port,omitempty"`
 }
 
 // ProxyStatus is the answer of GET /proxy.
@@ -47,16 +50,36 @@ type ProxyStatus struct {
 	// Autostart says whether the interface starts its proxy when it starts.
 	Autostart bool   `json:"autostart"`
 	Error     string `json:"error,omitempty"` // why the last start failed
+	// HTTPS is true while the running proxy also serves HTTPS (or, when no
+	// proxy runs, when the switch asks for it).
+	HTTPS     bool `json:"https"`
+	HTTPSPort int  `json:"https_port"`
+	// Authority is Theo's local certificate authority, once it exists.
+	Authority *AuthorityStatus `json:"authority,omitempty"`
+}
+
+// AuthorityStatus describes Theo's local certificate authority (ADR-0015).
+type AuthorityStatus struct {
+	Path        string            `json:"path"` // the certificate, the file to import in Firefox
+	Created     time.Time         `json:"created"`
+	Fingerprint string            `json:"fingerprint"`
+	Trust       proxy.TrustStatus `json:"trust"`
+	Trusted     bool              `json:"trusted"`
+	// CanTrustHere is true where the interface can trust it itself (Windows
+	// and macOS); elsewhere it shows Command.
+	CanTrustHere bool   `json:"can_trust_here"`
+	Command      string `json:"command"`
 }
 
 type proxyManager struct {
 	s *Server
 
-	mu      sync.Mutex
-	cancel  context.CancelFunc
-	done    chan struct{}
-	port    int
-	lastErr string
+	mu        sync.Mutex
+	cancel    context.CancelFunc
+	done      chan struct{}
+	port      int
+	httpsPort int
+	lastErr   string
 }
 
 func (m *proxyManager) prefsPath() string {
@@ -98,54 +121,92 @@ func (m *proxyManager) managed() bool {
 
 // status describes the proxy the interface knows about.
 func (m *proxyManager) status() ProxyStatus {
+	prefs := m.prefs()
 	m.mu.Lock()
-	st := ProxyStatus{Autostart: m.prefs().Autostart, Error: m.lastErr, Port: proxy.DefaultPort}
+	st := ProxyStatus{Autostart: prefs.Autostart, Error: m.lastErr, Port: proxy.DefaultPort, HTTPSPort: proxy.DefaultHTTPSPort}
 	if m.cancel != nil {
 		st.Running, st.Managed, st.Port, st.PID = true, true, m.port, os.Getpid()
+		st.HTTPS, st.HTTPSPort = m.httpsPort > 0, m.httpsPort
 	}
 	m.mu.Unlock()
 	if !st.Running && m.s.cfg.DataDir != "" {
 		if rec, ok := proxy.Running(m.s.cfg.DataDir); ok {
 			st.Running, st.Port, st.PID = true, rec.Port, rec.PID
+			st.HTTPS, st.HTTPSPort = rec.HTTPSPort > 0, rec.HTTPSPort
 		}
 	}
-	if p := m.prefs().Port; !st.Running && p > 0 {
-		st.Port = p
+	if !st.Running {
+		if prefs.Port > 0 {
+			st.Port = prefs.Port
+		}
+		st.HTTPS = prefs.HTTPS
+		if prefs.HTTPSPort > 0 {
+			st.HTTPSPort = prefs.HTTPSPort
+		}
+	}
+	if !st.HTTPS && st.HTTPSPort == 0 {
+		st.HTTPSPort = proxy.DefaultHTTPSPort
 	}
 	if st.Running {
 		st.URL = fmt.Sprintf("http://localhost:%d/", st.Port)
 	}
+	st.Authority = m.authority()
 	return st
 }
 
-// runningPort is the port of whichever proxy runs, for the links.
-func (m *proxyManager) runningPort() (int, bool) {
+// authority describes the local certificate authority, nil while there is
+// none.
+func (m *proxyManager) authority() *AuthorityStatus {
+	if m.s.cfg.DataDir == "" {
+		return nil
+	}
+	ca, err := proxy.LoadCA(m.s.cfg.DataDir)
+	if err != nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	trust := ca.Trust(ctx)
+	return &AuthorityStatus{
+		Path: ca.CertPath(), Created: ca.Cert.NotBefore.Add(time.Hour).UTC(), Fingerprint: ca.Fingerprint(),
+		Trust: trust, Trusted: trust.Trusted(), CanTrustHere: proxy.CanTrustWithoutTerminal(), Command: "theo proxy trust",
+	}
+}
+
+// runningPorts are the ports of whichever proxy runs, for the links
+// (httpsPort is 0 when it serves only HTTP).
+func (m *proxyManager) runningPorts() (port, httpsPort int, running bool) {
 	m.mu.Lock()
 	if m.cancel != nil {
 		defer m.mu.Unlock()
-		return m.port, true
+		return m.port, m.httpsPort, true
 	}
 	m.mu.Unlock()
 	if m.s.cfg.DataDir == "" {
-		return 0, false
+		return 0, 0, false
 	}
-	return proxy.RunningPort(m.s.cfg.DataDir)
+	rec, ok := proxy.Running(m.s.cfg.DataDir)
+	return rec.Port, rec.HTTPSPort, ok
 }
 
 var errProxyRunsElsewhere = errors.New("a proxy started with `theo proxy` is already running")
 
-// start runs the interface's proxy on 127.0.0.1:port.
-func (m *proxyManager) start(port int) error {
+// start runs the interface's proxy on 127.0.0.1:port, and over HTTPS on
+// 127.0.0.1:httpsPort when httpsPort is not 0.
+func (m *proxyManager) start(port, httpsPort int) error {
 	if port <= 0 {
 		port = proxy.DefaultPort
 	}
-	if port > 65535 {
+	if port > 65535 || httpsPort < 0 || httpsPort > 65535 {
 		return badRequest("port must be between 1 and 65535")
+	}
+	if httpsPort == port {
+		return badRequest("HTTP and HTTPS need different ports")
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.cancel != nil {
-		if m.port == port {
+		if m.port == port && m.httpsPort == httpsPort {
 			return nil
 		}
 		return errf(http.StatusConflict, "proxy_running", fmt.Sprintf("the interface's proxy already runs on port %d; switch it off first", m.port))
@@ -165,19 +226,53 @@ func (m *proxyManager) start(port int) error {
 		e.Hint = "another program uses that port; choose another one"
 		return e
 	}
+	var tlsLn net.Listener
+	var ca *proxy.CA
+	if httpsPort > 0 {
+		if m.s.cfg.DataDir == "" {
+			ln.Close()
+			return errf(http.StatusConflict, "no_data_dir", "HTTPS needs Theo's data directory, to keep its local authority")
+		}
+		if ca, _, err = proxy.EnsureCA(m.s.cfg.DataDir); err != nil {
+			ln.Close()
+			m.lastErr = "cannot prepare the local authority: " + err.Error()
+			return errf(http.StatusInternalServerError, "authority", m.lastErr)
+		}
+		taddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(httpsPort))
+		if tlsLn, err = net.Listen("tcp4", taddr); err != nil {
+			ln.Close()
+			m.lastErr = fmt.Sprintf("cannot listen on %s: %v", taddr, err)
+			e := errf(http.StatusConflict, "port_in_use", m.lastErr)
+			e.Hint = "another program uses that port; choose another one"
+			return e
+		}
+	}
 	m.lastErr = ""
-	h := &proxy.Handler{Source: proxy.EngineSource(m.s.eng, ""), Port: port, ErrorLog: log.New(m.s.log.Writer(), "proxy: ", 0)}
+	h := &proxy.Handler{Source: proxy.EngineSource(m.s.eng, ""), Port: port, HTTPSPort: httpsPort, ErrorLog: log.New(m.s.log.Writer(), "proxy: ", 0)}
 	var remove func()
 	if m.s.cfg.DataDir != "" {
-		remove, _ = proxy.WriteState(m.s.cfg.DataDir, proxy.State{Addr: "127.0.0.1", Port: port, PID: os.Getpid(), Started: time.Now().UTC()})
+		remove, _ = proxy.WriteState(m.s.cfg.DataDir, proxy.State{Addr: "127.0.0.1", Port: port, HTTPSPort: httpsPort, PID: os.Getpid(), Started: time.Now().UTC()})
 	}
 	ctx, cancel := context.WithCancel(m.s.workCtx)
 	done := make(chan struct{})
-	m.cancel, m.done, m.port = cancel, done, port
+	m.cancel, m.done, m.port, m.httpsPort = cancel, done, port, httpsPort
 	go func() {
 		defer close(done)
+		var tlsDone chan struct{}
+		if tlsLn != nil {
+			tlsDone = make(chan struct{})
+			go func() {
+				defer close(tlsDone)
+				if err := proxy.ServeTLS(ctx, tlsLn, h, ca); err != nil {
+					m.s.log.Printf("proxy (HTTPS) stopped: %v", err)
+				}
+			}()
+		}
 		if err := proxy.Serve(ctx, ln, h); err != nil {
 			m.s.log.Printf("proxy stopped: %v", err)
+		}
+		if tlsDone != nil {
+			<-tlsDone
 		}
 		if remove != nil {
 			remove()
@@ -213,7 +308,14 @@ func (m *proxyManager) autostart() {
 	if !p.Autostart {
 		return
 	}
-	if err := m.start(p.Port); err != nil {
+	https := 0
+	if p.HTTPS {
+		https = p.HTTPSPort
+		if https <= 0 {
+			https = proxy.DefaultHTTPSPort
+		}
+	}
+	if err := m.start(p.Port, https); err != nil {
 		var ae *Error
 		if errors.As(err, &ae) && ae.Code == "proxy_running" {
 			return // `theo proxy` serves the names already
@@ -232,18 +334,28 @@ func (s *Server) handleProxyStatus(w http.ResponseWriter, r *http.Request, _ *se
 
 func (s *Server) handleProxyStart(w http.ResponseWriter, r *http.Request, _ *session) error {
 	var req struct {
-		Port int `json:"port"`
+		Port      int  `json:"port"`
+		HTTPS     bool `json:"https"`
+		HTTPSPort int  `json:"https_port"`
 	}
 	if err := decodeOptional(r, &req); err != nil {
 		return err
 	}
-	if req.Port < 0 {
+	if req.Port < 0 || req.HTTPSPort < 0 {
 		return badRequest("port must be between 1 and 65535")
 	}
-	if err := s.proxy.start(req.Port); err != nil {
+	https := 0
+	if req.HTTPS {
+		https = req.HTTPSPort
+		if https == 0 {
+			https = proxy.DefaultHTTPSPort
+		}
+	}
+	if err := s.proxy.start(req.Port, https); err != nil {
 		return err
 	}
-	s.proxy.savePrefs(proxyPrefs{Autostart: true, Port: s.proxy.status().Port})
+	st := s.proxy.status()
+	s.proxy.savePrefs(proxyPrefs{Autostart: true, Port: st.Port, HTTPS: st.HTTPS, HTTPSPort: st.HTTPSPort})
 	s.proxyChanged()
 	return writeJSON(w, http.StatusOK, s.proxy.status())
 }
@@ -263,11 +375,51 @@ func (s *Server) handleProxyStop(w http.ResponseWriter, r *http.Request, _ *sess
 	return writeJSON(w, http.StatusOK, s.proxy.status())
 }
 
+// handleProxyTrust adds Theo's local authority to the system's store (or
+// removes it, when untrust). Windows and macOS show their own confirmation;
+// on Linux it needs sudo, so the interface only shows the command.
+func (s *Server) handleProxyTrust(untrust bool) func(http.ResponseWriter, *http.Request, *session) error {
+	return func(w http.ResponseWriter, r *http.Request, _ *session) error {
+		cmd := "theo proxy trust"
+		if untrust {
+			cmd = "theo proxy untrust"
+		}
+		if !proxy.CanTrustWithoutTerminal() {
+			e := errf(http.StatusConflict, "needs_terminal", "on this system trusting the local authority needs administrator rights (sudo)")
+			e.Hint = "run `" + cmd + "` in a terminal"
+			return e
+		}
+		if s.cfg.DataDir == "" {
+			return errf(http.StatusConflict, "no_data_dir", "Theo has no data directory")
+		}
+		ca, _, err := proxy.EnsureCA(s.cfg.DataDir)
+		if err != nil {
+			return err
+		}
+		// The system's dialog waits for the person: give it time.
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
+		defer cancel()
+		var out strings.Builder
+		if untrust {
+			err = ca.RemoveTrust(ctx, nil, &out)
+		} else {
+			err = ca.AddTrust(ctx, nil, &out)
+		}
+		if err != nil {
+			e := errf(http.StatusConflict, "trust_failed", err.Error())
+			e.Hint = "try `" + cmd + "` in a terminal to see what the system says"
+			return e
+		}
+		s.proxyChanged()
+		return writeJSON(w, http.StatusOK, s.proxy.status())
+	}
+}
+
 // withProxyLinks adds the proxy addresses of each worktree while a proxy
 // runs. It works on a copy: the cached overview stays without them, since a
 // proxy can start or stop at any time.
 func (s *Server) withProxyLinks(ov *Overview) *Overview {
-	port, running := s.proxy.runningPort()
+	port, httpsPort, running := s.proxy.runningPorts()
 	if !running {
 		return ov
 	}
@@ -277,7 +429,7 @@ func (s *Server) withProxyLinks(ov *Overview) *Overview {
 			Project: ov.Project, Worktree: v.Path, Branch: v.Branch, Main: v.Main, ComposeProject: v.ComposeProject,
 		}, v.Ports)...)
 	}
-	links := proxy.Links(targets, port)
+	links := proxy.Links(targets, port, httpsPort)
 	c := *ov
 	c.Worktrees = append([]WorktreeView(nil), ov.Worktrees...)
 	for i := range c.Worktrees {

@@ -109,17 +109,21 @@ func AddURLs(r *engine.StatusReport, port int) {
 type Link struct {
 	Service string `json:"service"`
 	URL     string `json:"url"`
-	Default bool   `json:"default,omitempty"` // also reachable as <instance>.<project>
-	Running bool   `json:"running"`
+	// HTTPSURL is the same address over HTTPS, while the proxy serves it.
+	HTTPSURL string `json:"https_url,omitempty"`
+	Default  bool   `json:"default,omitempty"` // also reachable as <instance>.<project>
+	Running  bool   `json:"running"`
 }
 
 // Links returns the proxy addresses of the instances in targets, for a
-// proxy on port, grouped by worktree path. The short form comes first, then
-// one link per service.
-func Links(targets []Target, port int) map[string][]Link {
+// proxy on port (and on httpsPort for HTTPS, when not 0), grouped by
+// worktree path. The short form comes first, then one link per service.
+func Links(targets []Target, port, httpsPort int) map[string][]Link {
 	out := map[string][]Link{}
-	for _, rt := range BuildTable(targets, port).Routes {
-		out[rt.Worktree] = append(out[rt.Worktree], Link{Service: rt.Service, URL: rt.URL, Default: rt.Default, Running: rt.Running})
+	tbl := BuildTable(targets, port)
+	tbl.SetHTTPS(httpsPort)
+	for _, rt := range tbl.Routes {
+		out[rt.Worktree] = append(out[rt.Worktree], Link{Service: rt.Service, URL: rt.URL, HTTPSURL: rt.HTTPSURL, Default: rt.Default, Running: rt.Running})
 	}
 	return out
 }
@@ -135,4 +139,16 @@ func RunningPort(dir string) (int, bool) {
 		return 0, false
 	}
 	return s.Port, true
+}
+
+// RunningHTTPSPort returns the HTTPS port of the proxy recorded in dir, or 0
+// when no proxy runs or it serves only HTTP.
+func RunningHTTPSPort(dir string) int {
+	if dir == "" {
+		return 0
+	}
+	if s, ok := Running(dir); ok {
+		return s.HTTPSPort
+	}
+	return 0
 }

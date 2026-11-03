@@ -418,3 +418,17 @@ dialog.palette { margin: 12vh auto auto; width: min(38rem, calc(100vw - 2rem)); 
   .chip, .search-trigger, .segmented, .toast, .menu-list, .bulkbar, details.more { border: 1px solid CanvasText; }
   .chip[aria-pressed="true"], .subnav a[aria-current="page"], .palette-item[aria-selected="true"], .segmented input:checked + label, .menu-item:focus { background: Highlight; color: HighlightText; forced-color-adjust: none; }
 }
+
+/* Q-020: the url-in-data card on the instance summary. */
+.card.url-in-data { border-color: var(--warn-fg); background: var(--warn-bg); }
+.card.url-in-data h3 { margin: 0; font-size: 1rem; }
+.card.url-in-data pre.cmd { margin: 0; padding: 0.6rem 0.75rem; border-radius: var(--radius-sm); background: var(--surface); overflow-x: auto; white-space: pre; }
+
+/* ADR-0015: HTTPS and Theo's local authority in Settings › Local domains (board V-11). */
+.https-title { margin: var(--space-4) 0 0; font-size: 1rem; }
+.authority { background: var(--bg-subtle); border-radius: var(--radius-sm); padding: 0.75rem 0.9rem; }
+.authority.stack > * + * { margin-top: var(--space-2); }
+.authority-head { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: flex-start; justify-content: space-between; }
+.authority code { word-break: break-all; }
+.note.warn-note { display: flex; gap: var(--space-2); align-items: flex-start; margin-bottom: 0; padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); background: var(--warn-bg); color: var(--warn-fg); font-size: 0.875rem; }
+.note.warn-note svg { flex: none; width: 1em; height: 1em; margin-top: 0.15em; }

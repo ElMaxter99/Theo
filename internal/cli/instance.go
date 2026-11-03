@@ -93,6 +93,9 @@ func runInstance(e *engine.Engine, cmd string, args []string, stdout, stderr io.
 			return err
 		}
 		fmt.Fprintf(stdout, "Started %s. See it with `theo ps %s -w %s`.\n", inst.Compose, inst.Project, worktreeArg(inst))
+		if w := e.URLInDataCheck(ctx, inst); w != nil {
+			printURLInData(stderr, w)
+		}
 	case "down":
 		if err := e.Down(ctx, inst, stdout, stderr); err != nil {
 			return err
@@ -354,4 +357,13 @@ func runPorts(e *engine.Engine, args []string, stdout io.Writer) error {
 		fmt.Fprintf(stdout, "\n%d port(s) in use. `theo up %s --auto-ports` starts with other ones.\n", n, inst.Project)
 	}
 	return nil
+}
+
+// printURLInData prints the url-in-data warning (Q-020) with what to do.
+func printURLInData(w io.Writer, warn *engine.StatusWarning) {
+	fmt.Fprintf(w, "theo: warning: %s.\n", warn.Message)
+	if warn.Command != "" {
+		fmt.Fprintf(w, "  update the data with the application's own tool, for example: %s\n", warn.Command)
+	}
+	fmt.Fprintf(w, "  once it is updated: %s\n", warn.Fix)
 }

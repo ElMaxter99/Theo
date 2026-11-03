@@ -34,8 +34,12 @@ type Project struct {
 	// ComposeFiles are the Compose files of the project, relative to the
 	// root of each worktree and in the order Compose merges them (like
 	// repeated -f flags). Empty means: let Compose find them.
-	ComposeFiles []string  `json:"compose_files,omitempty"`
-	AddedAt      time.Time `json:"added_at"`
+	ComposeFiles []string `json:"compose_files,omitempty"`
+	// URLInData says whether the project's application stores its own
+	// address in its data (Q-020): "" or "auto" (decided by the image),
+	// "on" or "off".
+	URLInData string    `json:"url_in_data,omitempty"`
+	AddedAt   time.Time `json:"added_at"`
 }
 
 // Workspace kinds kept in the registry.
