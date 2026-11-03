@@ -51,8 +51,9 @@ type Target struct {
 
 // Route is a host name the proxy answers, and where it sends the request.
 type Route struct {
-	Host           string   `json:"host"` // web.main.shop.localhost
-	URL            string   `json:"url"`  // http://web.main.shop.localhost:7080
+	Host           string   `json:"host"`                // web.main.shop.localhost
+	URL            string   `json:"url"`                 // http://web.main.shop.localhost:7080
+	HTTPSURL       string   `json:"https_url,omitempty"` // https://web.main.shop.localhost:7443, while the proxy serves HTTPS
 	Default        bool     `json:"default"`
 	Project        string   `json:"project"`
 	Instance       string   `json:"instance"`
@@ -256,6 +257,24 @@ func hostURL(host string, port int) string {
 		return "http://" + host
 	}
 	return fmt.Sprintf("http://%s:%d", host, port)
+}
+
+// SetHTTPS fills the HTTPS address of every route, for a proxy that also
+// serves HTTPS on port (0 clears them).
+func (t *Table) SetHTTPS(port int) {
+	for i := range t.Routes {
+		t.Routes[i].HTTPSURL = ""
+		if port > 0 {
+			t.Routes[i].HTTPSURL = httpsURL(t.Routes[i].Host, port)
+		}
+	}
+}
+
+func httpsURL(host string, port int) string {
+	if port == 443 {
+		return "https://" + host
+	}
+	return fmt.Sprintf("https://%s:%d", host, port)
 }
 
 // Lookup returns the route of a Host header (any letter case, with or

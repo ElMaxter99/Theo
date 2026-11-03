@@ -1108,6 +1108,19 @@ func (s *Server) proxyPort() (int, bool) {
 	return proxy.RunningPort(dir)
 }
 
+// proxyHTTPSPort is the HTTPS port of the running proxy; 0 when it serves
+// only HTTP (or under test).
+func (s *Server) proxyHTTPSPort() int {
+	if s.opts.ProxyPort != nil {
+		return 0
+	}
+	dir, err := registry.DefaultDir()
+	if err != nil {
+		return 0
+	}
+	return proxy.RunningHTTPSPort(dir)
+}
+
 // proxyLinks are the proxy addresses of an instance while a proxy runs; nil
 // otherwise.
 func (s *Server) proxyLinks(inst *engine.Instance, views []portView) []proxy.Link {
@@ -1126,7 +1139,7 @@ func (s *Server) proxyLinks(inst *engine.Instance, views []portView) []proxy.Lin
 	targets := proxy.InstanceTargets(proxy.Instance{
 		Project: inst.Project, Worktree: inst.Workspace, Branch: inst.Branch, Main: inst.Main, ComposeProject: inst.Compose,
 	}, statuses)
-	return proxy.Links(targets, port)[inst.Workspace]
+	return proxy.Links(targets, port, s.proxyHTTPSPort())[inst.Workspace]
 }
 
 func linksText(links []proxy.Link) string {

@@ -112,6 +112,8 @@ export interface Worktree {
 export interface ProxyLink {
   service: string;
   url: string;
+  /** The same address over HTTPS, while the proxy serves it. */
+  https_url?: string;
   /** The short form <instance>.<project>, for the web, app, api or frontend service. */
   default?: boolean;
   running: boolean;
@@ -127,6 +129,23 @@ export interface ProxyStatus {
   pid?: number;
   autostart: boolean;
   error?: string;
+  /** The running proxy also serves HTTPS (or, while off, the switch asks for it). */
+  https: boolean;
+  https_port: number;
+  /** Theo's local certificate authority, once it exists (ADR-0015). */
+  authority?: ProxyAuthority;
+}
+
+export interface ProxyAuthority {
+  /** The certificate, the file to import in Firefox. */
+  path: string;
+  created: string;
+  fingerprint: string;
+  trust: { system: boolean; nss?: "trusted" | "not-trusted" | "unknown" };
+  trusted: boolean;
+  /** Windows and macOS: the interface can trust it itself. Elsewhere it shows `command`. */
+  can_trust_here: boolean;
+  command: string;
 }
 
 export interface Overview {

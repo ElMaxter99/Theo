@@ -67,7 +67,7 @@ export function SummaryTab({ project, w, lock }: { project: string; w: WorktreeD
           <dt>{t.summary.domains}</dt>
           <dd>
             {(w.proxy_urls ?? []).length > 0
-              ? <ul class="plain">{(w.proxy_urls ?? []).map((l, i) => <li key={i}><ExternalLink href={l.url} label={l.service}>{l.url.replace(/^https?:\/\//, "")}</ExternalLink>{l.default ? null : <span class="small muted"> {l.service}</span>}</li>)}</ul>
+              ? <ul class="plain">{(w.proxy_urls ?? []).map((l, i) => <li key={i}><ExternalLink href={l.url} label={l.service}>{l.url.replace(/^https?:\/\//, "")}</ExternalLink>{l.https_url ? <> · <ExternalLink href={l.https_url} label={`${l.service} HTTPS`}>HTTPS</ExternalLink></> : null}{l.default ? null : <span class="small muted"> {l.service}</span>}</li>)}</ul>
               : <span class="muted">{t.summary.noDomains}</span>}
           </dd>
         </dl>

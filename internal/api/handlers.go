@@ -35,6 +35,8 @@ func (s *Server) routesTable() {
 	s.handle("GET", "/proxy", authSession, s.handleProxyStatus)
 	s.handle("POST", "/proxy/start", authSession, s.handleProxyStart)
 	s.handle("POST", "/proxy/stop", authSession, s.handleProxyStop)
+	s.handle("POST", "/proxy/trust", authSession, s.handleProxyTrust(false))
+	s.handle("POST", "/proxy/untrust", authSession, s.handleProxyTrust(true))
 
 	s.handle("GET", "/projects", authSession, s.handleProjects)
 	s.handle("POST", "/projects", authSession, s.handleAddProject)

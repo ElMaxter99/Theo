@@ -242,17 +242,23 @@ function Agents() {
   );
 }
 
-/** The switch of the interface's own `theo proxy` (GET/POST /proxy). */
+/** The switch of the interface's own `theo proxy` (GET/POST /proxy), with HTTPS (board V-11, ADR-0015). */
 function ProxyCard() {
   const s = t.settingsPage;
   const res = useResource<ProxyStatus>(() => api.get<ProxyStatus>("/proxy"), []);
   const [port, setPort] = useState("");
+  const [httpsPort, setHttpsPort] = useState("");
   const [pending, setPending] = useState<boolean | null>(null);
+  const [httpsPending, setHttpsPending] = useState<boolean | null>(null);
   const st = res.data;
+  const startBody = (https: boolean) => {
+    const n = Number.parseInt(port || String(st?.port ?? 7080), 10);
+    const h = Number.parseInt(httpsPort || String(st?.https_port ?? 7443), 10);
+    return { port: Number.isFinite(n) ? n : 7080, https, https_port: Number.isFinite(h) ? h : 7443 };
+  };
   const toggle = useAction(async (on: boolean) => {
     if (on) {
-      const n = Number.parseInt(port || String(st?.port ?? 7080), 10);
-      await api.post<ProxyStatus>("/proxy/start", { port: Number.isFinite(n) ? n : 7080 });
+      await api.post<ProxyStatus>("/proxy/start", startBody(httpsPending ?? st?.https ?? false));
       announce(s.proxyStarted);
     } else {
       await api.post<ProxyStatus>("/proxy/stop", {});
@@ -260,7 +266,23 @@ function ProxyCard() {
     }
     res.reload();
   });
+  // While the interface's proxy runs, HTTPS is applied by starting it again.
+  const toggleHttps = useAction(async (on: boolean) => {
+    if (st?.running && st.managed) {
+      await api.post<ProxyStatus>("/proxy/stop", {});
+      await api.post<ProxyStatus>("/proxy/start", startBody(on));
+      announce(s.httpsApplied);
+    }
+    res.reload();
+  });
+  const trust = useAction(async (on: boolean) => {
+    await api.post<ProxyStatus>(on ? "/proxy/trust" : "/proxy/untrust", {});
+    announce(on ? s.caTrustedMsg : s.caUntrustedMsg);
+    res.reload();
+  });
   const external = !!st?.running && !st.managed;
+  const httpsOn = httpsPending ?? st?.https ?? false;
+  const ca = st?.authority;
   return (
     <section class="card stack" aria-labelledby="st-proxy">
       <h2 id="st-proxy">{s.proxyTitle}</h2>
@@ -290,11 +312,70 @@ function ProxyCard() {
           ) : null}
           <p id="proxy-state" role="status">
             {st.running ? (external ? s.proxyExternal(st.port, st.pid ?? 0) : s.proxyRunning(st.port)) : s.proxyStopped}
+            {st.running && st.https ? <> {s.httpsOn(st.https_port)}</> : null}
             {st.running && st.url ? <> <ExternalLink href={st.url} label={s.proxyRoutes}>{s.proxyRoutes}</ExternalLink></> : null}
           </p>
           <ErrorBanner error={toggle.error} />
+
+          <h3 class="https-title">{s.httpsTitle}</h3>
+          <div class="check">
+            <input id="proxy-https" type="checkbox" checked={httpsOn} disabled={toggleHttps.busy || toggle.busy || external}
+              aria-describedby="proxy-https-hint" onChange={(e) => {
+                const on = (e.currentTarget as HTMLInputElement).checked;
+                setHttpsPending(on);
+                void toggleHttps.run(on).finally(() => { if (st.running) setHttpsPending(null); });
+              }} />
+            <div>
+              <label for="proxy-https">{s.httpsSwitch}</label>{" "}
+              <input id="proxy-https-port" class="input auto" inputMode="numeric" size={5} aria-label={s.httpsPort}
+                value={httpsPort} placeholder={String(st.https_port || 7443)} disabled={st.running}
+                onInput={(e) => setHttpsPort((e.currentTarget as HTMLInputElement).value.replace(/[^0-9]/g, ""))} />
+              <p class="hint" id="proxy-https-hint">{s.httpsWhy}</p>
+            </div>
+          </div>
+          <ErrorBanner error={toggleHttps.error} />
+          {httpsOn || ca ? <AuthorityBox ca={ca} trust={trust} /> : null}
+          {httpsOn ? <p class="note warn-note"><Icon name="warn" /> <span>{s.httpsAddress}</span></p> : null}
         </>
       ) : null}
     </section>
+  );
+}
+
+type TrustAction = { busy: boolean; error: Parameters<typeof ErrorBanner>[0]["error"]; run: (on: boolean) => Promise<unknown> };
+
+function AuthorityBox({ ca, trust }: { ca?: ProxyStatus["authority"]; trust: TrustAction }) {
+  const s = t.settingsPage;
+  if (!ca) return <p class="hint">{s.caNone}</p>;
+  const created = new Date(ca.created).toLocaleDateString(undefined, { dateStyle: "medium" });
+  return (
+    <div class="authority stack">
+      <div class="authority-head">
+        <div>
+          <strong>{s.caTitle}</strong>
+          <p class="hint">{s.caFacts(created)}</p>
+        </div>
+        {ca.trusted
+          ? <span class="badge ok"><Icon name="ok" /><span>{s.caTrusted}</span></span>
+          : <span class="badge warn"><Icon name="warn" /><span>{s.caNotTrusted}</span></span>}
+      </div>
+      {ca.can_trust_here ? (
+        <div class="row">
+          {ca.trusted
+            ? <button type="button" class="btn sm" disabled={trust.busy} onClick={() => void trust.run(false)}>{s.caUntrust}</button>
+            : <button type="button" class="btn sm primary" disabled={trust.busy} onClick={() => void trust.run(true)}>{s.caTrust}</button>}
+          {!ca.trusted ? <span class="hint">{s.caTrustHint}</span> : null}
+        </div>
+      ) : !ca.trusted ? (
+        <div class="row">
+          <span class="hint">{s.caTerminal}</span>
+          <code>{ca.command}</code>
+          <CopyCommand command={ca.command} />
+        </div>
+      ) : null}
+      {ca.trust.nss && ca.trust.nss !== "trusted" ? <p class="hint">{s.caNss}</p> : null}
+      <p class="hint">{s.caFirefox} <code>{ca.path}</code></p>
+      <ErrorBanner error={trust.error} />
+    </div>
   );
 }

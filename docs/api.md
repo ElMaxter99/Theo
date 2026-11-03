@@ -115,15 +115,27 @@ Events carry an `id` but are not replayed: after a reconnect the client refetche
 The server also polls Docker every 5 s for changes made outside Theo, **only** while a client is connected
 and a tab said it is visible: `POST /events/focus` with `{"visible": true|false}` (204).
 
-### `GET /proxy`, `POST /proxy/start` `{port?}`, `POST /proxy/stop`
+### `GET /proxy`, `POST /proxy/start` `{port?, https?, https_port?}`, `POST /proxy/stop`
 The interface's own `theo proxy` (see docs/cli/proxy.md). `GET` answers
-`{running, managed, port, url?, pid?, autostart, error?}`: `running` is true while any proxy listens (this server's,
+`{running, managed, port, url?, pid?, autostart, error?, https, https_port, authority?}`: `running` is true while any proxy listens (this server's,
 or one started with `theo proxy`, read from `proxy.json`), `managed` only for this server's, which it can stop.
 `start` listens on `127.0.0.1:{port}` (default 7080) and turns `autostart` on, so the next server starts it again;
 409 `proxy_running` when `theo proxy` already runs (it is used as it is), 409 `port_in_use` when the port is taken.
 `stop` stops this server's proxy and turns `autostart` off; 409 `proxy_external` for a proxy started with
 `theo proxy`. Both answer the new status and emit `state.changed` with `{}`. While its proxy runs the server does not
 stop on the idle timeout.
+
+With `https: true`, `start` also serves HTTPS on `127.0.0.1:{https_port}` (default 7443), creating Theo's local
+authority the first time, and remembers it for the next start; `https` and `https_port` in `GET` describe the running
+proxy (or, while off, the switch). `authority` appears once the authority exists:
+`{path, created, fingerprint, trust: {system, nss?}, trusted, can_trust_here, command}`. `nss` (Linux only) is the state
+of Chrome's store: `trusted`, `not-trusted` or `unknown` (no `certutil`).
+
+### `POST /proxy/trust`, `POST /proxy/untrust`
+Run `theo proxy trust` / `untrust` (see docs/cli/proxy.md#https) and answer the new `GET /proxy` status. Windows and
+macOS show their own confirmation, which the request waits for (up to 3 minutes). On other systems they answer 409
+`needs_terminal`, with the command to run in the hint, since the system's store needs `sudo`. 409 `trust_failed` when
+the system's tool fails or the person declines.
 
 ### `GET /fs/browse?path=&hidden=1`
 Directory picker for "add project" (decision for Q-027: server side listing, directories only).
@@ -197,7 +209,7 @@ One call for the panel. For every worktree: the Git data, the instance `state`
 (`running`, `partial`, `unhealthy`, `stopped`, `absent`, `unknown`, from `engine.InstanceState`),
 `containers {running,total}`, `ports[]` (with `url`, `status` of `theo ports`), `warnings[]`
 (for instance `port-conflict`, or `compose-changed` with its `fix`), `owner` when the worktree has one,
-`proxy_urls[]` (`{service, url, default?, running}`) only while a proxy runs (section 4, `GET /proxy`), and `busy`
+`proxy_urls[]` (`{service, url, https_url?, default?, running}`) only while a proxy runs (section 4, `GET /proxy`), and `busy`
 (`null` or `{operation_id, kind}`). `GET .../worktrees` and `GET .../worktrees/{wt}` carry the same `owner` and
 `proxy_urls`.
 Docker is read once for all the instances of the request (two commands: the containers carrying a Compose label,
