@@ -352,6 +352,10 @@ func inferProject(args []string, stderr io.Writer) []string {
 	if args[0] == "exec" && missing && len(args) > at && args[at] == "--" {
 		return args
 	}
+	// `stop --all` without a project stops every project: never narrow it to this folder.
+	if args[0] == "stop" && hasFlag(args, "--all") && !dot {
+		return args
+	}
 	here, err := os.Getwd()
 	if err != nil {
 		return args
@@ -359,6 +363,18 @@ func inferProject(args []string, stderr io.Writer) []string {
 	e, err := engine.Open()
 	if err != nil {
 		return args
+	}
+	// Flags first, project later (`stop --all shop`): the project is there, nothing to infer.
+	if missing && len(args) > at {
+		if list, err := e.Projects(); err == nil {
+			for _, a := range args[at:] {
+				for _, p := range list {
+					if a == p.Name {
+						return args
+					}
+				}
+			}
+		}
 	}
 	project, wt, ok := projectForDir(context.Background(), e, here)
 	if !ok {

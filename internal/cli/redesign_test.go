@@ -31,6 +31,11 @@ func TestInferProjectFromTheCurrentFolder(t *testing.T) {
 		// An explicit project keeps meaning the main worktree.
 		{[]string{"up", "demo"}, []string{"up", "demo"}},
 		{[]string{"project", "list"}, []string{"project", "list"}},
+		// Flags before the project: the project is there.
+		{[]string{"stop", "--all", "demo"}, []string{"stop", "--all", "demo"}},
+		{[]string{"up", "--build", "demo"}, []string{"up", "--build", "demo"}},
+		// `stop --all` alone means every project, wherever it runs.
+		{[]string{"stop", "--all"}, []string{"stop", "--all"}},
 	}
 	for _, c := range cases {
 		var stderr bytes.Buffer
@@ -38,7 +43,7 @@ func TestInferProjectFromTheCurrentFolder(t *testing.T) {
 		if strings.Join(got, " ") != strings.Join(c.want, " ") {
 			t.Errorf("%v -> %v, want %v", c.in, got, c.want)
 		}
-		if len(c.in) > 1 && c.in[1] == "demo" || c.in[0] == "project" {
+		if strings.Contains(strings.Join(c.in, " "), "demo") || c.in[0] == "project" || c.in[0] == "stop" {
 			if stderr.Len() != 0 {
 				t.Errorf("%v wrote %q", c.in, stderr.String())
 			}
