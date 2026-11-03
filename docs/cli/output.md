@@ -20,11 +20,55 @@ The contract for scripts, the GUI and agents that call `theo`.
 |---|---|
 | 0 | success |
 | 1 | the operation failed: unknown project or worktree, Docker or Git failed, a safety check refused (uncommitted files, containers still exist, no confirmation) |
-| 2 | wrong usage: unknown command or flag, missing or extra argument. The help is printed on standard error |
+| 2 | wrong usage: unknown command or flag, missing or extra argument. The error is followed by `  → theo help <command>` on standard error |
 | *n* | only `theo exec` and `theo shell`: the exit code of the command run in the container. Theo prints nothing of its own. Docker's own failures in `exec` (service not running) are 1, so `exec` cannot tell them from a command that exits with 1 |
 
-`theo help` and `theo <command> -h` print the help on standard output and exit
-0.
+`theo help` (the commands by topic), `theo help <command>`, `theo help all`
+(the full reference) and `theo <command> -h` print the help on standard output
+and exit 0.
+
+## `theo` with no arguments
+
+Since 0.2, `theo` alone prints a summary of what runs, in every project, and
+exits 0 (it used to print the help and exit 2). Each worktree is one line, with
+the state symbol the interface uses, the services running out of the total, and
+the address of a running instance or its first warning; running and failing
+instances come first, and a project with many worktrees shows five and counts the
+rest. The last line counts the warnings and points to `theo status` and `theo
+help`. Scripts should keep using `theo status --json`.
+
+| symbol | state |
+|---|---|
+| `▶` | running |
+| `◐` | partial: some services are not running |
+| `▲` | unhealthy |
+| `■` | stopped |
+| `○` | not created |
+| `?` | unknown (Docker could not be asked) |
+
+## The project from the current folder
+
+When a command that takes a project leaves it out, or gives `.`, Theo takes
+the project and the worktree from the current folder: `theo up` inside a
+linked worktree starts that worktree, and `theo logs . web -f` follows its
+`web` service. Theo says so on standard error with a context line such as
+`theo: shop · fix-123 (from the current folder)`. An explicit project name is
+never changed: `theo up shop` still means the main worktree, as before. `ps`,
+`worktrees` and `branches` only take the project. Outside a registered project
+nothing is filled in, and the command fails as it always did.
+
+## Errors and the next step
+
+An error is `theo: <message>`; when Theo knows what to do next, a second line
+starts with `→` (Docker not running, a host port in use, an unknown project or
+worktree, a missing tool).
+
+## Colors
+
+`--color auto|always|never`, before the command, chooses ANSI colors; `auto`
+(the default) colors only a terminal and honors
+[`NO_COLOR`](https://no-color.org) and `TERM=dumb`. `--no-color` is
+`--color never`. `--json` output is never colored.
 
 ## `--json`
 

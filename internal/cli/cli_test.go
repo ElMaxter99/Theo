@@ -21,7 +21,10 @@ func TestRun(t *testing.T) {
 		wantStdout string
 		wantStderr string
 	}{
-		{"no arguments", nil, ExitUsage, "", "Usage:"},
+		{"no arguments", nil, ExitOK, "No projects yet", ""},
+		{"help by topic", []string{"help"}, ExitOK, "theo help all", ""},
+		{"help of a command", []string{"help", "up"}, ExitOK, "--auto-ports", ""},
+		{"help of an unknown command", []string{"help", "bogus"}, ExitUsage, "", `no command "bogus"`},
 		{"version", []string{"version"}, ExitOK, "theo " + engine.Version, ""},
 		{"version flag", []string{"--version"}, ExitOK, "theo " + engine.Version, ""},
 		{"help", []string{"help"}, ExitOK, "Usage:", ""},
