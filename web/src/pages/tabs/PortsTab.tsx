@@ -31,7 +31,7 @@ function PortTable({ rows, caption }: { rows: PortMapping[]; caption: string }) 
               <td class="mono">{p.configured || t.ports.random}</td>
               <td class="mono">{p.running || p.effective || "—"}{p.host_ip === "0.0.0.0" ? <span class="small muted"> ({t.ports.hostIpAll})</span> : null}</td>
               <td><Badge view={portStatusView(p.status)} /></td>
-              <td>{p.url ? <ExternalLink href={p.url} label={p.service}>{p.url.replace(/^https?:\/\//, "")}</ExternalLink> : t.ports.noUrl}</td>
+              <td class="url-list">{p.url ? <ExternalLink href={p.url} label={p.service}>{p.url.replace(/^https?:\/\//, "")}</ExternalLink> : t.ports.noUrl}</td>
             </tr>
           ))}
         </tbody>

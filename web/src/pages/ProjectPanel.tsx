@@ -72,6 +72,9 @@ export function ProjectPanel({ project, drawer, onRefreshMeta }: { project: stri
   }, [wts, filter, owner, chip]);
   const busyIds = new Set(ops.filter(isActiveOp).map((o) => o.worktree));
   const selected = wts.filter((w) => picked.has(w.id));
+  // What each bulk action would really act on: the button is off when that is nothing.
+  const canStart = selected.filter((w) => !busyIds.has(w.id) && !ACTIVE.includes(w.state)).length;
+  const canPause = selected.filter((w) => !busyIds.has(w.id) && ACTIVE.includes(w.state)).length;
   const dockerDown = res.data?.docker.available === false;
 
   const act = async (w: Worktree, kind: LifecycleKind) => {
@@ -139,8 +142,8 @@ export function ProjectPanel({ project, drawer, onRefreshMeta }: { project: stri
           {selected.length > 0 ? (
             <div class="bulkbar" role="region" aria-label={t.instances.selection(selected.length)}>
               <strong>{t.instances.selection(selected.length)}</strong>
-              <button type="button" class="btn sm" disabled={dockerDown} onClick={() => void bulk("up")}><Icon name="play" /> {t.panel.start}</button>
-              <button type="button" class="btn sm" disabled={dockerDown} onClick={() => void bulk("stop")}><Icon name="stop" /> {t.panel.pause}</button>
+              <button type="button" class="btn sm" disabled={dockerDown || canStart === 0} onClick={() => void bulk("up")}><Icon name="play" /> {t.panel.start}</button>
+              <button type="button" class="btn sm" disabled={dockerDown || canPause === 0} onClick={() => void bulk("stop")}><Icon name="stop" /> {t.panel.pause}</button>
               <button type="button" class="btn sm quiet" onClick={() => setPicked(new Set())}>{t.instances.clearSelection}</button>
             </div>
           ) : null}

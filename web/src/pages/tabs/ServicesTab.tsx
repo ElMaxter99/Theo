@@ -38,7 +38,6 @@ export function ServicesTab({ project, w, lock = false }: { project: string; w: 
             <th scope="col">{t.services.colService}</th>
             <th scope="col">{t.services.colImage}</th>
             <th scope="col">{t.services.colContainer}</th>
-            <th scope="col">{t.services.colHealth}</th>
             <th scope="col">{t.services.colPorts}</th>
             <th scope="col">{t.services.colMounts}</th>
             <th scope="col">{t.services.colDepends}</th>
@@ -53,16 +52,15 @@ export function ServicesTab({ project, w, lock = false }: { project: string; w: 
               <tr key={s.name}>
                 <th scope="row">{s.name}</th>
                 <td class="mono small">{s.image ?? (s.build ? t.services.build(s.build) : "—")}</td>
-                <td><Badge view={v} /></td>
-                <td>{c?.health ?? "—"}</td>
+                <td><Badge view={v} />{c?.health && c.health !== "unhealthy" ? <div class="small muted">{t.services.colHealth}: {c.health}</div> : null}</td>
                 <td>
                   {(s.ports ?? []).length === 0 ? "—" : (
-                    <ul class="plain mono small">{(s.ports ?? []).map((p, i) => <li key={i}>{p.published ? `${p.published}:` : ""}{p.target}{p.protocol && p.protocol !== "tcp" ? `/${p.protocol}` : ""}</li>)}</ul>
+                    <ul class="plain mono small ports-list">{(s.ports ?? []).map((p, i) => <li key={i}>{p.published ? `${p.published}:` : ""}{p.target}{p.protocol && p.protocol !== "tcp" ? `/${p.protocol}` : ""}</li>)}</ul>
                   )}
                 </td>
                 <td>
                   {(s.mounts ?? []).length === 0 ? "—" : (
-                    <ul class="plain small">
+                    <ul class="plain small break-any">
                       {(s.mounts ?? []).map((m, i) => {
                         const sock = !!m.source && /docker\.sock$/.test(m.source);
                         return (
