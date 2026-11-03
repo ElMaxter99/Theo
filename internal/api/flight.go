@@ -50,12 +50,14 @@ func (g *flightGroup[T]) do(ctx context.Context, key string, gen uint64, fn func
 			if r := recover(); r != nil {
 				c.err = fmt.Errorf("internal error: %v", r)
 			}
-			close(c.done)
+			// Unregister before waking the callers, so that once a caller has
+			// its answer the flight is gone (and a new caller starts fresh).
 			g.mu.Lock()
 			if g.calls[key] == c {
 				delete(g.calls, key)
 			}
 			g.mu.Unlock()
+			close(c.done)
 		}()
 		c.val, c.err = fn()
 	}()

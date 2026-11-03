@@ -2,7 +2,15 @@
 
 Notable changes per release. Each release on GitHub also lists every merged pull request.
 
-## v0.3.0 (unreleased)
+## v0.3.1
+
+### Fixed
+- **Interface, row menus (⋯):** the menu of a table row opened inside the table and was cut by its border (Projects, the instances of a project, the services of an instance). It now opens over the page, upwards when there is no room below, and follows its button when something scrolls.
+- **Interface, layout:** cards and sections that sat on top of each other (home, problems, shared services) are spaced again; the services table no longer hides its Actions column at normal widths (health moved under the container state) and port mappings, addresses and tags no longer break letter by letter; narrow inputs such as the proxy port keep their size.
+- **Interface, shared services:** the screen shows the project head and its tabs like the other project screens.
+- **Interface, conditions:** the bulk **Start** and **Pause** buttons are off when no selected instance can take that action, and unregistering a project from the list removes it from the sidebar at once.
+
+## v0.3.0
 
 ### New
 - **HTTPS for the local domains:** `theo proxy --https` (and **Also serve HTTPS** in Settings → Local domains) also serves every instance at `https://<instance>.<project>.localhost:7443`. Certificates come from a local authority Theo creates in its data directory, limited with name constraints to `localhost` and the names under it, so its key cannot vouch for any other site. `theo proxy trust` and `untrust` add it to or remove it from this machine's trusted roots (on Windows and macOS also from the interface; on Linux with `sudo`, plus Chrome's own store). Routes, `--json`, the API and the interface show the HTTPS address (`https_url`) while it runs. See [docs/cli/proxy.md](docs/cli/proxy.md#https).

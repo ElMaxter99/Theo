@@ -11,7 +11,7 @@ import { copyText, theoCmd } from "../components/CopyCommand.tsx";
 import { useResource } from "../lib/hooks.ts";
 import { href } from "../lib/router.ts";
 import { announce } from "../lib/live.ts";
-import { attentionCount, runningCount, useStatus } from "../lib/statusStore.ts";
+import { attentionCount, refreshStatus, runningCount, useStatus } from "../lib/statusStore.ts";
 import { t } from "../strings.ts";
 import { setTitle } from "./Router.tsx";
 
@@ -84,6 +84,7 @@ export function Projects() {
             await api.del(projectPath(removing.name));
             announce(t.projects.unregistered(removing.name));
             res.reload();
+            void refreshStatus();
           }}
         />
       ) : null}

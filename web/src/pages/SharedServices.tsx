@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { api, ApiError, projectPath, wtPath } from "../api/client.ts";
 import type { ApiErrorBody, Overview, SharedConsumer, SharedService, SharedStatus, Worktree } from "../api/types.ts";
-import { Badge, Banner, Crumbs, ErrorBanner, Field, Loading, PageHead } from "../components/ui.tsx";
+import { Badge, Banner, ErrorBanner, Field, Loading } from "../components/ui.tsx";
+import { ProjectHeader } from "./ProjectHeader.tsx";
 import { ConfirmDialog, Modal, TypedConfirmDialog } from "../components/Dialog.tsx";
 import { Icon } from "../components/Icon.tsx";
 import { useAction, useResource } from "../lib/hooks.ts";
@@ -54,8 +55,9 @@ export function SharedServices({ project }: { project: string }) {
   const activeKey = ops.filter((o) => o.project === project && /^shared/.test(normKind(o.kind))).map((o) => o.id + o.state).join(",");
   useEffect(() => { if (res.data !== undefined) res.reload(); /* eslint-disable-next-line */ }, [activeKey]);
 
-  const crumbs = <Crumbs items={[{ label: t.projects.title, href: href.projects() }, { label: project, href: href.project(project) }, { label: t.shared.crumb }]} />;
   const reloadAll = () => { res.reload(); overview.reload(); };
+  // The same head and tabs as the other screens of the project (the tabs used to disappear here).
+  const crumbs = <ProjectHeader project={project} path={overview.data?.path} tab="shared" menu={[{ label: t.shared.refresh, onSelect: reloadAll }]} />;
 
   const startStop = useAction(async (kind: "up" | "down") => {
     try {
@@ -79,9 +81,9 @@ export function SharedServices({ project }: { project: string }) {
     }
   });
 
-  if (res.loading && res.data === undefined) return <>{crumbs}<PageHead title={t.shared.title} /><Loading /></>;
+  if (res.loading && res.data === undefined) return <>{crumbs}<Loading /></>;
   if (res.error && res.data === undefined) {
-    return <>{crumbs}<PageHead title={t.shared.title} /><ErrorBanner error={res.error} title={res.error.status === 404 ? t.panel.notFound : t.shared.loadError} /></>;
+    return <>{crumbs}<ErrorBanner error={res.error} title={res.error.status === 404 ? t.panel.notFound : t.shared.loadError} /></>;
   }
   const st = res.data ?? null;
   const worktrees = overview.data?.worktrees ?? [];
@@ -89,11 +91,6 @@ export function SharedServices({ project }: { project: string }) {
   return (
     <>
       {crumbs}
-      <PageHead
-        title={t.shared.title}
-        sub={<span class="mono">{project}</span>}
-        actions={<button type="button" class="btn" onClick={reloadAll}><Icon name="restart" /> {t.shared.refresh}</button>}
-      />
       <p>{t.shared.intro}</p>
       <ErrorBanner error={startStop.error ?? purge.error} />
       {st === null ? (

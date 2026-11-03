@@ -109,6 +109,32 @@ test("state filters, selection and the row menu of the instance list", async () 
   await page.ctx.close();
 });
 
+// Review of 0.3: the row menus used to open inside the table box, cut by its overflow (Projects ⋯ on the last row).
+for (const [route, sel] of [["#/projects", "table.data tbody tr:last-child [aria-haspopup=menu]"], ["#/p/shop", "table.data.rows tbody tr:last-child [aria-haspopup=menu]"]]) {
+  test(`the last row's menu is not cut by its table (${route})`, async () => {
+    await mock.reset();
+    const page = await openApp(browser, mock, { route, viewport: { width: 1100, height: 640 }, wait: "table.data tbody tr" });
+    await waitIdle(page, 400);
+    await page.locator(sel).click();
+    await page.locator("[role=menu] [role=menuitem]").first().waitFor();
+    await waitIdle(page, 200);
+    const hidden = await page.evaluate(() => {
+      const m = document.querySelector("[role=menu]");
+      const r = m.getBoundingClientRect();
+      const out = [];
+      for (const it of m.querySelectorAll("[role=menuitem]")) {
+        const b = it.getBoundingClientRect();
+        const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+        if (!hit || !m.contains(hit) || b.bottom > innerHeight || b.right > innerWidth) out.push(it.textContent);
+      }
+      return { out, inside: r.top >= 0 && r.bottom <= innerHeight };
+    });
+    assert.deepEqual(hidden.out, [], "every item of the menu can be seen and clicked");
+    assert.ok(hidden.inside, "the menu stays inside the window");
+    await page.ctx.close();
+  });
+}
+
 test("a backup can be made from the data tab", async () => {
   await mock.reset();
   const page = await openApp(browser, mock);

@@ -160,7 +160,7 @@ fieldset { border: 1px solid var(--border-soft); border-radius: var(--radius); p
 .badge.error { color: var(--error-fg); background: var(--error-bg); }
 .badge.info { color: var(--info-fg); background: var(--info-bg); }
 .badge.neutral { color: var(--neutral-fg); background: var(--neutral-bg); }
-.tag { display: inline-block; font-size: 0.8125rem; padding: 0 0.45rem; border-radius: var(--radius-sm); border: 1px solid var(--border-soft); background: var(--surface-2); color: var(--text); }
+.tag { display: inline-block; white-space: nowrap; font-size: 0.8125rem; padding: 0 0.45rem; border-radius: var(--radius-sm); border: 1px solid var(--border-soft); background: var(--surface-2); color: var(--text); }
 .spin { animation: spin 1s linear infinite; transform-origin: center; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
@@ -173,8 +173,8 @@ fieldset { border: 1px solid var(--border-soft); border-radius: var(--radius); p
 .table-wrap:focus-visible { outline-offset: -0.1875rem; }
 table.data { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
 table.data caption { text-align: left; padding: var(--space-3) var(--space-3) 0; font-weight: 700; }
-table.data th, table.data td { text-align: left; vertical-align: top; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border-soft); }
-table.data thead th { background: var(--surface-2); font-weight: 700; white-space: nowrap; }
+table.data th, table.data td { overflow-wrap: break-word; text-align: left; vertical-align: top; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border-soft); }
+table.data thead th { background: var(--surface-2); font-weight: 700; }
 table.data tbody tr:last-child > * { border-bottom: 0; }
 table.data tbody th { font-weight: 600; }
 table.data .actions { white-space: nowrap; }
@@ -185,7 +185,7 @@ td ul.plain li + li { margin-top: 0.15rem; }
 /* ---------- Menu button (APG pattern) ---------- */
 .menu { position: relative; display: inline-block; }
 .menu-list {
-  position: absolute; right: 0; z-index: 30; min-width: 14rem; margin-top: var(--space-1);
+  position: fixed; top: 0; left: 0; z-index: 40; min-width: 14rem; max-width: calc(100vw - 1rem); overflow-y: auto;
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
   padding: var(--space-1); display: grid; gap: 0.1rem; text-align: left; white-space: normal;
 }
@@ -432,3 +432,15 @@ dialog.palette { margin: 12vh auto auto; width: min(38rem, calc(100vw - 2rem)); 
 .authority code { word-break: break-all; }
 .note.warn-note { display: flex; gap: var(--space-2); align-items: flex-start; margin-bottom: 0; padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); background: var(--warn-bg); color: var(--warn-fg); font-size: 0.875rem; }
 .note.warn-note svg { flex: none; width: 1em; height: 1em; margin-top: 0.15em; }
+
+/* Review of 0.3: vertical rhythm between the blocks of a page (cards, card grids, sections) that are siblings in
+   <main>; they used to touch. Grids keep their own gap. */
+* + .card, .card + *, .cards + *, .grid-2 + * { margin-top: var(--space-4); }
+.cards > .card, .grid-2 > *, .stack-sm > * + .card { margin-top: 0; }
+section + h2, .cards + h2 { margin-top: var(--space-5); }
+/* A narrow control inside a .field (a grid) keeps its own width instead of stretching. */
+.field > .input.auto, .field > select.input.auto { justify-self: start; }
+/* Port mappings and addresses do not break in the middle. */
+.ports-list li, td.url-list a, td .nowrap { white-space: nowrap; }
+/* Long paths and image names may still break anywhere so wide tables fit. */
+table.data .break-any, table.data .break-any * { overflow-wrap: anywhere; }
