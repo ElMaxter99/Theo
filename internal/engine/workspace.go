@@ -115,10 +115,10 @@ func (e *Engine) updateProject(name string, fn func(*registry.Project) error) er
 }
 
 // putRecord stores w, replacing the record for the same path. A record that
-// says nothing (no owner, not a clone) is dropped.
+// says nothing (see registry.Workspace.Says) is dropped.
 func putRecord(p *registry.Project, w registry.Workspace) {
 	_, i := workspaceRecord(*p, w.Path)
-	keep := w.Kind == registry.KindClone || w.Owner != ""
+	keep := w.Says()
 	switch {
 	case i >= 0 && keep:
 		p.Workspaces[i] = w
@@ -392,10 +392,17 @@ func (e *Engine) createClone(ctx context.Context, p registry.Project, dst, branc
 	if err != nil {
 		return fail(err)
 	}
+	if opts.NewBranch {
+		mainBranch := ""
+		if l, err := e.gitWorktrees(ctx, p.Path); err == nil && len(l) > 0 {
+			mainBranch = l[0].Branch
+		}
+		e.recordBase(ctx, dst, branch, opts.Base, mainBranch)
+	}
 
 	at := e.now().UTC().Truncate(time.Second)
 	if err := e.updateProject(p.Name, func(sp *registry.Project) error {
-		putRecord(sp, registry.Workspace{Path: dst, Kind: registry.KindClone, Owner: opts.Owner, CreatedAt: at})
+		putRecord(sp, registry.Workspace{Path: dst, Kind: registry.KindClone, Owner: opts.Owner, Origin: OriginTheo, CreatedAt: at})
 		return nil
 	}); err != nil {
 		return fail(err)

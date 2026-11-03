@@ -249,13 +249,16 @@ func (e *Engine) AddWorktree(ctx context.Context, project, branch string, opts A
 		if err := e.git.AddWorktree(ctx, p.Path, path, branch, opts.NewBranch, opts.Base); err != nil {
 			return nil, err
 		}
-		if opts.Owner != "" {
-			if err := e.updateProject(p.Name, func(sp *registry.Project) error {
-				putRecord(sp, registry.Workspace{Path: path, Kind: registry.KindWorktree, Owner: opts.Owner, CreatedAt: e.now().UTC().Truncate(time.Second)})
-				return nil
-			}); err != nil {
-				added.Notes = append(added.Notes, "the worktree exists, but its owner could not be recorded: "+err.Error())
-			}
+		if execx.Explaining() {
+			// nothing was created, so nothing is recorded
+		} else if err := e.updateProject(p.Name, func(sp *registry.Project) error {
+			putRecord(sp, registry.Workspace{Path: path, Kind: registry.KindWorktree, Owner: opts.Owner, Origin: OriginTheo, CreatedAt: e.now().UTC().Truncate(time.Second)})
+			return nil
+		}); err != nil {
+			added.Notes = append(added.Notes, "the worktree exists, but Theo could not record it (owner and creation date): "+err.Error())
+		}
+		if opts.NewBranch {
+			e.recordBase(ctx, p.Path, branch, opts.Base, list[0].Branch)
 		}
 		if hasSubmodules(list[0].Path) {
 			added.Notes = append(added.Notes, submoduleNote(p.Name))

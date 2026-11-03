@@ -97,6 +97,7 @@ var engineErrorTypes = map[string]bool{
 	"ContainersError":     true,
 	"SharedRunningError":  true,
 	"MissingNetworkError": true,
+	"ParkError":           true,
 }
 
 // fromEngine translates an error of the engine, Git or Docker into an API
@@ -116,7 +117,16 @@ func fromEngine(err error, res *ResourceRef) *Error {
 	var cont *engine.ContainersError
 	var missingNet *engine.MissingNetworkError
 	var sharedRun *engine.SharedRunningError
+	var park *engine.ParkError
 	switch {
+	case errors.As(err, &park):
+		out := &Error{Status: http.StatusConflict, Code: park.Code(), Level: 3, Message: err.Error(), Resource: res,
+			Confirm:   &Confirm{Expected: park.Name, Prompt: "Type the directory name to delete the ignored files and park it"},
+			Preserved: []string{"the branch", "its commits"}}
+		for _, f := range park.Ignored {
+			out.Affected = append(out.Affected, Affected{Kind: "file", Name: f, Detail: "ignored"})
+		}
+		return out
 	case errors.As(err, &changes):
 		out := &Error{Status: http.StatusConflict, Code: "confirmation_required", Level: 3, Message: err.Error(), Resource: res,
 			Confirm:   &Confirm{Expected: changes.Name, Prompt: "Type the directory name to discard these changes"},

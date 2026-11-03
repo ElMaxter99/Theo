@@ -82,6 +82,9 @@ type Engine struct {
 	renamers  []ProjectRenamer       // extra stores to migrate on `project rename`
 	lock      func() (func(), error) // makes read-modify-write of the state files exclusive across processes; nil: no lock
 	cfgCache  *configCache           // see EnableConfigCache; nil: every read asks Compose
+
+	mergesOnce sync.Once
+	mergeCache *mergeCache // see merges
 }
 
 // locked takes the lock that serialises writers of Theo's state files (the
