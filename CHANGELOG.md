@@ -2,7 +2,12 @@
 
 Notable changes per release. Each release on GitHub also lists every merged pull request.
 
-## v0.2.0 (unreleased)
+## v0.3.0 (unreleased)
+
+### Changed
+- **Desktop, missing WebView2 (Windows):** the dialog now explains in Spanish what is missing, offers to open Microsoft's download page (Yes / No) and points to `theo ui` in the meantime. The technical detail stays at the end for bug reports.
+
+## v0.2.0
 
 ### New
 - **Redesigned interface.** The web interface and the desktop app are reorganised around what you do most:

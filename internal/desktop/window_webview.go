@@ -3,12 +3,8 @@
 package desktop
 
 import (
-	"errors"
-
 	webview "github.com/webview/webview_go"
 )
-
-var errNoWebview = errors.New("cannot create the system web view (on Linux it needs a display and WebKitGTK; on Windows the WebView2 runtime)")
 
 // Default and minimum size of the window, in pixels.
 const (
@@ -30,7 +26,7 @@ type webviewWindow struct {
 func NewWebviewWindow() (Window, error) {
 	w := webview.New(false)
 	if w == nil {
-		return nil, errNoWebview
+		return nil, ErrNoWebview
 	}
 	w.SetTitle(Title)
 	w.SetSize(DefaultWidth, DefaultHeight, webview.HintNone)

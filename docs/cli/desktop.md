@@ -30,7 +30,7 @@ The server of the app has no idle timeout: the window decides when it ends.
 
 | System | What it needs |
 |---|---|
-| Windows 10/11, 64-bit | The **Microsoft Edge WebView2 Runtime**. It comes with Windows 11 and with current Windows 10 updates; if it is missing the app shows an error dialog, and the runtime is a free download from Microsoft. Nothing else to install. |
+| Windows 10/11, 64-bit | The **Microsoft Edge WebView2 Runtime**. It comes with Windows 11 and with current Windows 10 updates; if it is missing the app says so in a dialog (in Spanish, like the interface) and offers to open Microsoft's download page; choose the "Evergreen Bootstrapper". Meanwhile `theo ui` works in the browser. Nothing else to install. |
 | macOS 11 or later | Nothing: it uses the system WebKit. |
 | Linux, 64-bit | **GTK 3 and WebKitGTK 4.1** (`libwebkit2gtk-4.1`): Debian 12 / Ubuntu 22.04+: `sudo apt install libwebkit2gtk-4.1-0`; Fedora: `webkit2gtk4.1`; Arch: `webkit2gtk-4.1`. A graphical session (X11 or XWayland). |
 
@@ -91,7 +91,7 @@ archives (including the macOS `.app`).
 
 | Symptom | What to do |
 |---|---|
-| `cannot create the system web view` | Linux: no display (`DISPLAY`/`WAYLAND_DISPLAY` empty) or WebKitGTK missing. Windows: install the WebView2 Runtime. |
+| `cannot create the system web view` | Linux: no display (`DISPLAY`/`WAYLAND_DISPLAY` empty) or WebKitGTK missing. Windows: install the WebView2 Runtime (the dialog's **Yes** opens [its download page](https://developer.microsoft.com/microsoft-edge/webview2/)). |
 | `error while loading shared libraries: libwebkit2gtk-4.1.so.0` | Install the Linux package from the table above. |
 | Blank or white window on Linux | A WebKitGTK rendering problem with some graphics drivers. Try `WEBKIT_DISABLE_COMPOSITING_MODE=1 theo-desktop` (and `WEBKIT_DISABLE_DMABUF_RENDERER=1`). Not reproduced here; this is the usual workaround. |
 | macOS: "cannot be opened because the developer cannot be verified" | See Install above (ad-hoc signature). |
