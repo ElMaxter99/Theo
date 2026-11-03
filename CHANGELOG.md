@@ -5,6 +5,7 @@ Notable changes per release. Each release on GitHub also lists every merged pull
 ## v0.3.0 (unreleased)
 
 ### New
+- **MCP, knowing when things change:** `up`, `down`, `restart`, `stop` and `start` send `notifications/progress` with Docker's latest line when the client asks for progress (Claude Code does); the new read-only tool **`wait_for`** waits until an instance is running, stopped or changed (at most 120 s) and returns early when it fails; and `theo mcp --resources` (experimental) serves `theo://status` resources with subscriptions. The paragraph of `theo mcp install` tells agents to use `wait_for`. See [docs/cli/mcp.md](docs/cli/mcp.md#knowing-when-things-change).
 - **Address stored in the data (Q-020):** for applications that keep their own address in their data (WordPress, Ghost, Drupal, Joomla, Matomo, Nextcloud, or any project with `theo project set --url-in-data on`), Theo warns (`url-in-data`) when an instance answers on another address than the one its data was made for: after `volumes clone`, after `up`, in `theo status`, MCP and the interface (a card on the instance summary with the old and the new address and what to do). Theo never changes data. `theo instance set --data-address-updated` records the new address once the data is updated.
 
 ### Changed

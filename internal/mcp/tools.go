@@ -150,6 +150,7 @@ func allTools() []*tool {
 			params:      []param{{name: "project", kind: "string", description: "Only this project. Empty: all of them."}},
 			run:         runStatus,
 		},
+		waitForTool(),
 		{
 			name: "proxy_routes", title: "Local domains", readOnly: true,
 			description: "The names `theo proxy` serves each instance on (http://<service>.<instance>.<project>.localhost:7080, and <instance>.<project> for its web, app, api or frontend service), " +
@@ -806,7 +807,14 @@ func (s *Server) mutate(ctx context.Context, a args, op string, fn func(e *engin
 	defer release()
 	mask := masker(e, inst)
 	out := newTailBuffer(outputLimit)
-	res, err := fn(e, inst, out)
+	var w io.Writer = out
+	if pr := progressOf(ctx); pr != nil {
+		pr.mask = mask
+		pr.notify(fmt.Sprintf("%s %s", op, inst.Compose), true)
+		w = io.MultiWriter(out, pr)
+		defer pr.notify(fmt.Sprintf("%s %s: finished", op, inst.Compose), true)
+	}
+	res, err := fn(e, inst, w)
 	text, truncated := out.Text()
 	text = mask(text)
 	if err != nil {

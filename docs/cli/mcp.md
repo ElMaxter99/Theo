@@ -7,13 +7,14 @@ environment, read its URLs and logs, and stop it again, without colliding
 with you or with other agents.
 
 ```
-theo mcp [--read-only] [--owner <name>]
+theo mcp [--read-only] [--owner <name>] [--resources]
 ```
 
 | flag            | effect                                                                                  |
 |-----------------|-----------------------------------------------------------------------------------------|
 | `--read-only`   | only the tools that change nothing are listed and can be called                         |
 | `--owner <name>`| owner label of the worktrees `add_worktree` creates when the call gives none            |
+| `--resources`   | experimental: also serve `theo://status` resources with subscriptions (see below)        |
 
 The client starts the process; you do not run it by hand. It reads JSON-RPC
 2.0 messages, one per line, and answers on stdout. Nothing else is ever
@@ -88,6 +89,7 @@ worktree), the same selection as `-w` in the CLI.
 | `ps`              | -                                                                               | no      | without `worktree`: every worktree |
 | `logs`            | `services`, `tail`                                                              | no      | never follows; bounded (see Limits) |
 | `status`          | `project` (optional)                                                            | no      | `status --json`, with `proxy_urls` while a proxy runs and the `compose-changed` warning |
+| `wait_for`        | `until` (`running`, `stopped`, `changed`), `timeout_seconds` (default 60, at most 120) | no | waits for the instance instead of polling `status`; returns `reached`, `state`, `starting`, `failed`, `timed_out`. Waiting for `running` returns early, with `reached: false`, when a container exits with an error or is unhealthy |
 | `proxy_routes`    | `project` (optional)                                                            | no      | `proxy routes --json`: every local domain, its target and whether it runs, and `proxy_running` |
 | `env_list`        | -                                                                               | no      | secrets always masked |
 | `env_set`         | `name`*, `value`*, `secret`, `services`                                         | yes     | applies at the next `up` |
@@ -115,6 +117,23 @@ than once (`up`, `down`, `stop`, `start`, `env_set`, `env_unset`,
 `reconcile`). `openWorldHint` is false everywhere: the tools only touch this
 machine's Git and Docker. Clients use them to decide what to ask you before
 running.
+
+## Knowing when things change
+
+* **Progress.** When a `tools/call` carries `_meta.progressToken` (Claude
+  Code sends one), `up`, `down`, `restart`, `stop` and `start` send
+  `notifications/progress` while Docker works: one at the start, then the
+  latest line of Docker's output at most five times a second (secrets
+  masked), and one at the end. `wait_for` sends the state it sees.
+* **`wait_for`** is the way that works with every client: the agent calls it
+  after `up` and gets an answer when the instance is ready, fails, or the
+  time runs out.
+* **Resources (experimental, `--resources`).** `theo://status` and
+  `theo://status/<project>` hold the JSON of `theo status --json`. A client
+  can subscribe to them; Theo then reads the state every 2 seconds and sends
+  `notifications/resources/updated` when it changed. Checked on 2026-11-03:
+  Claude Code 2.1 sends a progress token and lists resources but does not
+  subscribe, so prefer `wait_for`.
 
 ## Safety model
 
@@ -173,7 +192,7 @@ running.
 * Messages larger than 4 MiB are rejected.
 * No `--env-file` or `--compose-file` overrides: the tools use the
   project's and the worktree's settings, as `theo up` does without flags.
-* Only tools: no MCP resources, prompts or sampling. The tool list does not
-  change while the server runs.
+* Tools, and with `--resources` the status resources; no prompts or
+  sampling. The tool list does not change while the server runs.
 * Supported protocol versions: `2025-06-18` (preferred), `2025-03-26`,
   `2024-11-05`. For any other, the server answers with `2025-06-18`.

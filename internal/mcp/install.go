@@ -61,6 +61,7 @@ func Snippet(name, owner string, readOnly bool) string {
 	} else {
 		b.WriteString("- Work on a branch in its own worktree: `add_worktree` (never in the main worktree), then `up` for that worktree.\n")
 		b.WriteString("- Find where it answers with `ports`, or `proxy_routes` for a name that does not change (`http://<instance>.<project>.localhost:7080`).\n")
+		b.WriteString("- After `up`, `restart` or `stop`, call `wait_for` (it returns when the instance is running, failed or stopped) instead of polling `status`.\n")
 		b.WriteString("- Read `logs` and `status`; `status` warns when the Compose files changed since the last `up`.\n")
 		b.WriteString("- Call `down` when you are done. Volumes are kept; deleting data is left to the user.\n")
 	}

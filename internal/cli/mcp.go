@@ -18,8 +18,10 @@ AI agents:
                                                Context Protocol, on stdin and stdout. Register it
                                                with: claude mcp add theo -- theo mcp
                                                --read-only offers only tools that change nothing;
-                                               --owner labels the worktrees agents create. Deleting
-                                               data stays with you. See docs/cli/mcp.md
+                                               --owner labels the worktrees agents create;
+                                               --resources (experimental) adds theo://status resources
+                                               with subscriptions. Deleting data stays with you.
+                                               See docs/cli/mcp.md
   mcp install [--owner <name>] [--read-only] [--scope local|user|project] [--apply | --json | --snippet]
                                                How to register the server: the claude mcp add command,
                                                the JSON other clients read, and a paragraph for the
@@ -27,7 +29,7 @@ AI agents:
                                                claude command; nothing else is written
 `)
 	ownerFlag := flagSpec{[]string{"--owner"}, "text"}
-	registerCompletion(cmdSpec{name: "mcp", flags: []flagSpec{{names: []string{"--read-only"}}, ownerFlag},
+	registerCompletion(cmdSpec{name: "mcp", flags: []flagSpec{{names: []string{"--read-only"}}, ownerFlag, {names: []string{"--resources"}}},
 		subs: []cmdSpec{{name: "install", flags: []flagSpec{ownerFlag, {names: []string{"--read-only"}}, {[]string{"--scope"}, "text"},
 			{[]string{"--name"}, "text"}, {names: []string{"--apply"}}, jsonFlag, {names: []string{"--snippet"}}}}},
 	})
@@ -40,6 +42,7 @@ func runMCP(e *engine.Engine, args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
 	readOnly := fs.Bool("read-only", false, "offer only the tools that change nothing")
 	owner := fs.String("owner", "", "owner of the worktrees created through MCP without one")
+	resources := fs.Bool("resources", false, "also serve theo://status resources with subscriptions (experimental)")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -57,6 +60,6 @@ func runMCP(e *engine.Engine, args []string, stdout, stderr io.Writer) error {
 	}
 	// Messages go to stdout and nothing else may: what the tools run writes
 	// into buffers. Diagnostics go to stderr, which clients log.
-	srv := mcp.New(mcp.Options{Engine: e, ReadOnly: *readOnly, Owner: *owner})
+	srv := mcp.New(mcp.Options{Engine: e, ReadOnly: *readOnly, Owner: *owner, Resources: *resources})
 	return srv.Serve(context.Background(), stdin, stdout)
 }
