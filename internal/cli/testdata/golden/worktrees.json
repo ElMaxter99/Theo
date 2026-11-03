@@ -1,16 +1,33 @@
 [
   {
+    "ahead": 0,
+    "behind": 0,
     "branch": "main",
+    "changes": 0,
     "dirty": true,
     "head": "<SHA>",
+    "idle_days": 0,
     "kind": "main",
-    "path": "<TMP>/app"
+    "path": "<TMP>/app",
+    "unpushed": 0
   },
   {
+    "activity_at": "<TIME>",
+    "activity_source": "instance",
+    "ahead": 0,
+    "base": "main",
+    "behind": 0,
     "branch": "feature/x",
+    "changes": 1,
+    "created_at": "<TIME>",
     "dirty": true,
     "head": "<SHA>",
+    "idle_days": 0,
     "kind": "worktree",
-    "path": "<TMP>/app-feature"
+    "path": "<TMP>/app-feature",
+    "reason": "its instance is running",
+    "running": true,
+    "state": "in-use",
+    "unpushed": 0
   }
 ]
