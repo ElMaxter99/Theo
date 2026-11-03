@@ -39,7 +39,27 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request, _ *session
 	if err != nil {
 		return err
 	}
-	return writeJSON(w, http.StatusOK, report)
+	// Each worktree also gets the id the other routes take.
+	type worktree struct {
+		ID string `json:"id"`
+		engine.WorktreeStatus
+	}
+	type project struct {
+		engine.ProjectStatus
+		Worktrees []worktree `json:"worktrees"`
+	}
+	out := struct {
+		*engine.StatusReport
+		Projects []project `json:"projects"`
+	}{StatusReport: report, Projects: []project{}}
+	for _, p := range report.Projects {
+		v := project{ProjectStatus: p, Worktrees: []worktree{}}
+		for _, wt := range p.Worktrees {
+			v.Worktrees = append(v.Worktrees, worktree{ID: worktreeID(wt.Path), WorktreeStatus: wt})
+		}
+		out.Projects = append(out.Projects, v)
+	}
+	return writeJSON(w, http.StatusOK, out)
 }
 
 // handleAllHistory is the history of every project, newest page first, with
@@ -191,7 +211,7 @@ func (s *Server) handleRenameProject(w http.ResponseWriter, r *http.Request, _ *
 }
 
 // handlePrune lists (GET) or removes (POST) the linked worktrees whose branch
-// is merged, like `theo prune`. POST needs the project name typed in confirm.
+// is merged, like `theo worktree prune`. POST needs the project name typed in confirm.
 func (s *Server) handlePrune(apply bool) handlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, _ *session) error {
 		name := r.PathValue("p")

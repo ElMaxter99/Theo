@@ -182,7 +182,7 @@ are a list of strings or `null`. `null` clears the setting; an absent key leaves
 Compose names are not used by the renamed instances. Refused with 409 `busy` while an operation runs on the project.
 
 ### `GET /projects/{p}/prune[?into=]` and `POST /projects/{p}/prune` `{confirm, into?}` -> 200
-`theo prune`: the linked worktrees whose branch is merged into `into` (default: the main worktree's branch).
+`theo worktree prune`: the linked worktrees whose branch is merged into `into` (default: the main worktree's branch).
 `GET` only lists them (`{project, into, applied:false, merged[], not_merged}`; an entry with `reason` stays).
 `POST` removes the ones without a `reason` and needs the project name typed in `confirm` (409
 `confirmation_required` otherwise). Branches, volumes and clones are never touched.

@@ -43,7 +43,7 @@ export function useResource<T>(load: (signal: AbortSignal) => Promise<T>, deps: 
     if (!project) return;
     return events.on("state.changed", (d) => {
       const p = d as { project?: string; worktree?: string } | undefined;
-      if (p?.project && p.project !== project) return;
+      if (p?.project && project !== "*" && p.project !== project) return; // "*": any project
       if (worktree && p?.worktree && p.worktree !== worktree) return;
       setTick((n) => n + 1);
     });

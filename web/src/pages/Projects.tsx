@@ -1,35 +1,79 @@
+// V-02 Projects: one row per project with its running instances, what needs attention and the next step. The rest of
+// the actions (settings, copy command, unregister) are in the row menu.
 import { useEffect, useState } from "preact/hooks";
 import { api, projectPath } from "../api/client.ts";
-import type { Meta, Overview, Project } from "../api/types.ts";
-import { Banner, ErrorBanner, Loading, PageHead } from "../components/ui.tsx";
-import { Badge } from "../components/ui.tsx";
+import type { Project } from "../api/types.ts";
+import { ErrorBanner, Loading, PageHead } from "../components/ui.tsx";
 import { ConfirmDialog } from "../components/Dialog.tsx";
 import { Icon } from "../components/Icon.tsx";
-import { brand } from "../brand.ts";
+import { MenuButton } from "../components/Menu.tsx";
+import { copyText, theoCmd } from "../components/CopyCommand.tsx";
 import { useResource } from "../lib/hooks.ts";
-import { href, navigate } from "../lib/router.ts";
+import { href } from "../lib/router.ts";
 import { announce } from "../lib/live.ts";
-import { rememberWorktrees } from "../ops/store.ts";
-import { stateView } from "../lib/status.ts";
+import { attentionCount, runningCount, useStatus } from "../lib/statusStore.ts";
 import { t } from "../strings.ts";
 import { setTitle } from "./Router.tsx";
 
-export function Projects({ meta }: { meta: Meta | undefined }) {
-  const res = useResource<Project[]>(() => api.get<Project[]>("/projects"), [], {});
+export function Projects() {
+  const res = useResource<Project[]>(() => api.get<Project[]>("/projects"), [], { project: "*" });
+  const status = useStatus();
   const [removing, setRemoving] = useState<Project | null>(null);
   useEffect(() => setTitle([t.projects.title]), []);
 
   if (res.loading && !res.data) return <><PageHead title={t.projects.title} /><Loading /></>;
   if (res.error && !res.data) return <><PageHead title={t.projects.title} /><ErrorBanner error={res.error} title={t.projects.loadError} /></>;
   const projects = res.data ?? [];
-  if (projects.length === 0) return <Welcome meta={meta} />;
+  if (projects.length === 0) return <><PageHead title={t.projects.title} /><p class="empty">{t.projects.none} <a href={href.add()}>{t.projects.add}</a></p></>;
 
   return (
     <>
       <PageHead title={t.projects.title} actions={<a class="btn primary" href={href.add()}><Icon name="plus" /> {t.projects.add}</a>} />
-      <ul class="cards">
-        {projects.map((p) => <ProjectCard key={p.name} project={p} onRemove={() => setRemoving(p)} />)}
-      </ul>
+      <div class="table-wrap">
+        <table class="data">
+          <caption class="sr-only">{t.projects.title}</caption>
+          <thead>
+            <tr>
+              <th scope="col">{t.projects.colProject}</th>
+              <th scope="col">{t.projects.colInstances}</th>
+              <th scope="col">{t.projects.colAttention}</th>
+              <th scope="col" class="num">{t.projects.colActions}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {projects.map((p) => {
+              const st = status.report?.projects.find((x) => x.name === p.name);
+              const running = st ? runningCount(st) : undefined;
+              const attention = st ? attentionCount(st) + st.warnings.length : undefined;
+              return (
+                <tr key={p.name}>
+                  <th scope="row"><a href={href.project(p.name)}>{p.name}</a><div class="mono small muted">{p.path}</div></th>
+                  <td>
+                    {st ? (
+                      <span class="row">
+                        <span class={`badge ${running ? "ok" : "neutral"}`}><Icon name={running ? "running" : "stopped"} /> <span>{t.projects.runningShort(running ?? 0)}</span></span>
+                        <span class="small muted">{t.projects.ofTotal(st.worktrees.filter((w) => w.kind !== "bare").length)}</span>
+                      </span>
+                    ) : st === undefined && status.loading ? <span class="muted small">{t.app.loading}</span> : <span class="muted">—</span>}
+                  </td>
+                  <td>{attention ? <a class="badge warn" href={href.project(p.name)}><Icon name="warn" /> <span>{t.projects.attention(attention)}</span></a> : <span class="muted">—</span>}</td>
+                  <td class="actions num">
+                    <span class="row end">
+                      <a class="btn sm" href={href.wizard(p.name)}><Icon name="plus" /> {t.projects.newInstance}<span class="sr-only"> {p.name}</span></a>
+                      <MenuButton label={t.app.moreFor(p.name)} items={[
+                        { label: t.projectTabs.settings, href: href.projectSettings(p.name) },
+                        { label: t.projectTabs.activity, href: href.activity(p.name) },
+                        { label: t.copy.button, onSelect: () => { void copyText(theoCmd("status", p.name)).then((ok) => announce(ok ? t.copy.copied : t.copy.failed)); } },
+                        { label: t.projects.unregister, danger: true, onSelect: () => setRemoving(p) },
+                      ]} />
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
       {removing ? (
         <ConfirmDialog
           title={t.projects.unregisterTitle(removing.name)}
@@ -44,58 +88,5 @@ export function Projects({ meta }: { meta: Meta | undefined }) {
         />
       ) : null}
     </>
-  );
-}
-
-function ProjectCard({ project, onRemove }: { project: Project; onRemove: () => void }) {
-  const ov = useResource<Overview>(() => api.get<Overview>(`${projectPath(project.name)}/overview`), [project.name], { project: project.name });
-  useEffect(() => { if (ov.data) rememberWorktrees(ov.data.worktrees); }, [ov.data]);
-  const wts = ov.data?.worktrees ?? [];
-  const running = wts.filter((w) => w.state === "running").length;
-  const unknown = ov.data ? !ov.data.docker.available || wts.some((w) => w.state === "unknown") : false;
-  return (
-    <li class="card">
-      <h2><a href={href.project(project.name)}>{project.name}</a></h2>
-      <p class="mono small muted">{project.path}</p>
-      <p class="row">
-        {ov.data ? (
-          <>
-            <span>{t.projects.worktrees(wts.length)}</span>
-            <span aria-hidden="true">·</span>
-            {unknown ? <Badge view={stateView("unknown")} /> : <Badge view={running > 0 ? stateView("running") : stateView("stopped")} extra={t.projects.running(running)} />}
-            <span>{unknown ? t.projects.stateUnknown : running > 0 ? t.projects.running(running) : t.projects.noInstances}</span>
-          </>
-        ) : ov.error ? <span class="muted">{ov.error.message}</span> : <span class="muted">{t.app.loading}</span>}
-      </p>
-      {project.env_file ? <p class="small muted">{t.projects.envFile}: <span class="mono">{project.env_file}</span></p> : null}
-      <div class="row">
-        <a class="btn primary sm" href={href.project(project.name)}>{t.projects.open}<span class="sr-only"> {project.name}</span></a>
-        <button type="button" class="btn sm" onClick={onRemove} aria-label={`${t.projects.unregister} ${project.name}`}>{t.projects.unregister}</button>
-      </div>
-    </li>
-  );
-}
-
-function Welcome({ meta }: { meta: Meta | undefined }) {
-  const blocked = meta && (!meta.docker.available || !meta.git.available);
-  return (
-    <div class="welcome">
-      <img class="mascot" src={brand.mascot} alt={t.welcome.mascotAlt} />
-      <div>
-        <h1 tabIndex={-1}>{t.welcome.title}</h1>
-        <p>{t.welcome.lead}</p>
-        {blocked ? <Banner tone="warn"><p>{t.banner.dockerBody}</p></Banner> : null}
-        <p><a class="btn primary" href={href.add()} onClick={(e) => { e.preventDefault(); navigate(href.add()); }}>{t.welcome.add}</a></p>
-        <details>
-          <summary>{t.welcome.how}</summary>
-          <ol>
-            <li>{t.welcome.step1}</li>
-            <li>{t.welcome.step2}</li>
-            <li>{t.welcome.step3}</li>
-          </ol>
-          <p class="muted">{t.welcome.note}</p>
-        </details>
-      </div>
-    </div>
   );
 }

@@ -20,9 +20,13 @@ async function fetchPage(url: string): Promise<Page> {
 const keyOf = (e: HistoryEvent) => `${e.time}|${e.operation}|${e.result}|${e.workspace ?? ""}`;
 
 export function HistoryTab({ project, w }: { project: string; w: WorktreeDetail }) {
-  const base = `${wtPath(project, w.id)}/history`;
+  return <HistoryList base={`${wtPath(project, w.id)}/history`} project={project} worktree={w.id} />;
+}
+
+/** The history of one instance, of a project (showInstance) or of every project, newest first, in pages. */
+export function HistoryList({ base, project, worktree, showInstance }: { base: string; project: string; worktree?: string; showInstance?: boolean }) {
   // First page: the newest events. Older pages are requested with `before` = the time of the oldest event we have.
-  const first = useResource<Page>(() => fetchPage(`${base}${qs({ limit: PAGE })}`), [project, w.id], { project, worktree: w.id });
+  const first = useResource<Page>(() => fetchPage(`${base}${qs({ limit: PAGE })}`), [base], { project, worktree });
   const res = { ...first, data: first.data?.events };
   const [older, setOlder] = useState<HistoryEvent[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -84,6 +88,7 @@ export function HistoryTab({ project, w }: { project: string; w: WorktreeDetail 
             <thead>
               <tr>
                 <th scope="col">{t.history.colOperation}</th>
+                {showInstance ? <th scope="col">{t.history.colInstance}</th> : null}
                 <th scope="col">{t.history.colResult}</th>
                 <th scope="col">{t.history.colTime}</th>
                 <th scope="col">{t.history.colUser}</th>
@@ -94,6 +99,7 @@ export function HistoryTab({ project, w }: { project: string; w: WorktreeDetail 
               {rows.map((e) => (
                 <tr key={keyOf(e)}>
                   <th scope="row">{e.operation}</th>
+                  {showInstance ? <td class="mono small">{e.compose_project ?? e.workspace ?? "—"}</td> : null}
                   <td><Badge view={e.result === "ok" ? { label: t.history.ok, icon: "ok", tone: "ok" } : { label: t.history.error, icon: "error", tone: "error" }} /></td>
                   <td class="nowrap">{formatTime(e.time)}</td>
                   <td>{e.user ?? "—"}</td>

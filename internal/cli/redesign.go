@@ -437,7 +437,7 @@ Every day
   stop / start   Pause or resume            restart   Restart
   open           Open in the browser        logs      Show the logs
   ps             Containers                 exec, shell
-Worktrees        worktree add|remove|owner, prune, worktrees, branches
+Worktrees        worktree add|remove|owner|prune, worktrees, branches
 Projects         project add|set|show|rename|list|remove
 Configuration    env, instance, ports, services, recreate
 Data             volumes [backup|restore|clone|purge]

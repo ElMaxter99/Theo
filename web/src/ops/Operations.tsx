@@ -21,6 +21,8 @@ export function OpsIndicator() {
     window.addEventListener("theo:show-operations", on);
     return () => window.removeEventListener("theo:show-operations", on);
   }, []);
+  // 0.2: the indicator only shows while something runs (or its panel is open); the toasts tell when it ends.
+  if (active.length === 0 && !open) return null;
   return (
     <div class="ops-indicator">
       <button ref={btn} type="button" class="btn sm" aria-expanded={open} aria-controls="ops-panel" onClick={() => setOpen(!open)}>

@@ -30,6 +30,8 @@ export interface Project {
   worktree_dir?: string;
   worktree_dir_effective?: string;
   compose_files?: string[];
+  /** Root-relative patterns copied from the main worktree into a new one (`project set --copy-on-add`). */
+  copy_on_add?: string[];
   added_at: string;
 }
 
@@ -167,6 +169,10 @@ export interface InstanceSettings {
   neutralize_container_names?: boolean;
   auto_ports?: boolean;
   profiles?: string[];
+  /** The profiles the Compose files declare (0.2). */
+  known_profiles?: string[];
+  /** The worktree's owner label (0.2). */
+  owner?: string;
 }
 
 export interface WorktreeDetail extends Worktree {
@@ -389,4 +395,78 @@ export interface WorktreeSettingsInfo extends InstanceSettings {
   join?: string[];
   /** service -> container_name for the services that set one. */
   fixed_container_names?: Record<string, string>;
+}
+
+// ---------- 0.2 additions (docs/api.md) ----------
+
+/** GET /status: the same JSON as `theo status --json` (only what the screens use). */
+export interface StatusReport {
+  projects: StatusProject[];
+  docker_error?: string;
+  warnings: WtWarning[];
+}
+
+export interface StatusProject {
+  name: string;
+  path: string;
+  error?: string;
+  worktrees: StatusWorktree[];
+  warnings: WtWarning[];
+}
+
+export interface StatusWorktree {
+  id: string;
+  path: string;
+  branch?: string;
+  kind: string;
+  dirty: boolean;
+  missing?: boolean;
+  instance?: {
+    compose_project?: string;
+    instance_state: InstanceState;
+    counts: { running: number; total: number };
+    ports: WtPort[];
+    proxy_urls?: string[];
+  };
+  warnings: WtWarning[];
+}
+
+/** GET|POST /projects/{p}/prune. */
+export interface PruneReport {
+  project: string;
+  into: string;
+  applied: boolean;
+  merged: { path: string; branch: string; owner?: string; reason?: string; removed: boolean }[];
+  not_merged: number;
+}
+
+/** GET .../volumes/backups. */
+export interface BackupInfo {
+  project: string;
+  instance: string;
+  volume: string;
+  docker_volume: string;
+  archive: string;
+  size: number;
+  created_at: string;
+  file: string;
+}
+
+/** GET /mcp/install. */
+export interface McpInstall {
+  name: string;
+  command: string;
+  args: string[];
+  claude_code: string[];
+  claude_code_command: string;
+  mcpServers: Record<string, { command: string; args: string[] }>;
+  snippet: string;
+}
+
+export interface RenameResult {
+  old: string;
+  new: string;
+  records: number;
+  worktree_dir?: string;
+  notes?: string[];
 }

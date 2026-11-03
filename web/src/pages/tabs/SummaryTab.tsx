@@ -1,8 +1,9 @@
 import { api, wtPath } from "../../api/client.ts";
-import type { InstanceSettings, Services, WorktreeDetail } from "../../api/types.ts";
-import { Banner, ErrorBanner, ExternalLink, Loading } from "../../components/ui.tsx";
-import { useAction, useResource } from "../../lib/hooks.ts";
-import { announce } from "../../lib/live.ts";
+import type { Services, WorktreeDetail } from "../../api/types.ts";
+import { Banner, ExternalLink } from "../../components/ui.tsx";
+import { useResource } from "../../lib/hooks.ts";
+import { ServicesTab } from "./ServicesTab.tsx";
+import { PortsTab } from "./PortsTab.tsx";
 import { containerCounts } from "../../lib/status.ts";
 import { shortSha } from "../../lib/overview.ts";
 import { t } from "../../strings.ts";
@@ -23,54 +24,48 @@ export function serviceWarnings(s: Services | undefined): string[] {
   return out;
 }
 
-export function SummaryTab({ project, w }: { project: string; w: WorktreeDetail }) {
+export function SummaryTab({ project, w, lock }: { project: string; w: WorktreeDetail; lock: boolean }) {
   const svc = useResource<Services>(() => api.get<Services>(`${wtPath(project, w.id)}/services`), [project, w.id]);
-  const settings = useResource<InstanceSettings>(() => api.get<InstanceSettings>(`${wtPath(project, w.id)}/settings`), [project, w.id]);
   const counts = containerCounts(w);
-  const toggle = useAction(async (v: boolean) => {
-    await api.patch(`${wtPath(project, w.id)}/settings`, { neutralize_container_names: v });
-    announce(t.summary.settingSaved);
-    settings.reload();
-  });
   const warnings = serviceWarnings(svc.data);
   const src = w.env_file?.source ?? "none";
   return (
     <div class="stack">
-      <dl class="facts">
-        <dt>{t.summary.branch}</dt><dd>{w.branch ?? "—"}{w.detached ? " (detached)" : ""}</dd>
-        <dt>{t.summary.commit}</dt><dd class="mono">{shortSha(w.head) || "—"}</dd>
-        <dt>{t.summary.path}</dt><dd class="mono">{w.path}</dd>
-        <dt>{t.summary.compose}</dt><dd class="mono">{w.compose_project ?? "—"}</dd>
-        <dt>{t.summary.envFile}</dt><dd>{t.summary.envSource[src] ?? src}{w.env_file?.path ? <> — <span class="mono">{w.env_file.path}</span></> : null}</dd>
-        <dt>{t.summary.containers}</dt><dd>{counts ? `${counts.running}/${counts.total}` : "—"}</dd>
-        <dt>{t.summary.owner}</dt><dd>{w.owner ?? <span class="muted">{t.summary.noOwner}</span>}</dd>
-        <dt>{t.summary.domains}</dt>
-        <dd>
-          {(w.proxy_urls ?? []).length > 0
-            ? <ul class="plain">{(w.proxy_urls ?? []).map((l, i) => <li key={i}><ExternalLink href={l.url} label={l.service}>{l.url.replace(/^https?:\/\//, "")}</ExternalLink>{l.default ? null : <span class="small muted"> {l.service}</span>}</li>)}</ul>
-            : <span class="muted">{t.summary.noDomains}</span>}
-        </dd>
-      </dl>
+      {svc.data && (warnings.length > 0 || (w.warnings ?? []).length > 0) ? (
+        <section aria-labelledby="sum-warn">
+          <h2 id="sum-warn">{t.summary.warnings}</h2>
+          {warnings.map((x, i) => <Banner key={i} tone="warn"><p>{x}</p></Banner>)}
+          {(w.warnings ?? []).map((x, i) => <Banner key={"w" + i} tone="warn"><p>{x.message}</p>{x.fix ? <p>{x.fix}</p> : null}</Banner>)}
+        </section>
+      ) : null}
 
-      <section aria-labelledby="sum-warn">
-        <h2 id="sum-warn">{t.summary.warnings}</h2>
-        {svc.loading && !svc.data ? <Loading /> : null}
-        {svc.data && warnings.length === 0 && (w.warnings ?? []).length === 0 ? <p class="muted">{t.summary.noWarnings}</p> : null}
-        {warnings.map((x, i) => <Banner key={i} tone="warn"><p>{x}</p></Banner>)}
-        {(w.warnings ?? []).map((x, i) => <Banner key={"w" + i} tone="warn"><p>{x.message}</p>{x.fix ? <p>{x.fix}</p> : null}</Banner>)}
+      <section aria-labelledby="sum-svc">
+        <h2 id="sum-svc">{t.services.title}</h2>
+        <ServicesTab project={project} w={w} lock={lock} />
       </section>
 
-      <section aria-labelledby="sum-set">
-        <h2 id="sum-set">{t.summary.settings}</h2>
-        <div class="check">
-          <input id="neutralize" type="checkbox" checked={!!settings.data?.neutralize_container_names} disabled={!settings.data || toggle.busy}
-            aria-describedby="neutralize-hint" onChange={(e) => void toggle.run((e.currentTarget as HTMLInputElement).checked)} />
-          <div>
-            <label for="neutralize">{t.summary.neutralize}</label>
-            <p class="hint" id="neutralize-hint">{t.summary.neutralizeHint}</p>
-          </div>
-        </div>
-        <ErrorBanner error={toggle.error} />
+      <section aria-labelledby="sum-ports">
+        <h2 id="sum-ports">{t.ports.title}</h2>
+        <PortsTab project={project} w={w} />
+      </section>
+
+      <section aria-labelledby="sum-facts">
+        <h2 id="sum-facts">{t.summary.facts}</h2>
+        <dl class="facts">
+          <dt>{t.summary.branch}</dt><dd>{w.branch ?? "—"}{w.detached ? " (detached)" : ""}</dd>
+          <dt>{t.summary.commit}</dt><dd class="mono">{shortSha(w.head) || "—"}</dd>
+          <dt>{t.summary.path}</dt><dd class="mono">{w.path}</dd>
+          <dt>{t.summary.compose}</dt><dd class="mono">{w.compose_project ?? "—"}</dd>
+          <dt>{t.summary.envFile}</dt><dd>{t.summary.envSource[src] ?? src}{w.env_file?.path ? <> — <span class="mono">{w.env_file.path}</span></> : null}</dd>
+          <dt>{t.summary.containers}</dt><dd>{counts ? `${counts.running}/${counts.total}` : "—"}</dd>
+          <dt>{t.summary.owner}</dt><dd>{w.owner ?? <span class="muted">{t.summary.noOwner}</span>}</dd>
+          <dt>{t.summary.domains}</dt>
+          <dd>
+            {(w.proxy_urls ?? []).length > 0
+              ? <ul class="plain">{(w.proxy_urls ?? []).map((l, i) => <li key={i}><ExternalLink href={l.url} label={l.service}>{l.url.replace(/^https?:\/\//, "")}</ExternalLink>{l.default ? null : <span class="small muted"> {l.service}</span>}</li>)}</ul>
+              : <span class="muted">{t.summary.noDomains}</span>}
+          </dd>
+        </dl>
       </section>
     </div>
   );

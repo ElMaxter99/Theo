@@ -2,8 +2,12 @@ import { api, wtPath } from "../../api/client.ts";
 import type { Container, Services, WorktreeDetail } from "../../api/types.ts";
 import { Badge, ErrorBanner, Loading } from "../../components/ui.tsx";
 import { Icon } from "../../components/Icon.tsx";
+import { MenuButton } from "../../components/Menu.tsx";
 import { useResource } from "../../lib/hooks.ts";
 import { containersOf } from "../../lib/overview.ts";
+import { announce } from "../../lib/live.ts";
+import { startOperation } from "../../ops/store.ts";
+import type { LifecycleKind } from "../../ops/store.ts";
 import { t } from "../../strings.ts";
 
 function containerView(c: Container | undefined) {
@@ -14,12 +18,16 @@ function containerView(c: Container | undefined) {
   return { label: c.state, icon: "stopped" as const, tone: "neutral" as const };
 }
 
-export function ServicesTab({ project, w }: { project: string; w: WorktreeDetail }) {
+export function ServicesTab({ project, w, lock = false }: { project: string; w: WorktreeDetail; lock?: boolean }) {
   const res = useResource<Services>(() => api.get<Services>(`${wtPath(project, w.id)}/services`), [project, w.id], { project, worktree: w.id });
   const containers = containersOf(w);
   if (res.loading && !res.data) return <Loading />;
   if (res.error) return <ErrorBanner error={res.error} />;
   const list = res.data?.services ?? [];
+  const act = (kind: LifecycleKind, service: string) => {
+    announce(t.services.acting(t.ops.kind[kind] ?? kind, service));
+    void startOperation(project, w.id, kind, { services: [service] }).catch((e) => announce(String((e as Error).message ?? e)));
+  };
   if (list.length === 0) return <p class="empty">{t.services.none}</p>;
   return (
     <div class="table-wrap" tabIndex={0} role="region" aria-label={t.services.title}>
@@ -34,6 +42,7 @@ export function ServicesTab({ project, w }: { project: string; w: WorktreeDetail
             <th scope="col">{t.services.colPorts}</th>
             <th scope="col">{t.services.colMounts}</th>
             <th scope="col">{t.services.colDepends}</th>
+            <th scope="col" class="num">{t.panel.colActions}</th>
           </tr>
         </thead>
         <tbody>
@@ -68,6 +77,15 @@ export function ServicesTab({ project, w }: { project: string; w: WorktreeDetail
                   )}
                 </td>
                 <td class="small">{(s.depends_on ?? []).join(", ") || "—"}</td>
+                <td class="num">
+                  <MenuButton label={t.services.actionsFor(s.name)} items={[
+                    c?.state === "running"
+                      ? { label: t.panel.pause, disabled: lock, onSelect: () => act("stop", s.name) }
+                      : c ? { label: t.panel.start, disabled: lock, onSelect: () => act("start", s.name) } : { label: t.panel.start, disabled: lock, onSelect: () => act("up", s.name) },
+                    c ? { label: t.panel.restart, disabled: lock || c.state !== "running", onSelect: () => act("restart", s.name) } : null,
+                    c ? { label: t.instances.recreate, disabled: lock, onSelect: () => act("recreate", s.name) } : null,
+                  ]} />
+                </td>
               </tr>
             );
           })}

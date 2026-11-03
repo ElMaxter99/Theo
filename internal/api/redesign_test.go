@@ -112,11 +112,16 @@ func TestStatusAndGlobalHistory(t *testing.T) {
 	var report struct {
 		Projects []struct {
 			Name      string `json:"name"`
-			Worktrees []any  `json:"worktrees"`
+			Worktrees []struct {
+				ID string `json:"id"`
+			} `json:"worktrees"`
 		} `json:"projects"`
 	}
 	if st := e.c.call("GET", "/api/v1/status", nil, &report); st != 200 || len(report.Projects) != 1 || report.Projects[0].Name != "ubapp" || len(report.Projects[0].Worktrees) != 2 {
 		t.Fatalf("status = %d %+v", st, report)
+	}
+	if report.Projects[0].Worktrees[0].ID != e.wtID(e.main) {
+		t.Errorf("status ids = %+v", report.Projects[0].Worktrees)
 	}
 	id := e.wtID(e.main)
 	var op struct{ ID string }
@@ -128,6 +133,13 @@ func TestStatusAndGlobalHistory(t *testing.T) {
 	}
 	if st, _, _ := e.c.raw("GET", "/api/v1/history?limit=-1", nil, nil); st != 400 {
 		t.Errorf("history with a bad limit = %d", st)
+	}
+	st, body, hdr = e.c.raw("GET", "/api/v1/projects/ubapp/history?limit=10", nil, nil)
+	if st != 200 || !strings.Contains(string(body), `"up"`) || hdr.Get("Theo-History-Total") == "" {
+		t.Errorf("project history = %d %s %v", st, body, hdr)
+	}
+	if st, _, _ := e.c.raw("GET", "/api/v1/projects/nope/history", nil, nil); st != 404 {
+		t.Errorf("history of an unknown project = %d", st)
 	}
 }
 

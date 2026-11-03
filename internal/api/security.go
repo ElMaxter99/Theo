@@ -22,7 +22,7 @@ const (
 	sessionIdle  = 12 * time.Hour
 	apiBase      = "/api/v1"
 	contentJSON  = "application/json"
-	csp          = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+	csp          = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 	headerNoSnif = "nosniff"
 )
 
