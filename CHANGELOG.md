@@ -5,6 +5,7 @@ Notable changes per release. Each release on GitHub also lists every merged pull
 ## Unreleased
 
 ### Fixed
+- **Windows:** matching worktrees with Theo's records compared every pair of paths and resolved symbolic links each time (about 70,000 file lookups for 52 worktrees); each path is now resolved once, so `theo worktrees` no longer loses seconds there.
 - **Windows PowerShell 5.1:** the console showed `ÔåÆ` instead of `→` (and similar for `·`, `…`, `▶`...) because it reads Theo's UTF-8 with the old OEM code page. On Windows Theo now writes plain ASCII (`->`, `-`, `...`) to the console. `--json` output is left as it is. `THEO_ASCII=1` does the same on any system and `THEO_ASCII=0` turns it off.
 - **Windows:** `theo worktrees` and `theo worktree clean` run up to 16 Git and Docker processes at once (twice the processors, at least 8; it was always 8), so a listing of 50 worktrees needs fewer waves of `git status`.
 
