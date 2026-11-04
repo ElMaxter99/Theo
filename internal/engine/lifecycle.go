@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -232,7 +233,8 @@ func (e *Engine) WorktreeStates(ctx context.Context, project string, opts States
 	if err != nil {
 		return nil, err
 	}
-	list, err := e.Worktrees(ctx, p.Name)
+	// git status runs once per workspace, in lifecycleOf, and gives Dirty too.
+	list, err := e.worktrees(ctx, p.Name, false)
 	if err != nil {
 		return nil, err
 	}
@@ -267,6 +269,9 @@ func (e *Engine) WorktreeStates(ctx context.Context, project string, opts States
 	}
 
 	lg, _ := e.git.(lifecycleGit)
+	if lg != nil {
+		lg = newRevMemo(lg)
+	}
 	if lg == nil {
 		report.Notes = append(report.Notes, "this Git adapter cannot compare branches, so merged, pushed and new are not told apart")
 	}
@@ -286,14 +291,25 @@ func (e *Engine) WorktreeStates(ctx context.Context, project string, opts States
 		wg          sync.WaitGroup
 		noMergeTree bool
 	)
-	par := dirtyParallelism
+	par := lifecycleParallelism()
 	if execx.Explaining() {
 		par = 1
 	}
 	sem := make(chan struct{}, par)
 	for i, wt := range list {
 		report.Worktrees[i].Worktree = wt
-		if i == 0 || wt.Bare {
+		if wt.Bare || i == 0 && wt.Prunable {
+			continue
+		}
+		if i == 0 {
+			ws := &report.Worktrees[i]
+			wg.Add(1)
+			sem <- struct{}{}
+			go func() {
+				defer wg.Done()
+				defer func() { <-sem }()
+				ws.Dirty, _ = e.git.Dirty(ctx, wt.Path)
+			}()
 			continue
 		}
 		rec, _ := workspaceRecord(p, wt.Path)
@@ -309,6 +325,11 @@ func (e *Engine) WorktreeStates(ctx context.Context, project string, opts States
 			}
 			l, unsupported := e.lifecycleOf(ctx, lg, in)
 			ws.Lifecycle = l
+			if l.Changes > 0 {
+				ws.Dirty = true
+			} else if l.Problem != "" && l.Changes == 0 {
+				ws.Dirty, _ = e.git.Dirty(ctx, wt.Path)
+			}
 			if unsupported {
 				mu.Lock()
 				noMergeTree = true
@@ -331,6 +352,68 @@ func (e *Engine) WorktreeStates(ctx context.Context, project string, opts States
 		report.Parked = append(report.Parked, entry)
 	}
 	return report, nil
+}
+
+func utcOrZero(t time.Time) time.Time {
+	if t.IsZero() {
+		return t
+	}
+	return t.UTC()
+}
+
+// lifecycleParallelism is how many workspaces are read at once. Every
+// workspace costs a few short Git processes, and starting a process is slow
+// on Windows, so it follows the processors instead of dirtyParallelism.
+func lifecycleParallelism() int {
+	n := runtime.NumCPU()
+	if n < dirtyParallelism {
+		return dirtyParallelism
+	}
+	if n > 16 {
+		return 16
+	}
+	return n
+}
+
+// revMemo answers Resolves and Commit once per repository and revision for
+// one listing: every workspace of a project asks for the same base, so
+// without it a project with 50 worktrees runs 100 identical rev-parse.
+type revMemo struct {
+	lifecycleGit
+	mu sync.Mutex
+	m  map[string]revAnswer
+}
+
+type revAnswer struct {
+	sha string
+	err error
+}
+
+func newRevMemo(lg lifecycleGit) *revMemo {
+	return &revMemo{lifecycleGit: lg, m: map[string]revAnswer{}}
+}
+
+func (r *revMemo) Commit(ctx context.Context, dir, rev string) (string, error) {
+	key := dir + "\x00" + rev
+	r.mu.Lock()
+	a, ok := r.m[key]
+	r.mu.Unlock()
+	if ok {
+		return a.sha, a.err
+	}
+	sha, err := r.lifecycleGit.Commit(ctx, dir, rev)
+	r.mu.Lock()
+	r.m[key] = revAnswer{sha, err}
+	r.mu.Unlock()
+	return sha, err
+}
+
+func (r *revMemo) Resolves(ctx context.Context, dir, rev string) bool {
+	if rev == "" || strings.HasPrefix(rev, "-") {
+		return false
+	}
+	_, err := r.Commit(ctx, dir, rev)
+	return err == nil
 }
 
 type stateInput struct {
@@ -399,6 +482,8 @@ func (e *Engine) lifecycleOf(ctx context.Context, lg lifecycleGit, in stateInput
 		}
 	}
 	l.State, l.Reason = classify(f, in.now, in.threshold)
+	// File times are local; the JSON gives every time in UTC.
+	l.ActivityAt, l.CreatedAt = utcOrZero(l.ActivityAt), utcOrZero(l.CreatedAt)
 	return l, unsupported
 }
 
