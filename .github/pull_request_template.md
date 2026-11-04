@@ -9,5 +9,5 @@ Commands you ran and on which system. Say what you could not test (for example W
 - [ ] Commits are signed off (`git commit -s`, see CONTRIBUTING.md)
 - [ ] `gofmt -l .` prints nothing; `go vet ./...` and `go test ./...` pass
 - [ ] Docs in `docs/cli/` updated
-- [ ] Release pull request: README.md reviewed and improved (see "Releasing" in CONTRIBUTING.md)
+- [ ] Release pull request: README.md and README.es.md reviewed, improved and in step (see "Releasing" in CONTRIBUTING.md)
 - [ ] No file of the user is changed, and no data is deleted, without an explicit confirmed step

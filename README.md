@@ -2,6 +2,8 @@
 
 <img src="web/public/brand/app-icon-plum-128.png" width="96" height="96" alt="Theo">
 
+**English** · [Español](README.es.md)
+
 # Theo
 
 **One project, many branches, all running at once.**

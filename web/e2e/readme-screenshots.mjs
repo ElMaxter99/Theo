@@ -1,4 +1,5 @@
-// Takes the screenshots shown in the top-level README, from the mock API (no Docker needed).
+// Takes the screenshots shown in README.md (English interface) and README.es.md (Spanish interface),
+// from the mock API (no Docker needed).
 //
 //   cd web && npm run screenshots:readme      writes ../docs/images/*.png
 //
@@ -16,11 +17,11 @@ const shots = [
 const mock = await startMock();
 const browser = await chromium.launch();
 try {
-  for (const scheme of ["light", "dark"]) {
+  for (const [locale, suffix] of [["en-US", ""], ["es-ES", "-es"]]) for (const scheme of ["light", "dark"]) {
     for (const [name, route, wait] of shots) {
-      const page = await openApp(browser, mock, { route, wait, colorScheme: scheme, viewport: { width: 1280, height: 760 }, deviceScaleFactor: 2 });
+      const page = await openApp(browser, mock, { route, wait, locale, colorScheme: scheme, viewport: { width: 1280, height: 760 }, deviceScaleFactor: 2 });
       await page.waitForTimeout(500);
-      const file = path.join(out, `${name}-${scheme}.png`);
+      const file = path.join(out, `${name}-${scheme}${suffix}.png`);
       await page.screenshot({ path: file });
       await page.context().close();
       console.log(file);

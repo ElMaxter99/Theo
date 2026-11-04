@@ -28,7 +28,7 @@ linux)
   install -m 0644 packaging/desktop/theo-desktop.desktop "$root/theo-desktop.desktop"
   install -m 0644 "$brand/app-icon-plum-128.png" "$root/theo.png"
   install -m 0755 packaging/desktop/install.sh "$root/install.sh"
-  cp LICENSE README.md "$root/"
+  cp LICENSE README.md README.es.md "$root/"
   tar -C dist -czf "dist/$name.tar.gz" "$name"
   ;;
 darwin)
@@ -47,12 +47,12 @@ darwin)
   # Ad-hoc signature: not a Developer ID, so Gatekeeper still asks on first
   # open (see docs/cli/desktop.md), but the bundle is internally consistent.
   codesign --force --deep --sign - "$app"
-  cp LICENSE README.md "$root/"
+  cp LICENSE README.md README.es.md "$root/"
   (cd dist && ditto -c -k --keepParent "$name" "$name.zip")
   ;;
 windows)
   install -m 0755 "$bin" "$root/theo-desktop.exe"
-  cp LICENSE README.md "$root/"
+  cp LICENSE README.md README.es.md "$root/"
   (cd dist && powershell -NoProfile -Command "Compress-Archive -Path '$name' -DestinationPath '$name.zip' -Force")
   ;;
 *)

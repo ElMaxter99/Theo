@@ -66,7 +66,7 @@ jobs:
           go build -trimpath \
             -ldflags "-s -w -X github.com/ElMaxter99/Theo/internal/engine.Version=${TAG}" \
             -o "dist/$name/$bin" ./cmd/theo
-          cp LICENSE README.md "dist/$name/"
+          cp LICENSE README.md README.es.md "dist/$name/"
           cd dist
           if [ "$GOOS" = windows ]; then
             zip -qr "$name.zip" "$name"
