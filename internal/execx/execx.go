@@ -175,6 +175,7 @@ func stream(ctx context.Context, dir string, stdin io.Reader, stdout, stderr io.
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Dir = dir
 	prepare(cmd)
+	streamKillTree(cmd)
 	cmd.Stdin = stdin
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
