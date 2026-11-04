@@ -134,8 +134,11 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		defer done()
 		stdout = io.Discard // the commands are listed; what they would have printed is not
 	}
-	if !hasJSONFlag(args) && !rawOutput(args) { // JSON is for programs: it keeps its text as it is
-		stdout, stderr = asciiOnly(stdout), asciiOnly(stderr)
+	if !hasJSONFlag(args) { // JSON is for programs: it keeps its text as it is
+		if !rawOutput(args) { // so do paths and shell code, but messages for people stay readable
+			stdout = asciiOnly(stdout)
+		}
+		stderr = asciiOnly(stderr)
 	}
 	if len(args) == 0 || len(args) == 1 && args[0] == "--json" {
 		// `theo` alone: what runs, in every project. With --json, the same
