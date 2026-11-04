@@ -1,5 +1,8 @@
-import { api, wtPath } from "../../api/client.ts";
-import type { Services, WorktreeDetail, WtWarning } from "../../api/types.ts";
+import { api, projectPath, qs, wtPath } from "../../api/client.ts";
+import type { LifeReport, LifeWorktree, Services, WorktreeDetail, WtWarning } from "../../api/types.ts";
+import { KeepDialog, ParkDialog, unkeep } from "../../components/LifecycleDialogs.tsx";
+import { activityText, shortDate, sizeText } from "../../lib/lifecycle.ts";
+import { useState } from "preact/hooks";
 import { Banner, ErrorBanner, ExternalLink } from "../../components/ui.tsx";
 import { CopyCommand } from "../../components/CopyCommand.tsx";
 import { useAction, useResource } from "../../lib/hooks.ts";
@@ -43,6 +46,8 @@ export function SummaryTab({ project, w, lock }: { project: string; w: WorktreeD
             : <Banner key={"w" + i} tone="warn"><p>{x.message}</p>{x.fix ? <p>{x.fix}</p> : null}</Banner>)}
         </section>
       ) : null}
+
+      {!w.main ? <LifecycleCard project={project} w={w} /> : null}
 
       <section aria-labelledby="sum-svc">
         <h2 id="sum-svc">{t.services.title}</h2>
@@ -106,6 +111,43 @@ function UrlInDataCard({ project, w, warning }: { project: string; w: WorktreeDe
         <button type="button" class="btn sm" disabled={done.busy} onClick={() => void done.run()}>{u.done}</button>
         <a class="btn sm quiet" href={href.projectSettings(project)}>{u.notMine}</a>
       </div>
+    </section>
+  );
+}
+
+// Board "V-05 Instancia › Ciclo de vida": state and why, last activity, base, upstream, origin and size, with Park and
+// Keep; a banner when the instance runs in an inactive worktree.
+function LifecycleCard({ project, w }: { project: string; w: WorktreeDetail }) {
+  const res = useResource<LifeReport>(() => api.get<LifeReport>(`${projectPath(project)}/lifecycle${qs({ size: true })}`), [project, w.id]);
+  const [parking, setParking] = useState(false);
+  const [keeping, setKeeping] = useState(false);
+  const l: LifeWorktree | undefined = res.data?.worktrees.find((x) => x.id === w.id);
+  const unkeepAction = useAction(async () => { if (l) { await unkeep(project, l); res.reload(); } });
+  if (!l || !l.state) return null;
+  const L = t.life;
+  const base = l.base ? `${l.base}${l.ahead >= 0 ? ` · ${l.ahead} ↑ · ${l.behind} ↓` : ""}` : "—";
+  const upstream = l.upstream ? `${l.upstream}${l.upstream_gone ? ` · ${t.cleanup.upstreamGone}` : l.unpushed > 0 ? ` · ${L.notPushed(l.unpushed)}` : ` · ${L.pushed}`}` : L.noUpstream;
+  const idle = l.running && (w.warnings ?? []).some((x) => x.kind === "instance-idle");
+  return (
+    <section aria-labelledby="sum-life" class="stack-sm">
+      <h2 id="sum-life">{L.cardTitle}</h2>
+      {idle ? <Banner tone="warn"><p>{L.idleBanner(l.idle_days)}</p></Banner> : null}
+      <dl class="facts">
+        <dt>{L.cardState}</dt><dd><strong>{L.state[l.state]}</strong>{l.reason ? <span class="muted">: {l.reason}</span> : null}</dd>
+        <dt>{L.cardActivity}</dt><dd>{activityText(l)}{l.activity_at && l.state !== "kept" ? <span class="muted"> ({shortDate(l.activity_at)})</span> : null}</dd>
+        <dt>{L.cardBase}</dt><dd class="mono">{base}</dd>
+        <dt>{L.cardUpstream}</dt><dd class="mono">{upstream}</dd>
+        <dt>{L.cardOrigin}</dt><dd>{l.origin === "theo" ? L.createdByTheo(shortDate(l.created_at), w.owner ?? "") : L.foundByTheo}</dd>
+        <dt>{L.cardSize}</dt><dd>{sizeText(l.size_bytes)}</dd>
+      </dl>
+      <ErrorBanner error={unkeepAction.error} />
+      <div class="row">
+        {w.kind === "worktree" && l.state !== "missing" ? <button type="button" class="btn sm" disabled={l.changes > 0} onClick={() => setParking(true)}>{L.park}</button> : null}
+        {l.state === "kept" ? <button type="button" class="btn sm" disabled={unkeepAction.busy} onClick={() => void unkeepAction.run()}>{L.unkeep}</button>
+          : <button type="button" class="btn sm" onClick={() => setKeeping(true)}>{L.keep}</button>}
+      </div>
+      {parking ? <ParkDialog project={project} w={l} onClose={() => setParking(false)} onDone={() => { location.hash = href.project(project); }} /> : null}
+      {keeping ? <KeepDialog project={project} w={l} onClose={() => setKeeping(false)} onDone={res.reload} /> : null}
     </section>
   );
 }

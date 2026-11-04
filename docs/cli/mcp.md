@@ -75,7 +75,7 @@ worktree), the same selection as `-w` in the CLI.
 |-------------------|---------------------------------------------------------------------------------|---------|-------|
 | `list_projects`   | -                                                                               | no      | `project list --json` |
 | `project_show`    | -                                                                               | no      | `project show --json` |
-| `list_worktrees`  | `owner`                                                                         | no      | `worktrees --json [--owner]` |
+| `list_worktrees`  | `owner`                                                                         | no      | `worktrees --json [--owner]`, with each worktree's `state` |
 | `list_branches`   | -                                                                               | no      | `branches --json` |
 | `add_worktree`    | `branch`*, `new`, `from`, `path`, `owner`, `clone`, `copy`, `copy_files`        | yes     | `worktree add`; `owner` defaults to `--owner` |
 | `remove_worktree` | `worktree`*, `discard_changes`, `confirm`                                       | yes, destructive | `worktree remove`, same refusals |
@@ -99,6 +99,8 @@ worktree), the same selection as `-w` in the CLI.
 | `history`         | `worktree`, `limit`                                                             | no      | `history --json` |
 | `reconcile`       | `project` (optional), `apply`                                                   | only with `apply` | `apply` forgets Theo's own stale records only |
 | `volumes_list`    | -                                                                               | no      | `volumes --json` |
+| `finish_worktree` | `worktree`*, `owner`                                                            | yes, destructive | closes the caller's own worktree when its branch is merged, or pushed with nothing left to push; refuses uncommitted files, a running instance (call `down` first) and other owners' worktrees. The branch and volumes stay |
+| `clean_worktrees` | -                                                                               | no      | `worktree clean` without `--confirm`: what could be closed and what is inactive |
 | `explain`         | `operation`* (`up`, `down`, `restart`, `stop`, `start`) and the arguments of `up` | no   | dry run, like `theo --explain` |
 
 `*` marks required arguments.
@@ -117,6 +119,14 @@ than once (`up`, `down`, `stop`, `start`, `env_set`, `env_unset`,
 `reconcile`). `openWorldHint` is false everywhere: the tools only touch this
 machine's Git and Docker. Clients use them to decide what to ask you before
 running.
+
+### Activity
+
+A server started with `--owner` records, at most once a minute, that its owner
+worked in a worktree whenever a tool is called with `project` and `worktree` on
+a worktree of that owner. Theo then counts that worktree as `in-use` for 30
+minutes, so it is never offered for cleaning while an agent works in it. A
+`--read-only` server records nothing.
 
 ## Knowing when things change
 

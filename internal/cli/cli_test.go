@@ -75,8 +75,8 @@ func TestProjectAndWorktreesWithRealGit(t *testing.T) {
 		t.Fatalf("worktrees: code %d, stderr %s", code, stderr)
 	}
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
-	if len(lines) != 3 || !strings.Contains(lines[1], "main") || !strings.Contains(lines[1], "clean") ||
-		!strings.Contains(lines[2], "feature/x") || !strings.Contains(lines[2], "uncommitted") {
+	if len(lines) < 3 || !strings.Contains(lines[0], "STATE") || !strings.Contains(lines[1], "main") || !strings.Contains(lines[1], "clean") ||
+		!strings.Contains(lines[2], "feature/x") || !strings.Contains(lines[2], "unpushed") || !strings.Contains(lines[2], "files ") {
 		t.Errorf("worktrees output:\n%s", stdout)
 	}
 

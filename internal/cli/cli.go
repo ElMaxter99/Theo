@@ -298,6 +298,7 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 		fs.Var(&composeFiles, "compose-file", "Compose file, relative to each worktree (repeatable; the order matters)")
 		defaultCompose := fs.Bool("default-compose-files", false, "go back to the Compose files Compose finds by itself")
 		urlInData := fs.String("url-in-data", "", "whether the application stores its own address in its data: auto (by image), on or off")
+		inactiveAfter := fs.String("inactive-after", "", "days without activity before a worktree counts as inactive (1-90, such as 14d; 0 restores 7)")
 		asJSON := fs.Bool("json", false, "print the project as JSON")
 		pos, err := parse(fs, args[1:])
 		if err != nil {
@@ -305,6 +306,20 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 		}
 		if len(pos) != 1 {
 			return usageErrorf("project set needs exactly one project name")
+		}
+		if *inactiveAfter != "" {
+			days, err := engine.ParseDays(*inactiveAfter)
+			if err != nil {
+				return usageErrorf("--inactive-after: %v", err)
+			}
+			p, err := e.SetInactiveAfter(pos[0], days)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(stdout, "Project %q: worktrees count as inactive after %d days without activity\n", p.Name, engine.InactiveAfter(p))
+			if *urlInData == "" && *envFile == "" && !*noEnvFile && *worktreeDir == "" && !*defaultDir && len(composeFiles) == 0 && !*defaultCompose && len(copyOnAdd) == 0 && !*noCopyOnAdd {
+				return nil
+			}
 		}
 		if *urlInData != "" {
 			p, err := e.SetURLInData(pos[0], *urlInData)
@@ -436,48 +451,6 @@ func runProject(e *engine.Engine, args []string, stdout io.Writer) error {
 	default:
 		return usageErrorf("unknown project subcommand %q", args[0])
 	}
-}
-
-func runWorktrees(e *engine.Engine, args []string, stdout io.Writer) error {
-	fs := flag.NewFlagSet("worktrees", flag.ContinueOnError)
-	asJSON := fs.Bool("json", false, "print JSON")
-	owner := fs.String("owner", "", "only the workspaces owned by this name")
-	pos, err := parse(fs, args)
-	if err != nil {
-		return err
-	}
-	if len(pos) != 1 {
-		return usageErrorf("worktrees needs exactly one project name")
-	}
-	list, err := e.Worktrees(context.Background(), pos[0])
-	if err != nil {
-		return err
-	}
-	if *owner != "" {
-		var kept []engine.Worktree
-		for _, wt := range list {
-			if wt.Owner == *owner {
-				kept = append(kept, wt)
-			}
-		}
-		list = kept
-	}
-	if *asJSON {
-		if list == nil {
-			list = []engine.Worktree{}
-		}
-		return writeJSON(stdout, list)
-	}
-	tw := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "BRANCH\tKIND\tOWNER\tCHANGES\tPATH")
-	for _, wt := range list {
-		who := wt.Owner
-		if who == "" {
-			who = "-"
-		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", worktreeRef(wt), wt.Kind, who, worktreeState(wt), wt.Path)
-	}
-	return tw.Flush()
 }
 
 func worktreeRef(wt engine.Worktree) string {

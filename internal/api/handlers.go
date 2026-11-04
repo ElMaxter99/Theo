@@ -70,6 +70,7 @@ func (s *Server) routesTable() {
 	s.sharedRoutes()
 	s.redesignRoutes()
 	s.reconcileRoutes()
+	s.lifecycleRoutes()
 
 	s.handle("GET", "/operations", authSession, s.handleOperations)
 	s.handle("GET", "/operations/{id}", authSession, s.handleOperation)
@@ -226,7 +227,7 @@ func (s *Server) handlePatchProject(w http.ResponseWriter, r *http.Request, _ *s
 		return v, true, nil
 	}
 	for k := range req {
-		if k != "env_file" && k != "worktree_dir" && k != "compose_files" && k != "copy_on_add" && k != "url_in_data" {
+		if k != "env_file" && k != "worktree_dir" && k != "compose_files" && k != "copy_on_add" && k != "url_in_data" && k != "inactive_after_days" {
 			return errf(http.StatusBadRequest, "unknown_field", "unknown field "+quote(k))
 		}
 	}
@@ -287,6 +288,17 @@ func (s *Server) handlePatchProject(w http.ResponseWriter, r *http.Request, _ *s
 			mode = engine.URLInDataAuto
 		}
 		if _, err := s.eng.SetURLInData(name, mode); err != nil {
+			return badRequest(err.Error())
+		}
+	}
+	if raw, has := req["inactive_after_days"]; has {
+		var days int
+		if string(raw) != "null" {
+			if err := json.Unmarshal(raw, &days); err != nil {
+				return badRequest("inactive_after_days must be a whole number of days or null")
+			}
+		}
+		if _, err := s.eng.SetInactiveAfter(name, days); err != nil {
 			return badRequest(err.Error())
 		}
 	}

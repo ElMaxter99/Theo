@@ -151,7 +151,7 @@ func TestCompletionDynamic(t *testing.T) {
 		{"", []string{"logs", "-w", "main", "t5comp"}, []string{"api", "db", "worker"}},
 		{"", []string{"worktree", "remove", "t5comp"}, []string{"main", "feature/x"}},
 		{"", []string{"worktree", "add", "t5comp"}, []string{"feature/x", "main"}},
-		{"", []string{"worktree"}, []string{"add", "remove", "prune"}},
+		{"", []string{"worktree"}, []string{"add", "remove", "prune", "clean", "park", "resume", "keep", "base"}},
 		{"", []string{"env", "list"}, []string{"t5comp", "t5other"}},
 		{"", []string{"volumes"}, []string{"purge", "t5comp", "t5other"}},
 		{"", []string{"volumes", "purge"}, []string{"t5comp", "t5other"}},

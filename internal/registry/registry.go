@@ -38,8 +38,25 @@ type Project struct {
 	// URLInData says whether the project's application stores its own
 	// address in its data (Q-020): "" or "auto" (decided by the image),
 	// "on" or "off".
-	URLInData string    `json:"url_in_data,omitempty"`
-	AddedAt   time.Time `json:"added_at"`
+	URLInData string `json:"url_in_data,omitempty"`
+	// InactiveAfterDays is how many days without activity make a workspace
+	// inactive (1 to 90). 0 means the default, 7.
+	InactiveAfterDays int `json:"inactive_after_days,omitempty"`
+	// Parked are the worktrees put away with `theo worktree park`: their
+	// directory is gone, their branch stays, and `worktree resume` brings
+	// them back.
+	Parked  []Parked  `json:"parked,omitempty"`
+	AddedAt time.Time `json:"added_at"`
+}
+
+// Parked is a worktree put away with `theo worktree park`.
+type Parked struct {
+	Branch   string    `json:"branch"`
+	Path     string    `json:"path"` // where it was, and where resume puts it back
+	Base     string    `json:"base,omitempty"`
+	Owner    string    `json:"owner,omitempty"`
+	Note     string    `json:"note,omitempty"`
+	ParkedAt time.Time `json:"parked_at"`
 }
 
 // Workspace kinds kept in the registry.
@@ -53,12 +70,29 @@ const (
 
 // Workspace is what Theo records about one workspace of a project. A clone
 // exists only through this record (Git does not know it); for the others the
-// record only holds the owner label.
+// record holds what Git does not: the owner label, who created it, whether
+// it is kept and when its owner last asked Theo about it.
 type Workspace struct {
 	Path      string    `json:"path"`
 	Kind      string    `json:"kind"`
 	Owner     string    `json:"owner,omitempty"`
 	CreatedAt time.Time `json:"created_at,omitzero"`
+	// Origin says who created it: "theo" for `theo worktree add` (or MCP
+	// create_worktree); empty when Theo found it.
+	Origin string `json:"origin,omitempty"`
+	// Kept is set by `theo worktree keep`: it is never offered for cleaning.
+	// KeptUntil, when set, is when the mark expires.
+	Kept      bool      `json:"kept,omitempty"`
+	KeptUntil time.Time `json:"kept_until,omitzero"`
+	KeepNote  string    `json:"keep_note,omitempty"`
+	// LastSeen is the last time its owner called Theo's MCP server about it.
+	LastSeen time.Time `json:"last_seen,omitzero"`
+}
+
+// Says reports whether the record holds anything beyond its path and kind,
+// so it is worth keeping for a workspace Git lists itself.
+func (w Workspace) Says() bool {
+	return w.Kind == KindClone || w.Owner != "" || w.Origin != "" || w.Kept || w.KeepNote != "" || !w.LastSeen.IsZero()
 }
 
 type document struct {

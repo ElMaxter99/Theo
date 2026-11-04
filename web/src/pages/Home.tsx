@@ -12,6 +12,7 @@ import { formatTime } from "../lib/format.ts";
 import { useHealth } from "../lib/health.ts";
 import { href } from "../lib/router.ts";
 import { stateView } from "../lib/status.ts";
+import { forgotten } from "../lib/lifecycle.ts";
 import { ACTIVE, statusName, statusUrl, useStatus, warningCount, wtState } from "../lib/statusStore.ts";
 import { startOperation, stopAll } from "../ops/store.ts";
 import { announce } from "../lib/live.ts";
@@ -89,6 +90,20 @@ export function Home({ meta }: { meta: Meta | undefined }) {
           ) : null}
           {findings > 0 || warnings > 0 ? <p><a href={href.problems()}>{t.home.seeProblems(findings + warnings)}</a></p> : null}
         </section>
+
+        {(() => {
+          const f = forgotten(report?.projects ?? []);
+          const n = f.close + f.inactive;
+          if (n === 0 && f.idle === 0) return null;
+          return (
+            <section class="card stack" aria-labelledby="home-forgotten">
+              <h2 id="home-forgotten">{t.life.forgottenTitle}</h2>
+              <p class="h1">{n}</p>
+              <p class="small muted">{t.life.forgottenDetail(f.close, f.inactive, f.idle)}</p>
+              <p><a href={href.problems("cleanup")}>{t.life.reviewCleanup}</a></p>
+            </section>
+          );
+        })()}
 
         <section class="card stack" aria-labelledby="home-recent">
           <h2 id="home-recent">{t.home.recentTitle}</h2>

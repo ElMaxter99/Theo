@@ -192,9 +192,11 @@ func TestExplainListsReadsInOrderWithDirectories(t *testing.T) {
 	}
 	// Reads first (list worktrees, branches), then the change, in main's
 	// directory, then the read that looks at the result.
-	if len(cmds) != 4 || !strings.HasPrefix(cmds[0], "1. read   "+main+" $ git worktree list --porcelain") ||
+	// Recording the base of the new branch is a change too.
+	if len(cmds) != 5 || !strings.HasPrefix(cmds[0], "1. read   "+main+" $ git worktree list --porcelain") ||
 		!strings.HasPrefix(cmds[1], "2. read   ") || !strings.Contains(cmds[2], "3. change "+main+" $ git worktree add -b feature/z ") ||
-		!strings.HasPrefix(cmds[3], "4. read   ") {
+		!strings.Contains(cmds[3], "4. change "+main+" $ git config branch.feature/z.gh-merge-base main") ||
+		!strings.HasPrefix(cmds[4], "5. read   ") {
 		t.Errorf("listing:\n%s", stdout)
 	}
 	if _, _, code := run("--explain"); code != ExitUsage {

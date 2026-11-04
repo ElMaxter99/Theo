@@ -88,6 +88,20 @@
             "state": "running"
           },
           "kind": "worktree",
+          "lifecycle": {
+            "activity_at": "<TIME>",
+            "activity_source": "instance",
+            "ahead": 0,
+            "base": "main",
+            "behind": 0,
+            "changes": 1,
+            "created_at": "<TIME>",
+            "idle_days": 0,
+            "reason": "its instance is running",
+            "running": true,
+            "state": "in-use",
+            "unpushed": 0
+          },
           "path": "<TMP>/app-feature",
           "settings": {
             "env_vars": 2,

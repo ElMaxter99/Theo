@@ -199,6 +199,21 @@ Compose names are not used by the renamed instances. Refused with 409 `busy` whi
 `POST` removes the ones without a `reason` and needs the project name typed in `confirm` (409
 `confirmation_required` otherwise). Branches, volumes and clones are never touched.
 
+### Forgotten work (ADR-0016, `theo worktree clean`, `park`, `resume`, `keep`)
+
+- `GET /projects/{p}/lifecycle`: `{project, inactive_after_days, worktrees[], parked[]}`, like
+  `theo worktrees --parked --json`, plus an `id` per worktree for the other routes.
+- `GET /projects/{p}/clean` lists; `POST /projects/{p}/clean` `{confirm, down?, delete_branches?, images?}` closes,
+  and needs the project name in `confirm` (409 `confirmation_required` otherwise). Both answer the report of
+  `theo worktree clean --json`.
+- `POST /projects/{p}/worktrees/{wt}/park` `{note?, confirm?}`: 409 `confirmation_required` lists the ignored
+  files that would be lost and expects the folder name in `confirm`; uncommitted changes are refused.
+- `POST /projects/{p}/resume` `{branch, copy?}` -> `{id, ...}` of the worktree created again.
+- `POST /projects/{p}/worktrees/{wt}/keep` `{until?, note?}` or `{clear:true}`; `until` is `YYYY-MM-DD`.
+- `PATCH /projects/{p}` also accepts `inactive_after_days` (1 to 90, or `null` for the default 7).
+- `GET .../overview` and `GET /status` carry `lifecycle` per worktree and the warnings `worktree-merged`,
+  `worktree-inactive` and `instance-idle`.
+
 ### `DELETE /projects/{p}[?forget_records=1]` -> 200
 Only unregisters: `{"removed":true,"files_kept":true,"containers_kept":true,"records_dropped":false,"resources":{...}}`.
 Refused with `project_has_containers` (409, `affected` lists the Compose projects) while its instances have

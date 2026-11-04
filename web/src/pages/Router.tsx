@@ -31,7 +31,7 @@ export function Router({ route, meta, onRefreshMeta }: { route: Route; meta: Met
         case "settings": return <ProjectSettings project={route.project} />;
         default: return <ProjectPanel project={route.project} drawer={!!route.drawer} onRefreshMeta={onRefreshMeta} />;
       }
-    case "problems": return <Problems tab={route.tab} />;
+    case "problems": return <Problems tab={route.tab} project={route.project} />;
     case "settings": return <Settings meta={meta} section={route.section} />;
     case "detail": return <InstanceDetail project={route.project} wt={route.wt} tab={route.tab} />;
     default: return <NotFound />;
