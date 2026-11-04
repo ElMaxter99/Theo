@@ -105,7 +105,8 @@ func RunDoctor(ctx context.Context, env DoctorEnv) DoctorReport {
 	r := DoctorReport{Platform: env.GOOS, DataDir: env.DataDir}
 	add := func(c Check) { r.Checks = append(r.Checks, c) }
 
-	add(checkGit(ctx, env))
+	gitCheck := checkGit(ctx, env)
+	add(gitCheck)
 	dockerCheck, haveDocker := checkDocker(ctx, env)
 	add(dockerCheck)
 	var eng ContainerEngine
@@ -126,6 +127,11 @@ func RunDoctor(ctx context.Context, env DoctorEnv) DoctorReport {
 	}
 	add(checkDataDir(env))
 	add(checkStateFiles(env))
+	if gitCheck.Status == StatusOK {
+		for _, c := range v5Checks(env, gitCheck.Detail) {
+			add(c)
+		}
+	}
 	for _, c := range platformNotes(ctx, env, eng) {
 		add(c)
 	}
