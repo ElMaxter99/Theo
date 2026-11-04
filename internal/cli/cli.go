@@ -137,9 +137,11 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	if !hasJSONFlag(args) { // JSON is for programs: it keeps its text as it is
 		stdout, stderr = asciiOnly(stdout), asciiOnly(stderr)
 	}
-	if len(args) == 0 {
-		// `theo` alone: what runs, in every project.
-		if err := withEngine(func(e *engine.Engine) error { return runSummary(e, stdout) }); err != nil {
+	if len(args) == 0 || len(args) == 1 && args[0] == "--json" {
+		// `theo` alone: what runs, in every project. With --json, the same
+		// report `theo status --json` prints.
+		asJSON := len(args) == 1
+		if err := withEngine(func(e *engine.Engine) error { return runSummary(e, stdout, asJSON) }); err != nil {
 			printError(stderr, err)
 			return ExitError
 		}

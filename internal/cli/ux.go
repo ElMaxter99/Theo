@@ -79,6 +79,7 @@ func runControl(e *engine.Engine, verb string, args []string, stdout, stderr io.
 	fs := flag.NewFlagSet(verb, flag.ContinueOnError)
 	var sel instanceFlags
 	sel.register(fs)
+	asJSON := fs.Bool("json", false, "print the result as JSON; Compose's own output goes to stderr")
 	var all *bool
 	if verb == "stop" {
 		all = fs.Bool("all", false, "stop every running instance")
@@ -107,10 +108,11 @@ func runControl(e *engine.Engine, verb string, args []string, stdout, stderr io.
 		return err
 	}
 	describe(stderr, inst)
+	out, report := jsonAction(*asJSON, verb, inst, services, stdout, stderr)
 	if verb == "stop" {
-		err = e.Stop(ctx, inst, services, stdout, stderr)
+		err = e.Stop(ctx, inst, services, out, stderr)
 	} else {
-		err = e.Start(ctx, inst, services, stdout, stderr)
+		err = e.Start(ctx, inst, services, out, stderr)
 	}
 	if err != nil {
 		if verb == "start" {
@@ -123,11 +125,11 @@ func runControl(e *engine.Engine, verb string, args []string, stdout, stderr io.
 		what = strings.Join(services, ", ")
 	}
 	if verb == "stop" {
-		fmt.Fprintf(stdout, "Stopped %s of %s. The containers and volumes were kept; `theo start %s -w %s` starts them again.\n", what, inst.Compose, inst.Project, worktreeArg(inst))
+		fmt.Fprintf(out, "Stopped %s of %s. The containers and volumes were kept; `theo start %s -w %s` starts them again.\n", what, inst.Compose, inst.Project, worktreeArg(inst))
 	} else {
-		fmt.Fprintf(stdout, "Started %s of %s.\n", what, inst.Compose)
+		fmt.Fprintf(out, "Started %s of %s.\n", what, inst.Compose)
 	}
-	return nil
+	return report.finish(stdout)
 }
 
 func runRecreate(e *engine.Engine, args []string, stdout, stderr io.Writer) error {
@@ -139,6 +141,7 @@ func runRecreate(e *engine.Engine, args []string, stdout, stderr io.Writer) erro
 	fs.BoolVar(&opts.Build, "build", false, "build images before recreating")
 	fs.Var(&profiles, "profile", "enable a Compose profile (repeatable)")
 	auto := fs.Bool("auto-ports", false, "use other host ports for the ones that are taken, and keep them")
+	asJSON := fs.Bool("json", false, "print the result as JSON; Compose's own output goes to stderr")
 	project, services, err := serviceArgs("recreate", fs, args)
 	if err != nil {
 		return err
@@ -150,18 +153,19 @@ func runRecreate(e *engine.Engine, args []string, stdout, stderr io.Writer) erro
 	}
 	describe(stderr, inst)
 	opts.Profiles, opts.Services = profiles, services
+	out, report := jsonAction(*asJSON, "recreate", inst, services, stdout, stderr)
 	if err := preparePorts(ctx, e, inst, profiles, *auto, stderr); err != nil {
 		return err
 	}
-	if err := e.Recreate(ctx, inst, opts, stdout, stderr); err != nil {
+	if err := e.Recreate(ctx, inst, opts, out, stderr); err != nil {
 		return err
 	}
 	what := "its containers"
 	if len(services) > 0 {
 		what = strings.Join(services, ", ")
 	}
-	fmt.Fprintf(stdout, "Recreated %s of %s. Named volumes were kept.\n", what, inst.Compose)
-	return nil
+	fmt.Fprintf(out, "Recreated %s of %s. Named volumes were kept.\n", what, inst.Compose)
+	return report.finish(stdout)
 }
 
 func runExec(e *engine.Engine, args []string, stdout, stderr io.Writer) error {

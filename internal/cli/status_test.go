@@ -214,3 +214,13 @@ func TestStatusMissingEnvFileAndEmpty(t *testing.T) {
 		}
 	}
 }
+
+func TestSummaryJSON(t *testing.T) {
+	testutil.RequireCompose(t)
+	t.Setenv(registry.EnvHome, t.TempDir())
+	stdout, _, code := run("--json")
+	var r engine.StatusReport
+	if code != ExitOK || json.Unmarshal([]byte(stdout), &r) != nil || r.Projects == nil {
+		t.Errorf("theo --json: code %d\n%s", code, stdout)
+	}
+}

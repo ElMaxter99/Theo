@@ -41,6 +41,7 @@ func runOpen(e *engine.Engine, args []string, stdout, stderr io.Writer) error {
 	var sel instanceFlags
 	sel.register(fs)
 	printOnly := fs.Bool("print", false, "print the address instead of opening it")
+	asJSON := fs.Bool("json", false, "print the address as JSON (implies --print)")
 	project, services, err := serviceArgs("open", fs, args)
 	if err != nil {
 		return err
@@ -69,6 +70,9 @@ func runOpen(e *engine.Engine, args []string, stdout, stderr io.Writer) error {
 	url, err := pickOpenURL(inst, plan, service)
 	if err != nil {
 		return err
+	}
+	if *asJSON {
+		return writeJSON(stdout, map[string]any{"url": url, "project": inst.Project, "path": inst.Workspace, "branch": inst.Branch, "service": service})
 	}
 	if *printOnly {
 		fmt.Fprintln(stdout, url)
