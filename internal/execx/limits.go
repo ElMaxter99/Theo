@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -15,8 +16,22 @@ import (
 // `logs -f`) are never limited here.
 
 // DefaultMaxConcurrent is how many Run/RunChange commands run at the same
-// time in one process unless SetMaxConcurrent says otherwise.
-const DefaultMaxConcurrent = 8
+// time in one process unless SetMaxConcurrent says otherwise: twice the
+// processors, from 8 to 16. Most of them are Git and Docker processes that
+// wait for the disk or the daemon, and starting a process is slow on
+// Windows, so a listing of 50 worktrees finishes in fewer waves.
+var DefaultMaxConcurrent = defaultMaxConcurrent()
+
+func defaultMaxConcurrent() int {
+	n := runtime.NumCPU() * 2
+	if n < 8 {
+		return 8
+	}
+	if n > 16 {
+		return 16
+	}
+	return n
+}
 
 // ErrTimeout is wrapped by the error of a command that was killed because it
 // ran longer than the Timeout of its Limits.

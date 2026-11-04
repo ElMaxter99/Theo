@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -424,12 +423,9 @@ func utcOrZero(t time.Time) time.Time {
 // workspace costs a few short Git processes, and starting a process is slow
 // on Windows, so it follows the processors instead of dirtyParallelism.
 func lifecycleParallelism() int {
-	n := runtime.NumCPU()
+	n := execx.DefaultMaxConcurrent // matches the slots of execx: more would only wait there
 	if n < dirtyParallelism {
 		return dirtyParallelism
-	}
-	if n > 16 {
-		return 16
 	}
 	return n
 }

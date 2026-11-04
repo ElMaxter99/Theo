@@ -39,7 +39,7 @@ func useColor(w io.Writer) bool {
 	if os.Getenv("TERM") == "dumb" {
 		return false
 	}
-	f, ok := w.(*os.File)
+	f, ok := underlying(w).(*os.File)
 	if !ok {
 		return false
 	}
