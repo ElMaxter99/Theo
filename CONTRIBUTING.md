@@ -4,7 +4,7 @@ Thanks for helping. Theo is small and its rules are few; this page is the whole 
 
 ## Language
 
-The public repository is in English: code, comments, commit messages, issues, pull requests and documentation. Please write in English here, even if you discuss the project elsewhere in another language.
+The public repository is in English: code, comments, commit messages, issues, pull requests and documentation. Please write in English here, even if you discuss the project elsewhere in another language. The one exception is `README.es.md`, the Spanish version of the README, kept in step with `README.md`.
 
 ## Sign your work (DCO, no CLA)
 
@@ -65,5 +65,18 @@ Tests that start containers share one Docker daemon. Give your Theo project, Com
 ## Pull requests
 
 Keep a change focused, explain why in the commit message and the description, and add or update tests and the matching page in `docs/cli/`. Say what you ran and on which system; if something is untested (for example Windows), say so. CI must pass.
+
+## Releasing
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which tests, builds and publishes the release. Before tagging, on a pull request of its own:
+
+1. **CHANGELOG.md** has a section for the new version.
+2. **The README is reviewed and improved, in English and in Spanish. Every release, no exceptions.** It is the first page people see and it ships inside every archive, so it must describe the release being tagged, not the previous one. `README.md` and `README.es.md` say the same thing: change one, change the other in the same pull request.
+   - **What's new** describes this version; the previous one moves to a single line under *Earlier releases*.
+   - New commands and flags appear in **Quickstart** or **Commands**, with a link to their page in `docs/cli/`; removed or renamed ones are gone.
+   - **Install**, **Platform notes** and the badges match what the release really ships and what was really tested.
+   - If the interface changed, refresh the screenshots: `cd web && npm ci && npm run screenshots:readme` writes `docs/images/*.png` from the mock, with the English interface for `README.md` and the Spanish one (`*-es.png`) for `README.es.md`.
+   - Improve at least one thing beyond keeping it current: a clearer example, a better explanation, a missing link. Say what in the pull request.
+3. Every page in `docs/cli/` touched by the release is up to date.
 
 Report bugs and ideas with the issue templates. For security problems, see [SECURITY.md](SECURITY.md).

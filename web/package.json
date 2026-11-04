@@ -11,7 +11,8 @@
     "test": "node --test test/*.test.mjs",
     "test:e2e": "node --test --test-concurrency=1 e2e/*.test.mjs",
     "test:e2e:real": "node --test --test-concurrency=1 e2e/real/*.test.mjs",
-    "mock": "node mock/server.mjs"
+    "mock": "node mock/server.mjs",
+    "screenshots:readme": "node e2e/readme-screenshots.mjs"
   },
   "dependencies": {
     "preact": "10.29.8"
