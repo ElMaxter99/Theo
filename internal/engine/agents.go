@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -77,4 +78,23 @@ func (e *Engine) AgentStates(paths []string) map[string]*agents.State {
 		}
 	}
 	return out
+}
+
+// WorktreeFolder finds the folder and branch of a worktree by the same
+// selector as Instance, without resolving its env files or asking Docker:
+// opening a folder needs neither.
+func (e *Engine) WorktreeFolder(ctx context.Context, project, selector string) (path, branch string, err error) {
+	p, err := e.Project(project)
+	if err != nil {
+		return "", "", err
+	}
+	list, err := e.worktreeList(ctx, p)
+	if err != nil {
+		return "", "", err
+	}
+	wt, err := selectWorktree(list, selector)
+	if err != nil {
+		return "", "", fmt.Errorf("project %q: %w", p.Name, err)
+	}
+	return wt.Path, wt.Branch, nil
 }

@@ -58,23 +58,28 @@ func runOpen(e *engine.Engine, args []string, stdout, stderr io.Writer) error {
 		service = services[0]
 	}
 	ctx := context.Background()
-	inst, err := e.Instance(ctx, project, sel.worktree, sel.envFiles)
-	if err != nil {
-		return err
-	}
 	if *in != "url" {
 		if service != "" {
 			return usageErrorf("open --in %s takes no service", *in)
 		}
-		label, err := openIn(e, inst, *in)
+		// A folder needs neither Docker nor the env files of the instance.
+		path, branch, err := e.WorktreeFolder(ctx, project, sel.worktree)
+		if err != nil {
+			return err
+		}
+		label, err := openIn(e, path, branch, *in)
 		if err != nil {
 			return err
 		}
 		if *asJSON {
-			return writeJSON(stdout, map[string]any{"opened": *in, "tool": label, "project": inst.Project, "path": inst.Workspace, "branch": inst.Branch})
+			return writeJSON(stdout, map[string]any{"opened": *in, "tool": label, "project": project, "path": path, "branch": branch})
 		}
-		fmt.Fprintf(stdout, "Opened %s in %s (%s)\n", firstNonEmpty(inst.Branch, inst.Workspace), *in, label)
+		fmt.Fprintf(stdout, "Opened %s in %s (%s)\n", firstNonEmpty(branch, path), *in, label)
 		return nil
+	}
+	inst, err := e.Instance(ctx, project, sel.worktree, sel.envFiles)
+	if err != nil {
+		return err
 	}
 	if service != "" {
 		if err := inst.CheckServices([]string{service}); err != nil {
