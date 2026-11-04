@@ -59,7 +59,7 @@ func TestHookWorktreeCreateAndSetup(t *testing.T) {
 	// The same name gives the same worktree.
 	withStdin(t, `{"cwd":`+quoteJSON(main)+`,"name":"fix login"}`)
 	again, _, code := run("hook", "worktree-create")
-	if code != ExitOK || strings.TrimSpace(again) != path {
+	if code != ExitOK || !samePathCLI(strings.TrimSpace(again), path) {
 		t.Errorf("second create: %d %q, want %q", code, again, path)
 	}
 
