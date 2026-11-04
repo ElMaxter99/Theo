@@ -2,7 +2,7 @@
 
 Notable changes per release. Each release on GitHub also lists every merged pull request.
 
-## Unreleased (v0.4)
+## v0.4.0
 
 ### New
 - **Forgotten work (ADR-0016):** every worktree has a state (`missing`, `in-use`, `kept`, `merged`, `inactive`, `unpushed`, `new`, `pushed`) and its last activity, in `theo worktrees`, `theo status`, MCP, the API and the interface. Merged includes branches merged by squash or rebase on GitHub. `theo` lists the forgotten work.
