@@ -164,7 +164,7 @@ func TestT2ComposeFilesSelection(t *testing.T) {
 	if _, stderr, code := run("up", "t2files", "-w", "feature/x", "--auto-ports"); code != ExitOK {
 		t.Fatalf("up linked: %s", stderr)
 	} else {
-		checkOutput(t, "up linked", stderr, "./b.yaml, ./a.yaml")
+		checkOutput(t, "up linked", stderr, filepath.FromSlash("./b.yaml")+", "+filepath.FromSlash("./a.yaml"))
 		checkOutput(t, "up linked", stderr, fmt.Sprintf("host port %d instead of %d", port+1, port))
 	}
 	stdout, _, _ = run("ps", "t2files", "-w", "feature/x")

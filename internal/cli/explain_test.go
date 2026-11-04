@@ -104,7 +104,7 @@ func TestExplainChangesNothing(t *testing.T) {
 		{[]string{"exec", "t5exp", "-T", "tools", "--", "rm", "-rf", "/data/marker"}, []string{"exec -T tools rm -rf /data/marker"}},
 		{[]string{"shell", "t5exp", "tools"}, []string{"exec"}},
 		{[]string{"worktree", "add", "t5exp", "feature/y", "--new"}, []string{"git worktree add -b feature/y "}},
-		{[]string{"worktree", "remove", "t5exp", "feature/x"}, []string{"change " + main + " $ git worktree remove -- " + linked}},
+		{[]string{"worktree", "remove", "t5exp", "feature/x"}, []string{"change " + main + " $ git worktree remove -- ", filepath.Base(linked)}}, // Windows quotes the path
 		{[]string{"project", "add", otherRepo, "--name", "second"}, nil},
 		{[]string{"project", "remove", "t5exp", "--yes"}, nil},
 		{[]string{"project", "set", "t5exp", "--worktree-dir", filepath.Join(home, "elsewhere")}, nil},

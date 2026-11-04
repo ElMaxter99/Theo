@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -267,7 +268,7 @@ func TestDockerCancelLeavesNoOrphans(t *testing.T) {
 		t.Errorf("state after cancel = %+v", f)
 	}
 	time.Sleep(500 * time.Millisecond)
-	if out, _ := exec.Command("pgrep", "-af", "compose.* -p "+d.name+" .*up").Output(); len(bytes.TrimSpace(out)) > 0 {
+	if out := processesMatching(t, "compose.* -p "+d.name+" .*up"); out != "" {
 		t.Errorf("docker compose up is still running: %s", out)
 	}
 	// The instance is free again and reports a consistent state.
@@ -302,19 +303,42 @@ func TestDockerLogsStreamAndProcessDisappears(t *testing.T) {
 		t.Errorf("the line took %s", time.Since(start))
 	}
 	pattern := "compose.* -p " + d.name + " .*logs"
-	if out, _ := exec.Command("pgrep", "-f", pattern).Output(); len(bytes.TrimSpace(out)) == 0 {
+	if out := processesMatching(t, pattern); out == "" {
 		t.Error("no docker compose logs process while streaming")
 	}
 	s.close()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		if out, _ := exec.Command("pgrep", "-f", pattern).Output(); len(bytes.TrimSpace(out)) == 0 {
+		if processesMatching(t, pattern) == "" {
 			return
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	out, _ := exec.Command("pgrep", "-af", pattern).Output()
-	t.Errorf("docker compose logs is still running after the client left: %s", out)
+	t.Errorf("docker compose logs is still running after the client left: %s", processesMatching(t, pattern))
+}
+
+// processesMatching returns the command lines of the running processes that
+// match the regular expression, empty when none does: pgrep on Linux and
+// macOS, the process table through PowerShell on Windows, which has no pgrep.
+func processesMatching(t *testing.T, pattern string) string {
+	t.Helper()
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		script := "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match $env:THEO_PATTERN } | ForEach-Object { $_.CommandLine }"
+		cmd = exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+		cmd.Env = append(os.Environ(), "THEO_PATTERN="+pattern)
+	} else {
+		cmd = exec.Command("pgrep", "-af", pattern)
+	}
+	out, _ := cmd.Output()
+	var lines []string
+	for _, l := range strings.Split(string(out), "\n") {
+		// The PowerShell that searches matches its own pattern; leave it out.
+		if l = strings.TrimSpace(l); l != "" && !strings.Contains(l, "THEO_PATTERN") && !strings.Contains(l, "pgrep") {
+			lines = append(lines, l)
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // --- contract: the API answers what `theo <cmd> --json` prints ---

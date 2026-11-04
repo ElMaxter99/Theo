@@ -138,7 +138,8 @@ func TestT2ProjectShowRenameRemove(t *testing.T) {
 		t.Error("remove deleted the worktree")
 	}
 	data, _ := os.ReadFile(filepath.Join(home, "instances.json"))
-	if !strings.Contains(string(data), linked) {
+	quoted, _ := json.Marshal(linked) // as instances.json writes it: backslashes are escaped on Windows
+	if !strings.Contains(string(data), string(quoted)) {
 		t.Errorf("without --forget-records the settings stay: %s", data)
 	}
 
