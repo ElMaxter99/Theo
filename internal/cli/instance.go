@@ -39,7 +39,10 @@ func runInstance(e *engine.Engine, cmd string, args []string, stdout, stderr io.
 	var up compose.UpOptions
 	var profiles stringList
 	var logs compose.LogOptions
-	var autoPorts, startShared bool
+	var autoPorts, startShared, asJSON bool
+	if cmd != "logs" {
+		fs.BoolVar(&asJSON, "json", false, "print the result as JSON; Compose's own output goes to stderr")
+	}
 	switch cmd {
 	case "up":
 		fs.Var((*stringList)(&up.Services), "service", "start only this service and what it depends on (repeatable)")
@@ -67,6 +70,10 @@ func runInstance(e *engine.Engine, cmd string, args []string, stdout, stderr io.
 		return err
 	}
 	describe(stderr, inst)
+	out, report := jsonAction(asJSON, cmd, inst, pos[1:], stdout, stderr)
+	if cmd == "up" {
+		report.Services = up.Services
+	}
 
 	switch cmd {
 	case "up":
@@ -76,7 +83,7 @@ func runInstance(e *engine.Engine, cmd string, args []string, stdout, stderr io.
 				return err
 			}
 		}
-		warnings, err := e.EnsureShared(ctx, inst, startShared, stdout, stderr)
+		warnings, err := e.EnsureShared(ctx, inst, startShared, out, stderr)
 		if err != nil {
 			return err
 		}
@@ -89,25 +96,27 @@ func runInstance(e *engine.Engine, cmd string, args []string, stdout, stderr io.
 		if up.Build {
 			warnSharedImages(ctx, e, stderr, inst)
 		}
-		if err := e.Up(ctx, inst, up, stdout, stderr); err != nil {
+		if err := e.Up(ctx, inst, up, out, stderr); err != nil {
 			return err
 		}
-		fmt.Fprintf(stdout, "Started %s. See it with `theo ps %s -w %s`.\n", inst.Compose, inst.Project, worktreeArg(inst))
+		fmt.Fprintf(out, "Started %s. See it with `theo ps %s -w %s`.\n", inst.Compose, inst.Project, worktreeArg(inst))
 		if w := e.URLInDataCheck(ctx, inst); w != nil {
 			printURLInData(stderr, w)
 		}
 	case "down":
-		if err := e.Down(ctx, inst, stdout, stderr); err != nil {
+		if err := e.Down(ctx, inst, out, stderr); err != nil {
 			return err
 		}
-		fmt.Fprintf(stdout, "Stopped %s. Its volumes were kept.\n", inst.Compose)
+		fmt.Fprintf(out, "Stopped %s. Its volumes were kept.\n", inst.Compose)
 	case "restart":
-		return e.RestartServices(ctx, inst, pos[1:], stdout, stderr)
+		if err := e.RestartServices(ctx, inst, pos[1:], out, stderr); err != nil {
+			return err
+		}
 	case "logs":
 		logs.Services = pos[1:]
 		return e.Logs(ctx, inst, logs, stdout, stderr)
 	}
-	return nil
+	return report.finish(stdout)
 }
 
 // preparePorts prepares the instance before `up`: it applies the instance's
@@ -366,4 +375,36 @@ func printURLInData(w io.Writer, warn *engine.StatusWarning) {
 		fmt.Fprintf(w, "  update the data with the application's own tool, for example: %s\n", warn.Command)
 	}
 	fmt.Fprintf(w, "  once it is updated: %s\n", warn.Fix)
+}
+
+// actionResult is what a command that acts on an instance prints with
+// --json: it did what it was asked, and on what.
+type actionResult struct {
+	OK       bool     `json:"ok"`
+	Action   string   `json:"action"`
+	Project  string   `json:"project"`
+	Branch   string   `json:"branch,omitempty"`
+	Path     string   `json:"path"`
+	Compose  string   `json:"compose_project"`
+	Services []string `json:"services,omitempty"`
+
+	asJSON bool
+}
+
+// jsonAction returns where a command's own (human or Compose) output goes
+// and the result it prints at the end. With --json the output goes to
+// stderr, so that stdout holds only the JSON document.
+func jsonAction(asJSON bool, action string, inst *engine.Instance, services []string, stdout, stderr io.Writer) (io.Writer, *actionResult) {
+	r := &actionResult{OK: true, Action: action, Project: inst.Project, Branch: inst.Branch, Path: inst.Workspace, Compose: inst.Compose, Services: services, asJSON: asJSON}
+	if asJSON {
+		return stderr, r
+	}
+	return stdout, r
+}
+
+func (r *actionResult) finish(stdout io.Writer) error {
+	if !r.asJSON {
+		return nil
+	}
+	return writeJSON(stdout, r)
 }

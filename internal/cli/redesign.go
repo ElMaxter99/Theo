@@ -130,13 +130,16 @@ func stateLabel(state string) string {
 const summaryRows = 5
 
 // runSummary prints what runs, in every project: `theo` with no arguments.
-func runSummary(e *engine.Engine, stdout io.Writer) error {
+func runSummary(e *engine.Engine, stdout io.Writer, asJSON bool) error {
 	ctx := context.Background()
 	report, err := e.Status(ctx, "")
 	if err != nil {
 		return err
 	}
 	addProxyURLs(report)
+	if asJSON {
+		return writeJSON(stdout, report)
+	}
 	here, _ := os.Getwd()
 	return printSummary(stdout, report, here, useColor(stdout))
 }

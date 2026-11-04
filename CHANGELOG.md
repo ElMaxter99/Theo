@@ -4,6 +4,18 @@ Notable changes per release. Each release on GitHub also lists every merged pull
 
 ## Unreleased
 
+### New (v0.5: Theo in the agents' workflow)
+- **`.theo.json`:** a committed file in the repository that declares `copy` (files a new worktree gets from the main one) and `after_create` (commands to run in it). Claude Code's `.worktreeinclude` is read too. See [agents](docs/cli/agents.md).
+- **`after_create` commands** run after `theo worktree add`, and with `theo worktree setup`. They run code from the repository, so Theo asks the first time and whenever the list changes (`--yes` approves, `--no-setup` skips); without a terminal nothing runs.
+- **Claude Code hooks:** `theo hook worktree-create | worktree-remove | session-start | agent-state`, and `theo mcp install --hooks` to add them to `.claude/settings.json` (local, project or user) without touching the rest of the file.
+- **`theo env`:** `eval "$(theo env)"` (or `--format powershell|dotenv|json`) exports the project, worktree, ports and URLs; `session-start` hands them to the Claude Code session.
+- **Agent state:** `working`, `waiting`, `done` or unknown per worktree, from the hooks (exact) or from agent processes on Linux (an estimate), in `status`, `worktrees --json`, the API and MCP; new status warnings `agent-waiting` and `agent-done`.
+- **`--json`** in `up`, `down`, `restart`, `stop`, `start`, `recreate`, `open`, `env set|unset` and `theo --json`.
+- **`theo log`** shows a diagnostic log of what hooks could not do.
+- **`theo doctor`** warns about a Git older than 2.41, an invalid `.theo.json`, and hooks not installed.
+
+Still being designed (it needs the visual design approved first): the "Open in..." menu and `theo open --in`, the agent badge and card in the interface, the `AGENT` column, and the new-version notice.
+
 ### Fixed
 - **Windows:** matching worktrees with Theo's records compared every pair of paths and resolved symbolic links each time (about 70,000 file lookups for 52 worktrees); each path is now resolved once, so `theo worktrees` no longer loses seconds there.
 - **Windows PowerShell 5.1:** the console showed `ÔåÆ` instead of `→` (and similar for `·`, `…`, `▶`...) because it reads Theo's UTF-8 with the old OEM code page. On Windows Theo now writes plain ASCII (`->`, `-`, `...`) to the console. `--json` output is left as it is. `THEO_ASCII=1` does the same on any system and `THEO_ASCII=0` turns it off.

@@ -376,3 +376,23 @@ func TestCopyIntoClone(t *testing.T) {
 		t.Errorf("file missing in the clone: %v", err)
 	}
 }
+
+func TestCopyFromRepoDeclaration(t *testing.T) {
+	main, _ := testutil.NewRepo(t, map[string]string{".gitignore": ".env.local\n.npmrc\n"})
+	testutil.WriteFile(t, main, ".env.local", "A=1\n")
+	testutil.WriteFile(t, main, ".npmrc", "x=1\n")
+	testutil.WriteFile(t, main, ".theo.json", `{"copy":[".env.local","../bad"]}`)
+	testutil.WriteFile(t, main, ".worktreeinclude", "# comment\n.npmrc\n")
+
+	e, _, _ := realEngine(t, main)
+	added, err := e.AddWorktree(context.Background(), "app", "feat/decl", AddWorktreeOptions{NewBranch: true, Copy: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(added.Copied, ","); got != ".env.local,.npmrc" {
+		t.Errorf("Copied = %q", got)
+	}
+	if !strings.Contains(strings.Join(added.Notes, "\n"), "../bad") {
+		t.Errorf("the invalid entry should be reported: %v", added.Notes)
+	}
+}

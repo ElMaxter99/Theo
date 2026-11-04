@@ -27,6 +27,9 @@ func runEnv(e *engine.Engine, args []string, stdout io.Writer) error {
 	case "set":
 		fs.BoolVar(&secret, "secret", false, "mask the value when it is shown")
 		fs.Var(&services, "service", "apply only to this service (repeatable; default: every service)")
+		fs.BoolVar(&asJSON, "json", false, "print JSON")
+	case "unset":
+		fs.BoolVar(&asJSON, "json", false, "print JSON")
 	case "list":
 		fs.BoolVar(&showSecrets, "show-secrets", false, "show the values of secret variables")
 		fs.BoolVar(&asJSON, "json", false, "print JSON")
@@ -63,6 +66,9 @@ func runEnv(e *engine.Engine, args []string, stdout io.Writer) error {
 		if err := e.SetEnv(inst, name, value, secret, services); err != nil {
 			return err
 		}
+		if asJSON {
+			return writeJSON(stdout, map[string]any{"ok": true, "action": "env set", "name": name, "secret": secret, "services": services, "compose_project": inst.Compose})
+		}
 		scope := "every service"
 		if len(services) > 0 {
 			scope = strings.Join(services, ", ")
@@ -75,6 +81,9 @@ func runEnv(e *engine.Engine, args []string, stdout io.Writer) error {
 		}
 		if !found {
 			return fmt.Errorf("%s has no variable %s set with theo", inst.Compose, pos[1])
+		}
+		if asJSON {
+			return writeJSON(stdout, map[string]any{"ok": true, "action": "env unset", "name": pos[1], "compose_project": inst.Compose})
 		}
 		fmt.Fprintf(stdout, "Removed %s from %s. It applies the next time the instance starts.\n", pos[1], inst.Compose)
 	case "list":

@@ -74,3 +74,9 @@ func hasJSONFlag(args []string) bool {
 	}
 	return false
 }
+
+// rawOutput says whether a command writes for programs (paths, shell code)
+// and must keep its text as it is: `theo hook`, `theo env`.
+func rawOutput(args []string) bool {
+	return len(args) > 0 && (args[0] == "hook" || args[0] == "env")
+}

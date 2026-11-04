@@ -95,6 +95,16 @@ More in the [quickstart](docs/cli/quickstart.md). To try everything on a small a
 
 ## What's new
 
+### v0.5 (in development): Theo in the agents' workflow
+
+```sh
+theo mcp install --hooks        # Claude Code creates and removes worktrees through Theo
+eval "$(theo env)"              # THEO_PORT_WEB, THEO_URL... of this worktree
+theo worktree setup my-api feature/x   # run the after_create commands of .theo.json
+```
+
+A committed [`.theo.json`](docs/cli/agents.md) says which files a new worktree copies (it reads Claude Code's `.worktreeinclude` too) and which commands to run in it, after you approve them once. Hooks tell Theo whether each agent is working, waiting for you or done. More commands accept `--json`, and `theo doctor` checks more. The "Open in..." menu and the agent badge in the interface are still being designed. See [agents](docs/cli/agents.md).
+
 ### v0.4: forgotten work
 
 ```sh
@@ -127,6 +137,7 @@ Run `theo help` for the full list and `theo help <command>` for one. Every comma
 | Projects | `project add\|set\|list\|remove` | [project](docs/cli/project.md) |
 | Compose files | which files and env files are used | [compose-files](docs/cli/compose-files.md) |
 | Worktrees | `worktrees`, `branches`, `worktree add\|remove`, `up`, `down`, `restart`, `stop`, `ps`, `logs`, `open` | [worktrees](docs/cli/worktrees.md) |
+| Agents | `hook`, `env`, `mcp install --hooks`, `worktree setup`, `.theo.json` | [agents](docs/cli/agents.md) |
 | Forgotten work | `worktree clean\|park\|resume\|keep\|base` | [worktrees](docs/cli/worktrees.md#forgotten-work-states-clean-park-resume-keep) |
 | Host ports | `ports`, `up --auto-ports` | [ports](docs/cli/ports.md) |
 | Local domains | `proxy`, `proxy routes`, `proxy --https`, `proxy trust` | [proxy](docs/cli/proxy.md) |

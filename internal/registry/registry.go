@@ -28,6 +28,10 @@ type Project struct {
 	// --copy` copies from the main worktree into a new workspace. Empty
 	// means nothing is copied.
 	CopyOnAdd []string `json:"copy_on_add,omitempty"`
+	// SetupTrusted identifies the after_create commands of .theo.json that
+	// the person approved for this project. Commands run code from the
+	// repository, so a changed list asks again.
+	SetupTrusted string `json:"setup_trusted,omitempty"`
 	// Workspaces are the workspaces Theo records beyond what Git lists: the
 	// independent clones it created, and the owner labels of any workspace.
 	Workspaces []Workspace `json:"workspaces,omitempty"`

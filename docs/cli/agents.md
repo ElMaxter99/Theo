@@ -1,0 +1,98 @@
+# Agents in the workflow (0.5)
+
+Theo can create, use and close worktrees for a coding agent without manual
+steps, and tell you what each agent is doing. Everything here works from the
+command line; the interface for it (an "Open in..." menu, an agent badge) is
+still being designed.
+
+## The repository declares what a new worktree needs: `.theo.json`
+
+A file in the root of the repository, committed, so the whole team and every
+agent get the same worktree:
+
+```json
+{
+  "version": 1,
+  "copy": [".env", ".env.local", "config/*.key"],
+  "after_create": ["npm ci", "npm run generate"]
+}
+```
+
+- `copy`: files Git does not track that `theo worktree add --copy` copies from
+  the main worktree (same rules as `project set --copy-on-add`: files only,
+  never overwritten, never outside the worktree). Claude Code's
+  `.worktreeinclude` is read too, as a read-only input (one file or glob per
+  line, `#` comments; negations and directories are ignored with a note). The
+  project's own `--copy-on-add` list still applies.
+- `after_create`: commands run in the new worktree, one after the other,
+  stopping at the first that fails. They run code from the repository, so
+  Theo asks the first time, and again whenever the list changes. The answer is
+  remembered per project for those exact commands.
+  - `theo worktree add` asks on a terminal; `--yes` approves, `--no-setup` skips.
+  - Without a terminal (a hook, a script) nothing runs and Theo says how to
+    approve: `theo worktree setup <project> <worktree>` (`--yes` to approve
+    without asking). The commands are read from the new worktree's own
+    `.theo.json`, so a branch that changes them asks again.
+- An invalid `.theo.json` is an error, not silently ignored. `theo doctor`
+  checks the file of every registered project.
+
+## Claude Code hooks: `theo hook`
+
+```sh
+theo mcp install --hooks                 # .claude/settings.local.json (yours)
+theo mcp install --hooks --scope project # .claude/settings.json (the team's)
+theo mcp install --hooks --scope user    # ~/.claude/settings.json
+theo mcp install --hooks --print         # only show the settings
+```
+
+Existing settings are kept (the keys come out sorted); a hook already there is
+not added twice. The hooks call:
+
+| Event | Command | What it does |
+|---|---|---|
+| `WorktreeCreate` | `theo hook worktree-create` | creates a worktree and branch `worktree-<name>` (owner `claude`), copies the files, prints the path and nothing else on stdout. The same name gives the same worktree |
+| `WorktreeRemove` | `theo hook worktree-remove` | removes the worktree if it has no changes; never discards anything |
+| `SessionStart` | `theo hook session-start` | tells the session where it runs (ports and URLs) and exports the `THEO_*` variables through `CLAUDE_ENV_FILE` |
+| `UserPromptSubmit`, `PostToolUse`, `Notification`, `Stop`, `SessionEnd` | `theo hook agent-state` | records whether the agent works, waits for you or is done |
+
+A hook never gets in the agent's way: apart from `worktree-create`, which must
+return a path or say why not, failures are written to `theo log`.
+
+## `theo env`
+
+```sh
+eval "$(theo env)"                                    # POSIX shells
+theo env --format powershell | Invoke-Expression      # PowerShell
+theo env --format dotenv > .env.theo
+theo env --json
+```
+
+Exports `THEO_PROJECT`, `THEO_WORKTREE`, `THEO_WORKTREE_PATH`,
+`THEO_COMPOSE_PROJECT` and, for each service that publishes a TCP port,
+`THEO_PORT_<SERVICE>` and `THEO_URL_<SERVICE>`; `THEO_URL` is the default
+service's. Inside a project folder the project and worktree are inferred.
+`theo env set|unset|list` still manage an instance's variables.
+
+## Agent state
+
+`working`, `waiting` (it needs you), `done` or unknown. It shows as `agent` in
+`theo status --json`, `theo worktrees --json`, the API and MCP, and as the
+warnings `agent-waiting` and `agent-done` in `status`.
+
+- From the hooks above it is exact. A state older than 12 hours is not
+  believed (a crashed session never sends its last event). After you approve a
+  permission the state goes back to `working` with the next tool call.
+- Without hooks, Theo looks for agent programs (`claude`, `codex`, `aider`,
+  `gemini`, `goose`, `opencode`, `amp`, `cursor-agent`, `copilot`) whose
+  working folder is the worktree and reports `working` with source `process`:
+  an estimate, never a warning. This works on Linux; on macOS and Windows
+  detection by process is not available yet, and only hooks give a state.
+
+## More
+
+- `--json` is available on `up`, `down`, `restart`, `stop`, `start`,
+  `recreate`, `open`, `env set|unset` and `theo --json`. With it Compose's own
+  output goes to stderr so stdout holds only the JSON document.
+- `theo log` shows Theo's diagnostic log (`theo log --path` says where it is).
+- `theo doctor` also warns about a Git older than 2.41 (slower listings),
+  reports `.theo.json` problems and whether the hooks are installed.
