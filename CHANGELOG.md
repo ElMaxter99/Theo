@@ -2,7 +2,7 @@
 
 Notable changes per release. Each release on GitHub also lists every merged pull request.
 
-## Unreleased (v0.4)
+## v0.4.0
 
 ### New
 - **Forgotten work (ADR-0016):** every worktree has a state (`missing`, `in-use`, `kept`, `merged`, `inactive`, `unpushed`, `new`, `pushed`) and its last activity, in `theo worktrees`, `theo status`, MCP, the API and the interface. Merged includes branches merged by squash or rebase on GitHub. `theo` lists the forgotten work.
@@ -11,6 +11,10 @@ Notable changes per release. Each release on GitHub also lists every merged pull
 - **MCP:** `finish_worktree` lets an agent close its own worktree once its branch is merged or pushed, `clean_worktrees` lists what could be closed, `list_worktrees` carries the state, and a server with `--owner` marks its owner's worktrees as in use while it works.
 - **Interface:** the instances table shows the state, last activity and Git summary, groups by state or owner, and offers Park, Keep and Resume; home shows a Forgotten work card.
 - New status warnings: `worktree-merged`, `worktree-inactive`, `instance-idle`.
+
+### Fixed
+- **Windows:** `theo worktrees` and `theo worktree clean` with many worktrees are several times faster: Git runs half as often and in parallel.
+- **Tests on Windows with Docker:** the tests that only failed there because of paths, line endings or `pgrep` pass.
 
 ## v0.3.1
 

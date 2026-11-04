@@ -23,7 +23,7 @@ import (
 
 var (
 	reSHA  = regexp.MustCompile(`\b[0-9a-f]{40}\b`)
-	reTime = regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z`)
+	reTime = regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})`)
 	rePort = regexp.MustCompile(`\d{4,5}`)
 	reHex6 = regexp.MustCompile(`-[0-9a-f]{6}\.yaml`)
 )
@@ -64,6 +64,9 @@ func normalizeJSON(v any, tmp string, key string) any {
 		x = strings.ReplaceAll(x, tmp, "<TMP>")
 		if real, err := filepath.EvalSymlinks(tmp); err == nil {
 			x = strings.ReplaceAll(x, real, "<TMP>")
+		}
+		if strings.Contains(x, "<TMP>") || strings.Contains(x, "<HOME>") {
+			x = strings.ReplaceAll(x, `\`, "/") // Windows paths compare like the others
 		}
 		x = reSHA.ReplaceAllString(x, "<SHA>")
 		x = reTime.ReplaceAllString(x, "<TIME>")
@@ -117,6 +120,7 @@ func goldenCheck(t *testing.T, name, tmp string, args ...string) {
 	if err != nil {
 		t.Fatalf("no golden file %s (run with UPDATE_GOLDEN=1): %v", path, err)
 	}
+	want = bytes.ReplaceAll(want, []byte("\r\n"), []byte("\n")) // a checkout with core.autocrlf
 	if !bytes.Equal(bytes.TrimSpace(want), bytes.TrimSpace(buf.Bytes())) {
 		t.Errorf("theo %s: the JSON changed.\n--- golden %s\n%s\n--- now\n%s", strings.Join(args, " "), path, want, buf.String())
 	}

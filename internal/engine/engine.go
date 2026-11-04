@@ -308,6 +308,12 @@ type Worktree struct {
 
 // Worktrees lists the worktrees of a project, the main one first.
 func (e *Engine) Worktrees(ctx context.Context, project string) ([]Worktree, error) {
+	return e.worktrees(ctx, project, true)
+}
+
+// worktrees lists the worktrees of a project; with dirty false it does not
+// run `git status`, for callers that read the changes themselves.
+func (e *Engine) worktrees(ctx context.Context, project string, dirty bool) ([]Worktree, error) {
 	p, err := e.Project(project)
 	if err != nil {
 		return nil, err
@@ -327,7 +333,7 @@ func (e *Engine) Worktrees(ctx context.Context, project string) ([]Worktree, err
 	for i, wt := range list {
 		result[i].Worktree = wt
 		result[i].Kind, result[i].Owner = workspaceKind(p, list, wt.Path), workspaceOwner(p, wt.Path)
-		if wt.Bare || wt.Prunable {
+		if wt.Bare || wt.Prunable || !dirty {
 			continue
 		}
 		wg.Add(1)
