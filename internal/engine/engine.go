@@ -547,10 +547,39 @@ func samePath(a, b string) bool {
 	// The same directory through a symbolic link (macOS keeps /var/folders
 	// as /private/var/folders): Git reports the real path, the user may have
 	// typed the other one.
-	ra, errA := filepath.EvalSymlinks(a)
-	rb, errB := filepath.EvalSymlinks(b)
+	ra, errA := realPath(a)
+	rb, errB := realPath(b)
 	return errA == nil && errB == nil && equal(ra, rb)
 }
+
+// evalSymlinks is filepath.EvalSymlinks; tests replace it to count calls.
+var evalSymlinks = filepath.EvalSymlinks
+
+// realPath is evalSymlinks remembered for a few seconds. Matching 50
+// worktrees against 50 records compares every pair, and on Windows each
+// EvalSymlinks opens the files along the path: 2,500 pairs cost seconds,
+// while the 100 distinct paths cost almost nothing.
+func realPath(p string) (string, error) {
+	now := time.Now()
+	if v, ok := realPaths.Load(p); ok {
+		if e := v.(realPathEntry); now.Sub(e.at) < realPathTTL {
+			return e.path, e.err
+		}
+	}
+	r, err := evalSymlinks(p)
+	realPaths.Store(p, realPathEntry{r, err, now})
+	return r, err
+}
+
+const realPathTTL = 5 * time.Second
+
+type realPathEntry struct {
+	path string
+	err  error
+	at   time.Time
+}
+
+var realPaths sync.Map // path -> realPathEntry
 
 // isInside reports whether path is base or a path below it.
 func isInside(base, path string) bool {
