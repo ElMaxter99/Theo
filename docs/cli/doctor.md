@@ -13,6 +13,9 @@ and notes never fail it.
 | Docker containers | the engine runs Windows containers | switch to Linux containers |
 | Container engine | never fails | names the engine behind docker (Docker Engine, Docker Desktop, Colima, OrbStack, Rancher Desktop, Podman), its context and endpoint; `ok` for Docker Engine and Docker Desktop, a note for Colima, OrbStack and Rancher Desktop, a warning for Podman and for a remote engine, with the differences as notes. See [engines.md](engines.md) |
 | docker compose plugin | missing, older than **2.24.4** (`!override`, `!reset`), or `podman-compose` | install or upgrade the plugin; says if only the old `docker-compose` is found |
+| git speed | never fails; warns when Git is older than **2.41** (listing many worktrees is slower) | upgrade Git |
+| `.theo.json` | never fails; warns when the file of a registered project is not valid JSON; a note when projects use it | fix the JSON |
+| Claude Code hooks | never fails; a note when Theo's hooks are in none of the user's or the projects' settings | `theo mcp install --hooks` |
 | Theo data directory | `THEO_HOME` (or the user config dir) cannot be created or written | fix permissions or set `THEO_HOME` |
 | Theo state files | `registry.json`, `ports.json`, `instances.json`, `history.jsonl` exist but are unreadable or not valid JSON | fix or move the file (Theo never deletes it) |
 

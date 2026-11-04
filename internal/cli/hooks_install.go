@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -115,7 +116,7 @@ func installHooks(scope string, printOnly bool, stdout io.Writer) error {
 	data, err := os.ReadFile(path)
 	switch {
 	case err == nil:
-		if err := json.Unmarshal(data, &doc); err != nil {
+		if err := json.Unmarshal(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")), &doc); err != nil {
 			return fmt.Errorf("%s is not valid JSON, so Theo does not touch it: %w", path, err)
 		}
 	case !errors.Is(err, fs.ErrNotExist):

@@ -70,6 +70,7 @@ func Load(root string) (Loaded, error) {
 	switch {
 	case err == nil:
 		var c Config
+		data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")) // Notepad and PowerShell write a BOM
 		dec := json.NewDecoder(bytes.NewReader(data))
 		if err := dec.Decode(&c); err != nil {
 			return out, fmt.Errorf("%s is not valid: %w", FileName, err)
@@ -102,6 +103,7 @@ func Load(root string) (Loaded, error) {
 // line, `#` comments and blank lines ignored. Negations (`!x`) and
 // directories are not supported and are reported in the notes.
 func ParseInclude(text string) (patterns, notes []string) {
+	text = strings.TrimPrefix(text, "\ufeff")
 	for i, line := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {

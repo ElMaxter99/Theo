@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -52,6 +53,7 @@ func readHookInput() hookInput {
 		}
 	}
 	data, err := io.ReadAll(io.LimitReader(stdin, 1<<20))
+	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")) // PowerShell 5.1 can start its pipe with a BOM
 	if err != nil || len(strings.TrimSpace(string(data))) == 0 {
 		return in
 	}

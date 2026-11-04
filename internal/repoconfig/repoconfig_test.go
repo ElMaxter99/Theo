@@ -67,3 +67,13 @@ func TestFingerprint(t *testing.T) {
 		t.Fatal("fingerprint must depend on the list, not its concatenation")
 	}
 }
+
+func TestLoadAcceptsBOM(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, FileName, "\ufeff"+`{"copy":["a"]}`)
+	write(t, dir, WorktreeIncludes, "\ufeff.npmrc\r\n")
+	l, err := Load(dir)
+	if err != nil || !reflect.DeepEqual(l.Copy, []string{"a", ".npmrc"}) {
+		t.Fatalf("got %+v, %v", l, err)
+	}
+}
