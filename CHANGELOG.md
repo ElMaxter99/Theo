@@ -12,6 +12,10 @@ Notable changes per release. Each release on GitHub also lists every merged pull
 - **Interface:** the instances table shows the state, last activity and Git summary, groups by state or owner, and offers Park, Keep and Resume; home shows a Forgotten work card.
 - New status warnings: `worktree-merged`, `worktree-inactive`, `instance-idle`.
 
+### Fixed
+- **Windows:** `theo worktrees` and `theo worktree clean` with many worktrees are several times faster: Git runs half as often and in parallel.
+- **Tests on Windows with Docker:** the tests that only failed there because of paths, line endings or `pgrep` pass.
+
 ## v0.3.1
 
 ### Fixed
