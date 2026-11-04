@@ -134,6 +134,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		defer done()
 		stdout = io.Discard // the commands are listed; what they would have printed is not
 	}
+	if !hasJSONFlag(args) { // JSON is for programs: it keeps its text as it is
+		stdout, stderr = asciiOnly(stdout), asciiOnly(stderr)
+	}
 	if len(args) == 0 {
 		// `theo` alone: what runs, in every project.
 		if err := withEngine(func(e *engine.Engine) error { return runSummary(e, stdout) }); err != nil {

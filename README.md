@@ -106,6 +106,8 @@ theo worktree resume my-api old-spike
 theo worktree keep my-api demo --until 2026-12-01 --note "client demo"
 ```
 
+Listing is fast even with 50 worktrees on Windows (Git and Docker are asked in parallel), and the Windows console shows plain ASCII instead of broken symbols (`THEO_ASCII=0` turns that off).
+
 Merged is detected even after a squash or rebase on GitHub. Remote branches and volumes are never touched. Agents can close their own worktree with the MCP tool `finish_worktree`. See [forgotten work](docs/cli/worktrees.md#forgotten-work-states-clean-park-resume-keep).
 
 ### Earlier releases
@@ -179,7 +181,7 @@ Theo keeps its registry and data in `theo/` inside your user configuration direc
 | Platform | Status |
 |---|---|
 | **Linux** | Reference platform. CI runs the Docker-based tests and the smoke battery against a real Docker daemon. |
-| **Windows** | CI builds and runs the tests that need no Docker daemon; the Docker-based tests also pass by hand with Docker Desktop (WSL 2, Linux containers). Paths with spaces and accents are supported. |
+| **Windows** | Console output is plain ASCII, so Windows PowerShell 5.1 shows no broken characters. CI builds and runs the tests that need no Docker daemon; the Docker-based tests also pass by hand with Docker Desktop (WSL 2, Linux containers). Paths with spaces and accents are supported. |
 | **macOS** | CI builds and runs the tests that need no Docker daemon. Anything that starts containers is unverified there, so please report problems. |
 
 - Colima, OrbStack, Rancher Desktop (dockerd mode) and Podman (Docker's CLI on Podman's socket) are expected to work but untested; `theo doctor` names the engine and its differences. See [engines](docs/cli/engines.md).
