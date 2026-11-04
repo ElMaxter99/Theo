@@ -915,7 +915,7 @@ const en = {
     noWarnings: "No instance has warnings.",
     recordsTitle: "Theo's records against Git and Docker",
     fix: "Fix:",
-    kind: { "port-conflict": "Port in use", "foreign-stack": "Containers Theo did not start", "missing-env-file": "Env file missing", "config-error": "Compose file error", "fixed-container-name": "Fixed container name", "docker-unavailable": "Docker unavailable", "compose-changed": "Compose files changed", "worktree-merged": "Worktree merged", "worktree-inactive": "Inactive worktree", "instance-idle": "Instance running unused" } as Record<string, string>,
+    kind: { "port-conflict": "Port in use", "foreign-stack": "Containers Theo did not start", "missing-env-file": "Env file missing", "config-error": "Compose file error", "fixed-container-name": "Fixed container name", "docker-unavailable": "Docker unavailable", "compose-changed": "Compose files changed", "worktree-merged": "Worktree merged", "worktree-inactive": "Inactive worktree", "instance-idle": "Instance running unused", "agent-waiting": "Agent waiting for you", "agent-done": "Agent finished" } as Record<string, string>,
   },
   cleanup: {
     title: "Forgotten work",

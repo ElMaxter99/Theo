@@ -44,9 +44,9 @@ func runBranches(e *engine.Engine, args []string, stdout io.Writer) error {
 	return tw.Flush()
 }
 
-func runWorktree(e *engine.Engine, args []string, stdout io.Writer) error {
+func runWorktree(e *engine.Engine, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return usageErrorf("worktree needs a subcommand: add, remove, clean, park, resume, keep, base, prune or owner")
+		return usageErrorf("worktree needs a subcommand: add, remove, setup, clean, park, resume, keep, base, prune or owner")
 	}
 	ctx := context.Background()
 	switch args[0] {
@@ -57,7 +57,9 @@ func runWorktree(e *engine.Engine, args []string, stdout io.Writer) error {
 		path := fs.String("path", "", "directory for the worktree (default: the project's worktree directory)")
 		clone := fs.Bool("clone", false, "create an independent clone instead of a linked worktree (for projects with submodules)")
 		owner := fs.String("owner", "", "label the workspace with an owner, such as an agent name")
-		copyFiles := fs.Bool("copy", false, "copy the files listed with `project set --copy-on-add` from the main worktree")
+		copyFiles := fs.Bool("copy", false, "copy the files listed with `project set --copy-on-add`, in .theo.json or in .worktreeinclude from the main worktree")
+		yesSetup := fs.Bool("yes", false, "run the after_create commands of .theo.json without asking, and remember the approval")
+		noSetup := fs.Bool("no-setup", false, "do not run the after_create commands of .theo.json")
 		var oneOff stringList
 		fs.Var(&oneOff, "copy-file", "copy this root-relative file from the main worktree (repeatable)")
 		asJSON := fs.Bool("json", false, "print JSON")
@@ -78,9 +80,25 @@ func runWorktree(e *engine.Engine, args []string, stdout io.Writer) error {
 		if err != nil {
 			return err
 		}
+		out := stdout
 		if *asJSON {
-			return writeJSON(stdout, added)
+			out = stderr
 		}
+		var setup *engine.SetupResult
+		var setupErr error
+		if !*noSetup {
+			setup, setupErr = runSetupAfterAdd(ctx, e, pos[0], added, *yesSetup, out, stderr)
+		}
+		if *asJSON {
+			if err := writeJSON(stdout, struct {
+				*engine.AddedWorktree
+				Setup *engine.SetupResult `json:"setup,omitempty"`
+			}{added, setup}); err != nil {
+				return err
+			}
+			return setupErr
+		}
+		stdout = out
 		what := "worktree"
 		if added.Kind == engine.KindClone {
 			what = "independent clone"
@@ -99,8 +117,10 @@ func runWorktree(e *engine.Engine, args []string, stdout io.Writer) error {
 			fmt.Fprintf(stdout, "Note: %s\n", n)
 		}
 		fmt.Fprintf(stdout, "Start it with `theo up %s -w %s`.\n", pos[0], added.Branch)
-		return nil
+		return setupErr
 
+	case "setup":
+		return runWorktreeSetup(ctx, e, args[1:], stdout, stderr)
 	case "prune":
 		return runWorktreePrune(ctx, e, args[1:], stdout)
 	case "clean":

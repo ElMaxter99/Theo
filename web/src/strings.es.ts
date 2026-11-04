@@ -908,7 +908,7 @@ export const es: Catalog = {
     noWarnings: "Ninguna instancia tiene avisos.",
     recordsTitle: "Registros de Theo frente a Git y Docker",
     fix: "Solución:",
-    kind: { "port-conflict": "Puerto ocupado", "foreign-stack": "Contenedores que no inició Theo", "missing-env-file": "Falta el archivo de entorno", "config-error": "Error en el archivo de Compose", "fixed-container-name": "Nombre de contenedor fijo", "docker-unavailable": "Docker no disponible", "compose-changed": "Los archivos de Compose han cambiado", "worktree-merged": "Worktree fusionado", "worktree-inactive": "Worktree inactivo", "instance-idle": "Instancia encendida sin uso" },
+    kind: { "port-conflict": "Puerto ocupado", "foreign-stack": "Contenedores que no inició Theo", "missing-env-file": "Falta el archivo de entorno", "config-error": "Error en el archivo de Compose", "fixed-container-name": "Nombre de contenedor fijo", "docker-unavailable": "Docker no disponible", "compose-changed": "Los archivos de Compose han cambiado", "worktree-merged": "Worktree fusionado", "worktree-inactive": "Worktree inactivo", "instance-idle": "Instancia encendida sin uso", "agent-waiting": "Agente esperándote", "agent-done": "Agente terminado" },
   },
   cleanup: {
     title: "Trabajo olvidado",

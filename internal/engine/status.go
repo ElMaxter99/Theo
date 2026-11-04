@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"github.com/ElMaxter99/Theo/internal/agents"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -64,8 +65,11 @@ type WorktreeStatus struct {
 	Settings *SettingsStatus `json:"settings,omitempty"`
 	// Lifecycle is where the workspace is in its life (ADR-0016); absent for
 	// the main worktree and when it cannot be told.
-	Lifecycle *Lifecycle      `json:"lifecycle,omitempty"`
-	Warnings  []StatusWarning `json:"warnings"`
+	Lifecycle *Lifecycle `json:"lifecycle,omitempty"`
+	// Agent is what the coding agent working here is doing, when known:
+	// from Claude Code's hooks, or estimated from its process.
+	Agent    *agents.State   `json:"agent,omitempty"`
+	Warnings []StatusWarning `json:"warnings"`
 }
 
 // InstanceStatus is the state of the Compose project of a worktree.
@@ -136,7 +140,7 @@ type StatusWarning struct {
 	// Kind is one of: port-conflict, foreign-stack, missing-env-file,
 	// config-error, fixed-container-name, docker-unavailable,
 	// compose-changed, url-in-data, worktree-merged, worktree-inactive,
-	// instance-idle, or a
+	// instance-idle, agent-waiting, agent-done, or a
 	// `theo reconcile` finding kind ("worktree missing", "containers
 	// removed", ...).
 	Kind    string `json:"kind"`
@@ -247,6 +251,7 @@ func (e *Engine) projectStatus(ctx context.Context, p registry.Project, drift *R
 	if r, err := e.WorktreeStates(ctx, p.Name, StatesOptions{}); err == nil && len(r.Worktrees) == len(list) {
 		states = r.Worktrees
 	}
+	agentOf := e.agentResolver()
 	for i, wt := range list {
 		ws := WorktreeStatus{
 			Path: wt.Path, Branch: wt.Branch, Head: wt.Head, Kind: KindWorktree, Detached: wt.Detached,
@@ -260,6 +265,8 @@ func (e *Engine) projectStatus(ctx context.Context, p registry.Project, drift *R
 		}
 		if !wt.Bare && !wt.Prunable {
 			e.instanceStatus(ctx, p, &ws, dockerDown)
+			ws.Agent = agentOf.of(wt.Path)
+			ws.Warnings = append(ws.Warnings, agentWarnings(ws.Agent)...)
 		}
 		if i > 0 && states != nil && states[i].State != "" {
 			l := states[i].Lifecycle

@@ -27,11 +27,17 @@ AI agents:
                                                the JSON other clients read, and a paragraph for the
                                                repository's AGENTS.md or CLAUDE.md. --apply runs the
                                                claude command; nothing else is written
+  mcp install --hooks [--scope local|user|project] [--print]
+                                               Add Theo's Claude Code hooks (see hook) to
+                                               .claude/settings.local.json, ~/.claude/settings.json or
+                                               .claude/settings.json; what is there is kept (the keys
+                                               come out sorted). --print shows the settings only
 `)
 	ownerFlag := flagSpec{[]string{"--owner"}, "text"}
 	registerCompletion(cmdSpec{name: "mcp", flags: []flagSpec{{names: []string{"--read-only"}}, ownerFlag, {names: []string{"--resources"}}},
 		subs: []cmdSpec{{name: "install", flags: []flagSpec{ownerFlag, {names: []string{"--read-only"}}, {[]string{"--scope"}, "text"},
-			{[]string{"--name"}, "text"}, {names: []string{"--apply"}}, jsonFlag, {names: []string{"--snippet"}}}}},
+			{[]string{"--name"}, "text"}, {names: []string{"--apply"}}, jsonFlag, {names: []string{"--snippet"}},
+			{names: []string{"--hooks"}}, {names: []string{"--print"}}}}},
 	})
 }
 

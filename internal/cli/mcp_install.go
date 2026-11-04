@@ -38,6 +38,8 @@ func runMCPInstall(args []string, stdout, stderr io.Writer) error {
 	apply := fs.Bool("apply", false, "run the claude mcp add command")
 	asJSON := fs.Bool("json", false, "print JSON")
 	snippet := fs.Bool("snippet", false, "print only the paragraph for AGENTS.md or CLAUDE.md")
+	hooks := fs.Bool("hooks", false, "add Theo's Claude Code hooks to .claude/settings.json (see --scope) instead of registering the MCP server")
+	printHooks := fs.Bool("print", false, "with --hooks: print the settings instead of writing them")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -53,6 +55,9 @@ func runMCPInstall(args []string, stdout, stderr io.Writer) error {
 	}
 	if exclusive > 1 {
 		return usageErrorf("--apply, --json and --snippet exclude each other")
+	}
+	if *hooks {
+		return installHooks(*scope, *printHooks, stdout)
 	}
 	switch *scope {
 	case "", "local", "user", "project":

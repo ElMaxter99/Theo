@@ -134,7 +134,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		defer done()
 		stdout = io.Discard // the commands are listed; what they would have printed is not
 	}
-	if !hasJSONFlag(args) { // JSON is for programs: it keeps its text as it is
+	if !hasJSONFlag(args) && !rawOutput(args) { // JSON is for programs: it keeps its text as it is
 		stdout, stderr = asciiOnly(stdout), asciiOnly(stderr)
 	}
 	if len(args) == 0 || len(args) == 1 && args[0] == "--json" {
@@ -168,7 +168,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "branches":
 		err = withEngine(func(e *engine.Engine) error { return runBranches(e, args[1:], stdout) })
 	case "worktree":
-		err = withEngine(func(e *engine.Engine) error { return runWorktree(e, args[1:], stdout) })
+		err = withEngine(func(e *engine.Engine) error { return runWorktree(e, args[1:], stdout, stderr) })
 	case "services":
 		err = withEngine(func(e *engine.Engine) error { return runServices(e, args[1:], stdout) })
 	case "up", "down", "restart", "logs":
@@ -180,7 +180,11 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "volumes":
 		err = withEngine(func(e *engine.Engine) error { return runVolumes(e, args[1:], stdout, stderr) })
 	case "env":
-		err = withEngine(func(e *engine.Engine) error { return runEnv(e, args[1:], stdout) })
+		if isEnvExport(args[1:]) {
+			err = withEngine(func(e *engine.Engine) error { return runEnvExport(e, args[1:], stdout, stderr) })
+		} else {
+			err = withEngine(func(e *engine.Engine) error { return runEnv(e, args[1:], stdout) })
+		}
 	case "instance":
 		err = withEngine(func(e *engine.Engine) error { return runInstanceCmd(e, args[1:], stdout) })
 	case "history":

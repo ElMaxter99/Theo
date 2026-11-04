@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ElMaxter99/Theo/internal/agents"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -111,6 +112,8 @@ type Lifecycle struct {
 type WorktreeState struct {
 	Worktree
 	Lifecycle
+	// Agent is what the coding agent working here is doing, when known.
+	Agent *agents.State `json:"agent,omitempty"`
 }
 
 // StatesOptions configures WorktreeStates.
@@ -336,6 +339,12 @@ func (e *Engine) WorktreeStates(ctx context.Context, project string, opts States
 		}()
 	}
 	wg.Wait()
+	agentOf := e.agentResolver()
+	for i := range report.Worktrees {
+		if wt := report.Worktrees[i]; !wt.Bare && !wt.Prunable {
+			report.Worktrees[i].Agent = agentOf.of(wt.Path)
+		}
+	}
 	d := <-dockerDone
 	if d.err != nil {
 		report.Notes = append(report.Notes, "Docker could not be asked, so in-use only counts recent calls of agents through MCP")
