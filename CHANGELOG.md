@@ -2,6 +2,15 @@
 
 Notable changes per release. Each release on GitHub also lists every merged pull request.
 
+## v0.4.1
+
+### Documentation
+- **New README:** badges, screenshots of the interface (light and dark), a diagram of how worktrees, instances, shared services and the proxy fit together, an install table, a *What's new* section and sections for the interface and AI agents (MCP). It ships inside every release archive.
+- `cd web && npm run screenshots:readme` takes the README screenshots from the mock, without Docker.
+- **CONTRIBUTING.md, Releasing:** every release reviews and improves the README; the pull request template reminds it.
+
+No changes to the binaries since v0.4.0.
+
 ## v0.4.0
 
 ### New
