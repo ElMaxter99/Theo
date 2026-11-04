@@ -31,6 +31,10 @@ type BranchRef struct {
 	// Base is the recorded base (branch.<name>.gh-merge-base); empty when
 	// none is recorded.
 	Base string
+	// UpstreamAhead is how many commits the branch has that its upstream
+	// has not, read from the same command; valid when TrackRead is true.
+	UpstreamAhead int
+	TrackRead     bool
 }
 
 // LocalBranches lists the local branches of the repository that contains dir
@@ -47,7 +51,11 @@ func (Git) LocalBranches(ctx context.Context, dir string) (map[string]BranchRef,
 		if len(parts) != 3 || parts[0] == "" {
 			continue
 		}
-		refs[parts[0]] = BranchRef{Name: parts[0], Upstream: parts[1], Gone: strings.Contains(parts[2], "gone")}
+		r := BranchRef{Name: parts[0], Upstream: parts[1], Gone: strings.Contains(parts[2], "gone")}
+		if r.Upstream != "" && !r.Gone {
+			r.UpstreamAhead, r.TrackRead = parseTrackAhead(parts[2])
+		}
+		refs[parts[0]] = r
 	}
 	// --get-regexp exits with 1 when nothing matches: that is not an error.
 	cfg, _ := execx.Run(ctx, dir, "git", "config", "--get-regexp", `^branch\..*\.`+BaseKey+`$`)
@@ -58,6 +66,65 @@ func (Git) LocalBranches(ctx context.Context, dir string) (map[string]BranchRef,
 		}
 	}
 	return refs, nil
+}
+
+// parseTrackAhead reads the ahead count of %(upstream:track): "" when the
+// branch and its upstream are equal, "[ahead 2]", "[behind 1]" or
+// "[ahead 2, behind 1]". It reports false for anything else.
+func parseTrackAhead(track string) (int, bool) {
+	t := strings.TrimSpace(track)
+	if t == "" {
+		return 0, true
+	}
+	if !strings.HasPrefix(t, "[") || !strings.HasSuffix(t, "]") {
+		return 0, false
+	}
+	ahead := 0
+	for _, part := range strings.Split(strings.Trim(t, "[]"), ",") {
+		f := strings.Fields(part)
+		if len(f) != 2 {
+			return 0, false
+		}
+		n, err := strconv.Atoi(f[1])
+		if err != nil {
+			return 0, false
+		}
+		switch f[0] {
+		case "ahead":
+			ahead = n
+		case "behind":
+		default:
+			return 0, false
+		}
+	}
+	return ahead, true
+}
+
+// AheadBehindAll compares every local branch with base in one Git command
+// (%(ahead-behind:...), Git 2.41 or later): for each branch, the commits it
+// has that base has not, and the commits base has that it has not. An older
+// Git answers an error, and callers fall back to AheadBehind.
+func (Git) AheadBehindAll(ctx context.Context, dir, base string) (map[string][2]int, error) {
+	if err := checkRef("base", base); err != nil {
+		return nil, err
+	}
+	out, err := execx.Run(ctx, dir, "git", "for-each-ref", "--format=%(refname:short)%00%(ahead-behind:"+base+")", "refs/heads")
+	if err != nil {
+		return nil, err
+	}
+	counts := map[string][2]int{}
+	for _, line := range strings.Split(string(out), "\n") {
+		name, ab, ok := strings.Cut(line, "\x00")
+		if !ok || name == "" {
+			continue
+		}
+		ahead, behind, err := parseCounts([]byte(ab))
+		if err != nil {
+			return nil, err
+		}
+		counts[name] = [2]int{ahead, behind}
+	}
+	return counts, nil
 }
 
 // ParseBases parses `git config --get-regexp '^branch\..*\.gh-merge-base$'`.
@@ -191,6 +258,20 @@ func (Git) LastCommitTime(ctx context.Context, dir, base, branch string) (t time
 func (Git) BranchMoves(ctx context.Context, dir, branch string) int {
 	if checkRef("branch", branch) != nil {
 		return 0
+	}
+	// The reflog is a file with one line per move; reading it saves a Git
+	// process per worktree. A .git that is not a directory (a linked
+	// worktree, a submodule) or a missing file falls back to Git.
+	if fi, err := os.Stat(filepath.Join(dir, ".git")); err == nil && fi.IsDir() {
+		if data, err := os.ReadFile(filepath.Join(dir, ".git", "logs", "refs", "heads", filepath.FromSlash(branch))); err == nil {
+			n := 0
+			for _, line := range strings.Split(string(data), "\n") {
+				if strings.TrimSpace(line) != "" {
+					n++
+				}
+			}
+			return n
+		}
 	}
 	out, err := execx.Run(ctx, dir, "git", "reflog", "show", "--format=%H", "refs/heads/"+branch, "--")
 	if err != nil {

@@ -382,6 +382,36 @@ type revMemo struct {
 	lifecycleGit
 	mu sync.Mutex
 	m  map[string]revAnswer
+	// counts holds, per repository and base, the ahead and behind of every
+	// local branch from one `git for-each-ref` (nil when Git is too old).
+	counts map[string]map[string][2]int
+}
+
+// aheadBehindAller is the Git of 2.41 or later, which compares every branch
+// with a base in one command.
+type aheadBehindAller interface {
+	AheadBehindAll(ctx context.Context, dir, base string) (map[string][2]int, error)
+}
+
+// AheadBehind answers from one comparison of every branch with base, made
+// the first time base is asked for, and asks Git for anything else.
+func (r *revMemo) AheadBehind(ctx context.Context, dir, base, branch string) (int, int, error) {
+	if all, ok := r.lifecycleGit.(aheadBehindAller); ok && !execx.Explaining() {
+		key := dir + "\x00" + base
+		r.mu.Lock()
+		counts, done := r.counts[key]
+		r.mu.Unlock()
+		if !done {
+			counts, _ = all.AheadBehindAll(ctx, dir, base) // nil on an older Git
+			r.mu.Lock()
+			r.counts[key] = counts
+			r.mu.Unlock()
+		}
+		if c, ok := counts[branch]; ok {
+			return c[0], c[1], nil
+		}
+	}
+	return r.lifecycleGit.AheadBehind(ctx, dir, base, branch)
 }
 
 type revAnswer struct {
@@ -390,7 +420,7 @@ type revAnswer struct {
 }
 
 func newRevMemo(lg lifecycleGit) *revMemo {
-	return &revMemo{lifecycleGit: lg, m: map[string]revAnswer{}}
+	return &revMemo{lifecycleGit: lg, m: map[string]revAnswer{}, counts: map[string]map[string][2]int{}}
 }
 
 func (r *revMemo) Commit(ctx context.Context, dir, rev string) (string, error) {
@@ -552,7 +582,9 @@ func (e *Engine) branchFacts(ctx context.Context, lg lifecycleGit, in stateInput
 	switch {
 	case l.Upstream != "" && !l.UpstreamGone:
 		f.HasUpstream = true
-		if a, _, err := lg.AheadBehind(ctx, repo, l.Upstream, rev); err == nil {
+		if isBranch && ref.TrackRead {
+			l.Unpushed, f.Unpushed = ref.UpstreamAhead, ref.UpstreamAhead
+		} else if a, _, err := lg.AheadBehind(ctx, repo, l.Upstream, rev); err == nil {
 			l.Unpushed, f.Unpushed = a, a
 		}
 	case l.Ahead > 0:
