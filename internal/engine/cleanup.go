@@ -109,6 +109,17 @@ func (e *Engine) Clean(ctx context.Context, project string, opts CleanOptions) (
 	if err != nil {
 		return nil, err
 	}
+	// A listing changes nothing, so the leftovers are looked up at the same
+	// time as the states: on Windows each Docker call costs a second or more.
+	type driftAnswer struct {
+		report *Report
+		err    error
+	}
+	var driftDone chan driftAnswer
+	if !opts.Apply {
+		driftDone = make(chan driftAnswer, 1)
+		go func() { r, err := e.Reconcile(ctx, p.Name); driftDone <- driftAnswer{r, err} }()
+	}
 	states, err := e.WorktreeStates(ctx, p.Name, StatesOptions{})
 	if err != nil {
 		return nil, err
@@ -189,7 +200,14 @@ func (e *Engine) Clean(ctx context.Context, project string, opts CleanOptions) (
 		}
 	}
 
-	if drift, err := e.Reconcile(ctx, p.Name); err == nil {
+	var drift *Report
+	if driftDone != nil {
+		d := <-driftDone
+		drift, err = d.report, d.err
+	} else {
+		drift, err = e.Reconcile(ctx, p.Name)
+	}
+	if err == nil {
 		var forget Report
 		for _, f := range drift.Findings {
 			switch f.Kind {

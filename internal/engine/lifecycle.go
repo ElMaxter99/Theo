@@ -242,18 +242,17 @@ func (e *Engine) WorktreeStates(ctx context.Context, project string, opts States
 	threshold := InactiveAfter(p)
 	report := &StatesReport{Project: p.Name, InactiveAfterDays: threshold, Worktrees: make([]WorktreeState, len(list)), Parked: []ParkedEntry{}}
 
-	running := map[int]bool{}
-	if overview, err := e.Overview(ctx, p.Name); err != nil {
-		report.Notes = append(report.Notes, "Docker could not be asked, so in-use only counts recent calls of agents through MCP")
-	} else {
-		for i, o := range overview {
-			for _, s := range o.Stacks {
-				if strings.Contains(strings.ToLower(s.Status), "running") {
-					running[i] = true
-				}
-			}
-		}
+	// Docker is asked while Git works: on Windows `docker compose ls` alone
+	// can take a second or more.
+	type dockerAnswer struct {
+		running map[int]bool
+		err     error
 	}
+	dockerDone := make(chan dockerAnswer, 1)
+	go func() {
+		r, err := e.runningWorkspaces(ctx, p, list)
+		dockerDone <- dockerAnswer{r, err}
+	}()
 	lastEvent := map[string]time.Time{}
 	if events, err := e.settings.Events(); err == nil {
 		for _, ev := range events {
@@ -321,7 +320,7 @@ func (e *Engine) WorktreeStates(ctx context.Context, project string, opts States
 			defer func() { <-sem }()
 			in := stateInput{
 				p: p, wt: wt, rec: rec, mainBranch: mainBranch, mainRefs: mainRefs,
-				running: running[i], lastEvent: lastEvent[wt.Path], now: now, threshold: threshold, size: opts.Size,
+				lastEvent: lastEvent[wt.Path], now: now, threshold: threshold, size: opts.Size,
 			}
 			l, unsupported := e.lifecycleOf(ctx, lg, in)
 			ws.Lifecycle = l
@@ -338,6 +337,20 @@ func (e *Engine) WorktreeStates(ctx context.Context, project string, opts States
 		}()
 	}
 	wg.Wait()
+	d := <-dockerDone
+	if d.err != nil {
+		report.Notes = append(report.Notes, "Docker could not be asked, so in-use only counts recent calls of agents through MCP")
+	}
+	for i := range report.Worktrees {
+		ws := &report.Worktrees[i]
+		if i == 0 || ws.Bare || !d.running[i] {
+			continue
+		}
+		ws.Running = true
+		if ws.State != LifeMissing { // the order of classify: missing, then in use
+			ws.State, ws.Reason = LifeInUse, "its instance is running"
+		}
+	}
 	if noMergeTree {
 		report.Notes = append(report.Notes, git.ErrMergeTreeUnsupported.Error()+"; branches merged that way show as inactive, unpushed or pushed")
 	}
@@ -352,6 +365,52 @@ func (e *Engine) WorktreeStates(ctx context.Context, project string, opts States
 		report.Parked = append(report.Parked, entry)
 	}
 	return report, nil
+}
+
+// runningWorkspaces tells which workspaces of list have a running Compose
+// project, from one `docker compose ls`: by the name Theo gives a linked
+// worktree's instance, or by the folder of its first Compose file. Unlike
+// Overview it does not run `docker compose config` for the main worktree,
+// which costs seconds on Windows; the main worktree is never offered for
+// cleaning anyway.
+func (e *Engine) runningWorkspaces(ctx context.Context, p registry.Project, list []Worktree) (map[int]bool, error) {
+	stacks, err := e.compose.Stacks(ctx)
+	if err != nil {
+		return nil, err
+	}
+	gl := make([]git.Worktree, len(list))
+	for i, w := range list {
+		gl[i] = w.Worktree
+	}
+	byName := map[string]int{}
+	for i, wt := range gl {
+		if i > 0 && !wt.Bare {
+			byName[instanceName(p.Name, "", wt, gl)] = i
+		}
+	}
+	running := map[int]bool{}
+	for _, s := range stacks {
+		if !strings.Contains(strings.ToLower(s.Status), "running") {
+			continue
+		}
+		best, ok := byName[s.Name]
+		if !ok {
+			best = -1
+			first, _, _ := strings.Cut(s.ConfigFiles, ",")
+			for i, wt := range gl {
+				if first == "" || wt.Bare || !isInside(wt.Path, filepath.Dir(first)) {
+					continue
+				}
+				if best < 0 || len(wt.Path) > len(gl[best].Path) {
+					best = i
+				}
+			}
+		}
+		if best >= 0 {
+			running[best] = true
+		}
+	}
+	return running, nil
 }
 
 func utcOrZero(t time.Time) time.Time {

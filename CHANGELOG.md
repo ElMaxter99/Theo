@@ -14,6 +14,7 @@ Notable changes per release. Each release on GitHub also lists every merged pull
 
 ### Fixed
 - **Windows:** `theo worktrees` and `theo worktree clean` with many worktrees are several times faster: about one Git process per worktree instead of six, and in parallel (Git 2.41 or later compares every branch with its base in one command).
+- **Windows:** `theo worktrees` asks Docker once (`docker compose ls`) while Git works, instead of also running `docker compose config` first, and `theo worktree clean` without `--confirm` looks for leftovers at the same time; with Docker Desktop each call costs a second or more.
 - **Windows:** following logs in the interface no longer leaves `docker-compose.exe` running after the page closes the stream: Theo now ends the whole process tree.
 - **Tests on Windows with Docker:** the tests that only failed there because of paths, line endings or `pgrep` pass.
 
