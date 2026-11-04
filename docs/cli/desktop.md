@@ -63,6 +63,17 @@ scripts/build-desktop.sh            # Linux and macOS (also Git Bash on Windows)
 .\scripts\build-desktop.ps1          # Windows PowerShell -> dist\theo-desktop.exe
 ```
 
+On Windows, from a fresh clone, this builds the app and opens it, installing Go and the C compiler with `winget` if
+they are missing (it works in Windows PowerShell 5.1; `build-desktop.cmd` skips the execution-policy prompt):
+
+```
+git clone https://github.com/ElMaxter99/Theo
+cd Theo
+.\scripts\build-desktop.cmd -InstallDeps -Run
+```
+
+The result is `dist\theo-desktop.exe`: double-click it any time to open the app. `-Cli` also builds `dist\theo.exe`.
+
 Add `--cli` (`-Cli` in PowerShell) to build `theo` too. It cannot be cross-compiled (the window needs cgo and the system web
 view), so run it on each system. What it does, step by step:
 
