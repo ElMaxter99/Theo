@@ -13,6 +13,7 @@ import (
 	"github.com/ElMaxter99/Theo/internal/execx"
 	"github.com/ElMaxter99/Theo/internal/git"
 	"github.com/ElMaxter99/Theo/internal/registry"
+	"github.com/ElMaxter99/Theo/internal/repoconfig"
 )
 
 // Branch is a branch of a project and the worktree where it is checked out.
@@ -183,12 +184,30 @@ func (e *Engine) AddWorktree(ctx context.Context, project, branch string, opts A
 		}
 		patterns = append(patterns, c)
 	}
-	if opts.Copy && len(patterns) == 0 {
-		return nil, fmt.Errorf("no files to copy: list them with `theo project set %s --copy-on-add <file>`, or pass --copy-file <file>", p.Name)
-	}
 	list, err := e.worktreeList(ctx, p)
 	if err != nil {
 		return nil, err
+	}
+	// What the repository itself declares (.theo.json, .worktreeinclude) is
+	// copied too: the team wrote it for exactly this.
+	var repoNotes []string
+	if opts.Copy {
+		decl, err := repoconfig.Load(list[0].Path)
+		if err != nil {
+			return nil, err
+		}
+		repoNotes = decl.Notes
+		for _, f := range decl.Copy {
+			c, err := CleanCopyPattern(f)
+			if err != nil {
+				repoNotes = append(repoNotes, fmt.Sprintf("%s: %v; ignored", strings.Join(decl.Sources, "/"), err))
+				continue
+			}
+			patterns = append(patterns, c)
+		}
+	}
+	if opts.Copy && len(patterns) == 0 {
+		return nil, fmt.Errorf("no files to copy: list them in %s, with `theo project set %s --copy-on-add <file>`, or pass --copy-file <file>", repoconfig.FileName, p.Name)
 	}
 	for _, wt := range list {
 		if wt.Branch == branch && !wt.Prunable {
@@ -237,7 +256,7 @@ func (e *Engine) AddWorktree(ctx context.Context, project, branch string, opts A
 			return nil, err
 		}
 	}
-	added := &AddedWorktree{Path: path, Branch: branch, Kind: KindWorktree, Owner: opts.Owner}
+	added := &AddedWorktree{Path: path, Branch: branch, Kind: KindWorktree, Owner: opts.Owner, Notes: repoNotes}
 	if opts.Clone {
 		added.Kind = KindClone
 		notes, err := e.createClone(ctx, p, path, branch, opts)
