@@ -23,5 +23,10 @@ func killTree(cmd *exec.Cmd) {
 	}
 }
 
+// streamKillTree does nothing outside Windows: a streamed command may be
+// interactive (theo shell), and its own process group would take it off the
+// terminal. Docker's plugins notice there when docker itself is killed.
+func streamKillTree(*exec.Cmd) {}
+
 // prepare does nothing outside Windows.
 func prepare(*exec.Cmd) {}

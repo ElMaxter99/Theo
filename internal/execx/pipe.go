@@ -27,6 +27,7 @@ func Pipe(ctx context.Context, stdin io.Reader, stdout io.Writer, name string, a
 	}
 	cmd := exec.CommandContext(ctx, path, args...)
 	prepare(cmd)
+	streamKillTree(cmd)
 	cmd.Stdin = stdin
 	cmd.Stdout = stdout
 	var stderr bytes.Buffer
