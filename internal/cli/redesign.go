@@ -9,11 +9,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ElMaxter99/Theo/internal/agents"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/ElMaxter99/Theo/internal/engine"
 	"github.com/ElMaxter99/Theo/internal/execx"
@@ -141,7 +143,14 @@ func runSummary(e *engine.Engine, stdout io.Writer, asJSON bool) error {
 		return writeJSON(stdout, report)
 	}
 	here, _ := os.Getwd()
-	return printSummary(stdout, report, here, useColor(stdout))
+	if err := printSummary(stdout, report, here, useColor(stdout)); err != nil {
+		return err
+	}
+	if lines := updateNotice(ctx, e, time.Now()); len(lines) > 0 {
+		fmt.Fprintln(stdout)
+		fmt.Fprintln(stdout, strings.Join(lines, "\n"))
+	}
+	return nil
 }
 
 func printSummary(w io.Writer, r *engine.StatusReport, here string, color bool) error {
@@ -218,6 +227,7 @@ func printSummary(w io.Writer, r *engine.StatusReport, here string, color bool) 
 		}
 	}
 	printForgotten(w, r.Projects, color)
+	printAgents(w, r.Projects, color)
 	fmt.Fprintln(w)
 	switch {
 	case warnings == 1:
@@ -554,5 +564,36 @@ func printError(w io.Writer, err error) {
 	fmt.Fprintf(w, "theo: %s\n", err)
 	if hint := errorHint(err); hint != "" && !strings.Contains(err.Error(), hint) {
 		fmt.Fprintf(w, "  %s %s\n", paint(useColor(w), ansiCyan, "→"), hint)
+	}
+}
+
+// printAgents says how many agents work and wait, and where one waits.
+func printAgents(w io.Writer, projects []engine.ProjectStatus, color bool) {
+	counts := map[string]int{}
+	var waiting []string
+	for _, p := range projects {
+		for _, wt := range p.Worktrees {
+			if wt.Agent == nil {
+				continue
+			}
+			counts[wt.Agent.State]++
+			if wt.Agent.State == agents.Waiting {
+				waiting = append(waiting, fmt.Sprintf("  %s  %s waits for you  %s theo open %s -w %s --in editor", p.Name, statusRef(wt), paint(color, ansiCyan, "→"), p.Name, statusRef(wt)))
+			}
+		}
+	}
+	var parts []string
+	for _, st := range []string{agents.Working, agents.Waiting, agents.Done} {
+		if n := counts[st]; n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, st))
+		}
+	}
+	if len(parts) == 0 {
+		return
+	}
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "%s %s\n", paint(color, ansiBold, "Agents:"), strings.Join(parts, ", "))
+	for _, l := range waiting {
+		fmt.Fprintln(w, l)
 	}
 }

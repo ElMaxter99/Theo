@@ -16,12 +16,15 @@ import (
 func init() {
 	registerCommand("open", runOpen)
 	registerHelp(47, `
+  open <project> [-w <w>] --in terminal|editor|files
+                                               Open the worktree's folder in a terminal, your editor or the file
+                                               manager; set the program with theo config set open.editor <command>
   open <project> [-w <w>] [service] [--print]  Open a running service of the instance in the browser: its local
                                                domain while a proxy runs, else http://localhost:<port>. Without a
                                                service: web, app, api or frontend, else the first one with a
                                                port. --print only prints the address
 `)
-	registerCompletion(cmdSpec{name: "open", args: []string{"project", "service"}, flags: with(selFlags, flagSpec{names: []string{"--print"}})})
+	registerCompletion(cmdSpec{name: "open", args: []string{"project", "service"}, flags: with(selFlags, flagSpec{names: []string{"--print"}}, flagSpec{[]string{"--in"}, "text"})})
 }
 
 // openURL opens an address in the browser. Tests replace it.
@@ -42,6 +45,7 @@ func runOpen(e *engine.Engine, args []string, stdout, stderr io.Writer) error {
 	sel.register(fs)
 	printOnly := fs.Bool("print", false, "print the address instead of opening it")
 	asJSON := fs.Bool("json", false, "print the address as JSON (implies --print)")
+	in := fs.String("in", "url", "what to open the worktree in: url (default), terminal, editor or files")
 	project, services, err := serviceArgs("open", fs, args)
 	if err != nil {
 		return err
@@ -57,6 +61,20 @@ func runOpen(e *engine.Engine, args []string, stdout, stderr io.Writer) error {
 	inst, err := e.Instance(ctx, project, sel.worktree, sel.envFiles)
 	if err != nil {
 		return err
+	}
+	if *in != "url" {
+		if service != "" {
+			return usageErrorf("open --in %s takes no service", *in)
+		}
+		label, err := openIn(e, inst, *in)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return writeJSON(stdout, map[string]any{"opened": *in, "tool": label, "project": inst.Project, "path": inst.Workspace, "branch": inst.Branch})
+		}
+		fmt.Fprintf(stdout, "Opened %s in %s (%s)\n", firstNonEmpty(inst.Branch, inst.Workspace), *in, label)
+		return nil
 	}
 	if service != "" {
 		if err := inst.CheckServices([]string{service}); err != nil {

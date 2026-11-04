@@ -2,8 +2,8 @@
 
 Theo can create, use and close worktrees for a coding agent without manual
 steps, and tell you what each agent is doing. Everything here works from the
-command line; the interface for it (an "Open in..." menu, an agent badge) is
-still being designed.
+command line; the interface parts (the "Open in..." menu, the agent badge and the
+"Waiting for you" card) follow the design approved on the canvas (V-13, V-14).
 
 ## The repository declares what a new worktree needs: `.theo.json`
 
@@ -87,6 +87,36 @@ warnings `agent-waiting` and `agent-done` in `status`.
   working folder is the worktree and reports `working` with source `process`:
   an estimate, never a warning. This works on Linux; on macOS and Windows
   detection by process is not available yet, and only hooks give a state.
+
+## Open a worktree where you work: `theo open --in`
+
+```sh
+theo open shop -w feature-x --in editor      # Opened feature-x in editor (code)
+theo open shop -w feature-x --in terminal    # Windows Terminal, Terminal.app or the system's terminal
+theo open shop -w feature-x --in files       # explorer, open or xdg-open
+theo config set open.editor "code -n"        # your own program (arguments allowed)
+```
+
+Without `--in`, `theo open` still opens a running service in the browser. If the
+program is not found, Theo says how to set one (`theo config set open.editor
+<command>`) and exits with 1; a worktree whose folder is gone is refused.
+`theo config list|get|set|unset` handles `open.editor`, `open.terminal`,
+`open.files` and `update-check`.
+
+## Agents in the listings
+
+`theo worktrees` has an `AGENT` column (`working`, `waiting`, `done`, `-`;
+`working (estimated)` when it comes from a process). `theo` ends with
+`Agents: 1 working, 1 waiting` and, for each agent waiting for you, the command to
+open its worktree.
+
+## New-version notice
+
+Off by default. `theo config set update-check on` makes `theo` (the summary) ask
+GitHub's releases API at most once a day, with a two-second limit, and print the
+release link when a newer version exists. Nothing else is sent, a failure is
+silent, and a development build never asks. `theo config set update-check off`
+turns it off.
 
 ## More
 

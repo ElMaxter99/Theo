@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ElMaxter99/Theo/internal/agents"
+	"github.com/ElMaxter99/Theo/internal/prefs"
 )
 
 // DataDir is where Theo keeps its own files.
@@ -61,3 +62,6 @@ func agentWarnings(st *agents.State) []StatusWarning {
 	}
 	return nil
 }
+
+// Prefs is Theo's preferences store (tools to open, version check).
+func (e *Engine) Prefs() prefs.Store { return prefs.Store{Dir: e.dataDir} }

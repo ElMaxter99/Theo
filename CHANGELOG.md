@@ -14,7 +14,9 @@ Notable changes per release. Each release on GitHub also lists every merged pull
 - **`theo log`** shows a diagnostic log of what hooks could not do.
 - **`theo doctor`** warns about a Git older than 2.41, an invalid `.theo.json`, and hooks not installed.
 
-Still being designed (it needs the visual design approved first): the "Open in..." menu and `theo open --in`, the agent badge and card in the interface, the `AGENT` column, and the new-version notice.
+- **`theo open --in terminal|editor|files`** opens a worktree's folder where you work; **`theo config`** sets the programs (`open.editor`, `open.terminal`, `open.files`).
+- **`AGENT` column** in `theo worktrees` and an `Agents:` line in `theo`.
+- **New-version notice**, opt-in (`theo config set update-check on`), at most one request a day.
 
 ### Fixed
 - **Windows:** matching worktrees with Theo's records compared every pair of paths and resolved symbolic links each time (about 70,000 file lookups for 52 worktrees); each path is now resolved once, so `theo worktrees` no longer loses seconds there.
