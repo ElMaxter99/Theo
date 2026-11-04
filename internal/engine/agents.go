@@ -65,3 +65,16 @@ func agentWarnings(st *agents.State) []StatusWarning {
 
 // Prefs is Theo's preferences store (tools to open, version check).
 func (e *Engine) Prefs() prefs.Store { return prefs.Store{Dir: e.dataDir} }
+
+// AgentStates returns what the agent of each worktree is doing; worktrees
+// with nothing known are left out. It lists the processes once.
+func (e *Engine) AgentStates(paths []string) map[string]*agents.State {
+	r := e.agentResolver()
+	out := map[string]*agents.State{}
+	for _, p := range paths {
+		if st := r.of(p); st != nil {
+			out[p] = st
+		}
+	}
+	return out
+}

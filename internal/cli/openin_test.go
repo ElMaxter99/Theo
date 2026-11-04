@@ -9,16 +9,17 @@ import (
 
 	"github.com/ElMaxter99/Theo/internal/agents"
 	"github.com/ElMaxter99/Theo/internal/engine"
+	"github.com/ElMaxter99/Theo/internal/opener"
 	"github.com/ElMaxter99/Theo/internal/registry"
 	"github.com/ElMaxter99/Theo/internal/testutil"
 )
 
 func fakeTools(t *testing.T, installed ...string) *[]string {
 	t.Helper()
-	origLook, origStart := lookTool, startTool
-	t.Cleanup(func() { lookTool, startTool = origLook, origStart })
+	origLook, origStart := opener.Look, opener.Start
+	t.Cleanup(func() { opener.Look, opener.Start = origLook, origStart })
 	var started []string
-	lookTool = func(name string) (string, error) {
+	opener.Look = func(name string) (string, error) {
 		for _, n := range installed {
 			if n == name {
 				return "/fake/" + name, nil
@@ -26,7 +27,7 @@ func fakeTools(t *testing.T, installed ...string) *[]string {
 		}
 		return "", exec.ErrNotFound
 	}
-	startTool = func(dir, name string, args ...string) error {
+	opener.Start = func(dir, name string, args ...string) error {
 		started = append(started, dir+"|"+name+" "+strings.Join(args, " "))
 		return nil
 	}

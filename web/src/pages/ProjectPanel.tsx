@@ -11,6 +11,9 @@ import { activityText, gitText, lifeChip, shortDate, STATE_ORDER } from "../lib/
 import type { LifeChip } from "../lib/lifecycle.ts";
 import { Badge, Banner, ErrorBanner, ExternalLink, Loading } from "../components/ui.tsx";
 import { Icon } from "../components/Icon.tsx";
+import { AgentBadge, agentAlive } from "../components/AgentBadge.tsx";
+import { OpenMenu } from "../components/OpenMenu.tsx";
+import type { OpenTool } from "../components/OpenMenu.tsx";
 import { MenuButton } from "../components/Menu.tsx";
 import { copyText, theoCmd } from "../components/CopyCommand.tsx";
 import { RemoveFlow } from "../components/RemoveFlow.tsx";
@@ -45,6 +48,10 @@ const asError = (e: unknown) => (e instanceof ApiError ? e : new ApiError(0, { c
 export function ProjectPanel({ project, drawer, onRefreshMeta }: { project: string; drawer: boolean; onRefreshMeta: () => void }) {
   const res = useResource<Overview>(() => api.get<Overview>(`${projectPath(project)}/overview`), [project], { project });
   const life = useResource<LifeReport | null>(() => api.get<LifeReport>(`${projectPath(project)}/lifecycle`).catch(() => null), [project], { project });
+  // Which tools can open a folder is the same for every row (it depends on this computer), so it is asked once,
+  // from any worktree whose folder exists.
+  const probe = res.data?.worktrees.find((x) => !x.prunable);
+  const tools = useResource<OpenTool[]>(async () => probe ? (await api.get<{ options: OpenTool[] }>(`${projectPath(project)}/worktrees/${probe.id}/open`)).options : [], [project, probe?.id]);
   const [groupBy, setGroupBy] = useState<GroupBy>("state");
   const [parking, setParking] = useState<LifeWorktree | null>(null);
   const [keeping, setKeeping] = useState<LifeWorktree | null>(null);
@@ -220,7 +227,8 @@ export function ProjectPanel({ project, drawer, onRefreshMeta }: { project: stri
                     ) : null}
                     {g.rows.map((w) => <Row key={w.id} project={project} w={w} l={lifeById.get(w.id)} act={act} picked={picked.has(w.id)} onPick={() => toggle(w.id)}
                       onRemove={() => setRemoving(w)} onPark={(l) => setParking(l)} onKeep={(l) => setKeeping(l)}
-                      onUnkeep={(l) => { void unkeep(project, l).then(reloadAll, (e) => setActionError(asError(e))); }} dockerDown={dockerDown} />)}
+                      onUnkeep={(l) => { void unkeep(project, l).then(reloadAll, (e) => setActionError(asError(e))); }} dockerDown={dockerDown}
+                      tools={tools.data} onOpenError={setActionError} />)}
                   </tbody>
                 ))}
               </table>
@@ -249,9 +257,9 @@ export function ProjectPanel({ project, drawer, onRefreshMeta }: { project: stri
   );
 }
 
-function Row({ project, w, l, act, picked, onPick, onRemove, onPark, onKeep, onUnkeep, dockerDown }: {
+function Row({ project, w, l, act, picked, onPick, onRemove, onPark, onKeep, onUnkeep, dockerDown, tools, onOpenError }: {
   project: string; w: Worktree; l: LifeWorktree | undefined; act: (w: Worktree, k: LifecycleKind) => void; picked: boolean; onPick: () => void; onRemove: () => void;
-  onPark: (l: LifeWorktree) => void; onKeep: (l: LifeWorktree) => void; onUnkeep: (l: LifeWorktree) => void; dockerDown: boolean;
+  onPark: (l: LifeWorktree) => void; onKeep: (l: LifeWorktree) => void; onUnkeep: (l: LifeWorktree) => void; dockerDown: boolean; tools: OpenTool[] | undefined; onOpenError: (e: ApiError) => void;
 }) {
   const ops = useOps();
   const op = ops.find((o) => o.worktree === w.id && isActiveOp(o));
@@ -270,6 +278,7 @@ function Row({ project, w, l, act, picked, onPick, onRemove, onPark, onKeep, onU
   const active = ACTIVE.includes(st);
   const failing = st === "partial" || st === "unhealthy";
   const arg = wtArg(w);
+  const alive = agentAlive(w.agent);
   const life: LifeState | undefined = l?.state;
   const idle = (w.warnings ?? []).some((x) => x.kind === "instance-idle") || (life === "inactive" && active);
   const copy = (cmd: string) => { void copyText(cmd).then((ok) => announce(ok ? t.copy.copied : t.copy.failed)); };
@@ -280,8 +289,8 @@ function Row({ project, w, l, act, picked, onPick, onRemove, onPark, onKeep, onU
   else if (active && url) primary = <a class="btn sm" href={url} target="_blank" rel="noopener noreferrer">{t.instances.open}<span class="sr-only"> {name} ({t.ports.newTab})</span> <Icon name="external" size={13} /></a>;
   else if (active && life === "inactive" && l && l.changes === 0) primary = <button type="button" class="btn sm" disabled={lock} onClick={() => onPark(l)}>{t.life.park}<span class="sr-only"> {name}</span></button>;
   else if (active) primary = <button type="button" class="btn sm" disabled={lock} onClick={() => act(w, "stop")} aria-label={t.panel.pauseNamed(name)}><Icon name="stop" /> {t.panel.pause}</button>;
-  else if (life === "merged" || life === "missing") primary = <button type="button" class="btn sm" disabled={busy} onClick={onRemove}>{t.life.close}<span class="sr-only"> {name}</span></button>;
-  else if (life === "pushed") primary = <button type="button" class="btn sm" disabled={busy} onClick={onRemove}>{t.life.closeWorktree}<span class="sr-only"> {name}</span></button>;
+  else if (life === "merged" || life === "missing") primary = <button type="button" class="btn sm" disabled={busy || alive} title={alive ? t.agent.closeBlocked(t.agent.state[w.agent!.state] ?? "") : undefined} onClick={onRemove}>{t.life.close}<span class="sr-only"> {name}</span></button>;
+  else if (life === "pushed") primary = <button type="button" class="btn sm" disabled={busy || alive} title={alive ? t.agent.closeBlocked(t.agent.state[w.agent!.state] ?? "") : undefined} onClick={onRemove}>{t.life.closeWorktree}<span class="sr-only"> {name}</span></button>;
   else if (life === "inactive" && l) primary = l.changes > 0
     ? <button type="button" class="btn sm" onClick={() => onKeep(l)}>{t.life.keep}<span class="sr-only"> {name}</span></button>
     : <button type="button" class="btn sm" disabled={lock} onClick={() => onPark(l)}>{t.life.park}<span class="sr-only"> {name}</span></button>;
@@ -302,7 +311,7 @@ function Row({ project, w, l, act, picked, onPick, onRemove, onPark, onKeep, onU
       <td class="small">{l ? gitText(l, w.main) : w.dirty ? t.panel.dirty : "—"}</td>
       <td class="small nowrap">{l ? activityText(l) : "—"}</td>
       <td class="nowrap url-list">
-        <Badge view={view} /> {counts && counts.total > 0 ? <span class="small muted">{t.panel.servicesCount(counts.running, counts.total)}</span> : null}
+        <Badge view={view} /> {w.agent ? <><AgentBadge agent={w.agent} />{" "}</> : null}{counts && counts.total > 0 ? <span class="small muted">{t.panel.servicesCount(counts.running, counts.total)}</span> : null}
         {idle ? <span class="small muted"> · {t.life.unused}</span> : null}
         {conflicts.length > 0 ? <> <span class="badge error"><Icon name="portbusy" /> <span>{t.panel.portBusy(conflicts[0]!.port)}</span></span></>
           : url && active ? <> <ExternalLink href={url} label={name}>{url.replace(/^https?:\/\//, "")}</ExternalLink></> : null}
@@ -310,6 +319,7 @@ function Row({ project, w, l, act, picked, onPick, onRemove, onPark, onKeep, onU
       <td class="actions num">
         <span class="row end">
           {primary}
+          <OpenMenu project={project} w={w} name={name} url={url} tools={tools} onError={onOpenError} />
           <MenuButton label={t.app.moreFor(name)} testid={`menu-${w.id}`} items={[
             !active ? { label: t.panel.start, disabled: lock, onSelect: () => act(w, "up") } : null,
             active ? { label: t.panel.pause, disabled: lock, onSelect: () => act(w, "stop") } : null,
@@ -322,7 +332,7 @@ function Row({ project, w, l, act, picked, onPick, onRemove, onPark, onKeep, onU
             !w.main && l && life !== "kept" ? { label: t.life.keep, onSelect: () => onKeep(l), sr: name } : null,
             !w.main && l && life === "kept" ? { label: t.life.unkeep, onSelect: () => onUnkeep(l), sr: name } : null,
             !w.main && l && w.kind === "worktree" && life !== "missing" ? { label: t.life.park, disabled: busy || l.changes > 0, onSelect: () => onPark(l), sr: name } : null,
-            !w.main ? { label: t.panel.removeWorktree, danger: true, onSelect: onRemove, sr: name } : null,
+            !w.main ? { label: alive ? `${t.panel.removeWorktree} — ${t.agent.closeBlockedShort}` : t.panel.removeWorktree, danger: true, disabled: alive, onSelect: onRemove, sr: name } : null,
           ]} />
         </span>
       </td>

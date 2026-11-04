@@ -17,6 +17,8 @@ func (s *Server) lifecycleRoutes() {
 	s.handle("POST", "/projects/{p}/resume", authSession, s.handleResume)
 	s.handle("POST", "/projects/{p}/worktrees/{wt}/park", authSession, s.handlePark)
 	s.handle("POST", "/projects/{p}/worktrees/{wt}/keep", authSession, s.handleKeep)
+	s.handle("GET", "/projects/{p}/worktrees/{wt}/open", authSession, s.handleOpenOptions)
+	s.handle("POST", "/projects/{p}/worktrees/{wt}/open", authSession, s.handleOpen)
 }
 
 // LifecycleView is one workspace in GET /projects/{p}/lifecycle.

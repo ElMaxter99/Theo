@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ElMaxter99/Theo/internal/agents"
 	"github.com/ElMaxter99/Theo/internal/engine"
 	"github.com/ElMaxter99/Theo/internal/proxy"
 )
@@ -93,6 +94,9 @@ type WorktreeView struct {
 	Warnings  []engine.StatusWarning `json:"warnings"`
 	Error     string                 `json:"error,omitempty"`
 	Busy      *BusyRef               `json:"busy"`
+	// Agent is what the coding agent of the worktree is doing; filled on
+	// every answer because it changes faster than the cached overview.
+	Agent *agents.State `json:"agent,omitempty"`
 }
 
 // Overview is the answer of GET /projects/{p}/overview.
@@ -275,8 +279,16 @@ func firstLine(s string) string {
 func (s *Server) withBusy(ov *Overview) *Overview {
 	c := *ov
 	c.Worktrees = append([]WorktreeView(nil), ov.Worktrees...)
+	paths := make([]string, 0, len(c.Worktrees))
+	for _, w := range c.Worktrees {
+		if !w.Bare && !w.Prunable {
+			paths = append(paths, w.Path)
+		}
+	}
+	states := s.eng.AgentStates(paths)
 	for i := range c.Worktrees {
 		c.Worktrees[i].Busy = s.busyRef(ov.Project, c.Worktrees[i].ID)
+		c.Worktrees[i].Agent = states[c.Worktrees[i].Path]
 	}
 	return &c
 }

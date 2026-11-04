@@ -210,6 +210,12 @@ Compose names are not used by the renamed instances. Refused with 409 `busy` whi
   files that would be lost and expects the folder name in `confirm`; uncommitted changes are refused.
 - `POST /projects/{p}/resume` `{branch, copy?}` -> `{id, ...}` of the worktree created again.
 - `POST /projects/{p}/worktrees/{wt}/keep` `{until?, note?}` or `{clear:true}`; `until` is `YYYY-MM-DD`.
+- `GET /projects/{p}/worktrees/{wt}/open`: `{options:[{target, available, reason?}]}` for `terminal`, `editor` and
+  `files`; `reason` says why one cannot be used (tool missing, folder gone).
+- `POST /projects/{p}/worktrees/{wt}/open` `{target}`: starts that tool in the worktree folder, like
+  `theo open --in`. 422 `open_failed` with the reason when it cannot. Tools come from `theo config`.
+- Each worktree of the overview carries `agent` (`{state, source, agent?, since}`) when an agent is known there.
+  Removing a worktree answers 409 `agent_alive` while an agent works or waits there.
 - `PATCH /projects/{p}` also accepts `inactive_after_days` (1 to 90, or `null` for the default 7).
 - `GET .../overview` and `GET /status` carry `lifecycle` per worktree and the warnings `worktree-merged`,
   `worktree-inactive` and `instance-idle`.

@@ -16,6 +16,7 @@ Notable changes per release. Each release on GitHub also lists every merged pull
 
 - **`theo open --in terminal|editor|files`** opens a worktree's folder where you work; **`theo config`** sets the programs (`open.editor`, `open.terminal`, `open.files`).
 - **`AGENT` column** in `theo worktrees` and an `Agents:` line in `theo`.
+- **Web interface:** an **Open in** menu in each worktree row (editor, terminal, folder, proxy URL; the last one used goes first; a disabled option says why), an **agent chip** (with an *estimated* tag when it comes from processes), a **Waiting for you** card on Home, and **Close** blocked while an agent is alive (also in `theo worktree clean`). The API gets `GET|POST /projects/{p}/worktrees/{wt}/open` and `agent` in the overview.
 - **New-version notice**, opt-in (`theo config set update-check on`), at most one request a day.
 
 ### Fixed

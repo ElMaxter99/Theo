@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ElMaxter99/Theo/internal/agents"
 	"github.com/ElMaxter99/Theo/internal/compose"
 	"github.com/ElMaxter99/Theo/internal/engine"
 	"github.com/ElMaxter99/Theo/internal/execx"
@@ -475,6 +476,11 @@ func (s *Server) handleRemoveWorktree(w http.ResponseWriter, r *http.Request, _ 
 		e := errf(http.StatusConflict, "busy", "an operation is running on this instance")
 		e.Operation = &OperationRef{ID: op.ID, Kind: op.Kind}
 		return e
+	}
+	// A live agent keeps its worktree: closing it would pull the floor from
+	// under the agent. Estimated states count too.
+	if st := s.eng.AgentStates([]string{wt.Path})[wt.Path]; st != nil && (st.State == agents.Working || st.State == agents.Waiting) {
+		return errf(http.StatusConflict, "agent_alive", "an agent is alive in this worktree ("+st.State+"); wait for it to finish")
 	}
 	// The server asks the engine every time; there is no generic confirm
 	// and no force. The engine decides whether the text is right.
