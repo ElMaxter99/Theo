@@ -636,7 +636,10 @@ func (s *Server) applyPorts(ctx context.Context, inst *engine.Instance, req upRe
 		}
 	}
 	for _, m := range plan.Conflicts() {
-		fmt.Fprintf(stderr, "theo: warning: host port %s (%s, container port %d/%s) is already in use\n", m.Configured, m.Service, m.Target, m.Protocol)
+		fmt.Fprintf(stderr, "theo: host port %s (%s, container port %d/%s) is already in use\n", m.Configured, m.Service, m.Target, m.Protocol)
+	}
+	if err := plan.PortConflictError(); err != nil {
+		return nil, err
 	}
 	return plan, nil
 }
@@ -808,7 +811,7 @@ func (s *Server) settingsView(inst *engine.Instance) *SettingsView {
 	if names == nil {
 		names = map[string]string{}
 	}
-	return &SettingsView{NeutralizeContainerNames: cfg.NeutralizeContainerNames, AutoPorts: cfg.AutoPorts, Profiles: nz(inst.Profiles),
+	return &SettingsView{NeutralizeContainerNames: cfg.NeutralizeContainerNames, AutoPorts: cfg.AutoPorts || (!inst.Main && !cfg.NoAutoPorts), Profiles: nz(inst.Profiles),
 		Shared: nz(cfg.Shared), Join: nz(cfg.Join), FixedContainerNames: names, KnownProfiles: nz(inst.KnownProfiles())}
 }
 

@@ -137,8 +137,10 @@ func (e *Engine) planPorts(ctx context.Context, inst *Instance, profiles []strin
 // planPortsKnown is planPorts; known, when not nil, holds the containers of
 // the instance already read.
 func (e *Engine) planPortsKnown(ctx context.Context, inst *Instance, profiles []string, auto bool, known *[]compose.Container) (*PortPlan, ports.State, error) {
-	// An instance that was started with --auto-ports keeps doing it.
-	if cfg, err := e.Settings(inst); err == nil && cfg.AutoPorts {
+	// An instance that was started with --auto-ports keeps doing it, and a
+	// branch instance does it by default so that it can run next to the main
+	// one (--no-auto-ports opts out).
+	if cfg, err := e.Settings(inst); err == nil && (cfg.AutoPorts || (!inst.Main && !cfg.NoAutoPorts)) {
 		auto = true
 	}
 	profiles = mergeProfiles(inst.Profiles, profiles)
@@ -359,4 +361,18 @@ func protoOf(key string) string {
 		return key[i+1:]
 	}
 	return "tcp"
+}
+
+// PortConflictError is the error up returns, before calling Docker, when a
+// host port it needs is taken and the instance does not reassign ports.
+func (p *PortPlan) PortConflictError() error {
+	conflicts := p.Conflicts()
+	if len(conflicts) == 0 {
+		return nil
+	}
+	var parts []string
+	for _, m := range conflicts {
+		parts = append(parts, fmt.Sprintf("%s (%s, container port %d/%s)", m.Configured, m.Service, m.Target, m.Protocol))
+	}
+	return fmt.Errorf("host port %s is already in use by something else; free it, or start with --auto-ports to use free ports (port is already allocated)", strings.Join(parts, ", "))
 }

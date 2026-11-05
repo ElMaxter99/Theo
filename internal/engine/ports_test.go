@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ElMaxter99/Theo/internal/compose"
+	"github.com/ElMaxter99/Theo/internal/instances"
 	"github.com/ElMaxter99/Theo/internal/ports"
 )
 
@@ -34,7 +35,40 @@ func portsFixture(t *testing.T, services map[string]compose.Service, busy ...int
 	e.portFree = func(_ string, port int, _ string) bool { return !taken[port] }
 	e.dataDir = t.TempDir()
 	e.baseFiles = func(dir string) []string { return []string{filepath.Join(dir, "compose.yaml")} }
+	// Branch instances reassign taken ports by default; most tests look at the plain behaviour.
+	if err := e.SetAutoPorts(inst, false); err != nil {
+		t.Fatal(err)
+	}
 	return e, c, inst
+}
+
+func TestBranchInstanceReassignsTakenPortsByDefault(t *testing.T) {
+	e, _, inst := portsFixture(t, apiPorts(), 3303)
+	if err := e.updateSettings(inst, func(c *instances.Config) error { c.NoAutoPorts = false; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := e.PlanPorts(context.Background(), inst, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := mapping(t, plan, "api"); m.Status != PortReassigned || m.Effective == 3303 || len(plan.Conflicts()) != 0 {
+		t.Errorf("mapping = %+v, want another port than 3303", m)
+	}
+	if err := plan.PortConflictError(); err != nil {
+		t.Errorf("no conflict expected: %v", err)
+	}
+}
+
+func TestPortConflictErrorWhenAutoPortsIsOff(t *testing.T) {
+	e, _, inst := portsFixture(t, apiPorts(), 3303)
+	plan, err := e.PlanPorts(context.Background(), inst, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = plan.PortConflictError()
+	if err == nil || !strings.Contains(err.Error(), "3303") || !strings.Contains(err.Error(), "--auto-ports") {
+		t.Errorf("err = %v, want a clear message naming 3303 and --auto-ports", err)
+	}
 }
 
 func apiPorts() map[string]compose.Service {

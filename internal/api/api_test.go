@@ -238,7 +238,8 @@ func TestOverviewAndWorktrees(t *testing.T) {
 		if w.State != "absent" || w.Busy != nil {
 			t.Errorf("%s: state %s busy %v", w.Branch, w.State, w.Busy)
 		}
-		if len(w.Ports) != 1 || w.Ports[0].HostPort != 18080 || !strings.HasPrefix(w.Ports[0].URL, "http") {
+		// A branch reassigns the port when something else holds 18080 on the machine running the test.
+		if len(w.Ports) != 1 || (w.Main && w.Ports[0].HostPort != 18080) || w.Ports[0].HostPort < 18080 || !strings.HasPrefix(w.Ports[0].URL, "http") {
 			t.Errorf("%s: ports %+v", w.Branch, w.Ports)
 		}
 	}

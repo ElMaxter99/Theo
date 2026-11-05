@@ -111,7 +111,10 @@ services:
 	stdout, _, _ := run("ports", "app")
 	checkOutput(t, "ports main", stdout, "running")
 
-	// Without --auto-ports, the taken port is only a warning.
+	// Branches reassign taken ports by default; with that off, the taken port is only a warning in ports.
+	if _, stderr, code := run("instance", "set", "app", "-w", "feature/x", "--no-auto-ports"); code != ExitOK {
+		t.Fatalf("instance set: %s", stderr)
+	}
 	stdout, _, _ = run("ports", "app", "-w", "feature/x")
 	checkOutput(t, "ports linked", stdout, "in use")
 	checkOutput(t, "ports linked", stdout, "--auto-ports")

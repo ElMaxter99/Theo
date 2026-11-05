@@ -16,7 +16,7 @@ SERVICE  CONTAINER  CONFIGURED  HOST PORT  STATUS  URL
 web      8080/tcp   8080        8080       in use  http://localhost:8080
 ```
 
-`up` prints a warning when a port it needs is taken ("host port 8080 ... is already in use. Free it, or start with --auto-ports"). Without `--auto-ports` it still tries to start, and Docker will refuse if the port is really taken.
+A worktree that is not the project's main one uses free host ports by default, so a branch can run next to the main deployment (open it by name with [`theo proxy`](proxy.md)). The main worktree keeps its configured ports. If a port it needs is taken and auto ports is off for that instance (the main worktree, or `--no-auto-ports`), `up` stops before calling Docker: "host port 8080 ... is already in use by something else; free it, or start with --auto-ports".
 
 ## --auto-ports
 

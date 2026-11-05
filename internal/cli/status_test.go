@@ -92,6 +92,9 @@ services:
 	if _, stderr, code := run("env", "set", "t5stat", "TOKEN=secret", "--secret"); code != ExitOK {
 		t.Fatalf("env set: %s", stderr)
 	}
+	if _, stderr, code := run("instance", "set", "t5stat", "-w", "feature/x", "--no-auto-ports"); code != ExitOK {
+		t.Fatalf("instance set: %s", stderr)
+	}
 	if stdout, stderr, code := run("up", "t5stat"); code != ExitOK {
 		t.Fatalf("up: %d\n%s\n%s", code, stdout, stderr)
 	}
