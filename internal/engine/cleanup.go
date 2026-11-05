@@ -44,6 +44,12 @@ type CleanEntry struct {
 	MergedBy string `json:"merged_by,omitempty"`
 	IdleDays int    `json:"idle_days"`
 	Note     string `json:"note,omitempty"` // the keep note
+	// Changes counts its uncommitted and untracked files; Unpushed the commits
+	// on no remote; UpstreamGone is true when its remote branch was deleted
+	// (usually after its pull request was merged or closed).
+	Changes      int  `json:"changes,omitempty"`
+	Unpushed     int  `json:"unpushed,omitempty"`
+	UpstreamGone bool `json:"upstream_gone,omitempty"`
 	// Agent is the agent alive in the workspace, which blocks closing it.
 	Agent *agents.State `json:"agent,omitempty"`
 	// Reason says why it stays; empty when it can be (or was) closed.
@@ -140,7 +146,8 @@ func (e *Engine) Clean(ctx context.Context, project string, opts CleanOptions) (
 		if i == 0 || ws.Bare {
 			continue
 		}
-		entry := CleanEntry{Path: ws.Path, Branch: ws.Branch, Owner: ws.Owner, State: ws.State, MergedBy: ws.MergedBy, IdleDays: ws.IdleDays, Note: ws.KeepNote}
+		entry := CleanEntry{Path: ws.Path, Branch: ws.Branch, Owner: ws.Owner, State: ws.State, MergedBy: ws.MergedBy, IdleDays: ws.IdleDays, Note: ws.KeepNote,
+			Changes: max(ws.Changes, 0), Unpushed: ws.Unpushed, UpstreamGone: ws.UpstreamGone}
 		switch ws.State {
 		case LifeInactive:
 			report.Inactive = append(report.Inactive, entry)
@@ -169,6 +176,15 @@ func (e *Engine) Clean(ctx context.Context, project string, opts CleanOptions) (
 				continue
 			}
 		case LifeMerged, LifeMissing:
+		case LifeUnpushed:
+			// Merged into its base but with files changed: it is not offered
+			// for closing, yet it must not be invisible.
+			if ws.MergedBy != "" && ws.Changes > 0 {
+				entry.State = LifeMerged
+				entry.Reason = fmt.Sprintf("merged, but it has %d uncommitted file(s): look at them, then close it", ws.Changes)
+				report.Close = append(report.Close, entry)
+			}
+			continue
 		default:
 			continue
 		}

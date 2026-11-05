@@ -421,3 +421,96 @@ func TestContentMergedNeedsNewGit(t *testing.T) {
 		t.Errorf("ContentMerged after a squash = %v, %v", ok, err)
 	}
 }
+
+func TestParkInactiveInBulk(t *testing.T) {
+	for _, kv := range [][2]string{{"GIT_AUTHOR_NAME", "Theo Test"}, {"GIT_AUTHOR_EMAIL", "t@example.invalid"}, {"GIT_COMMITTER_NAME", "Theo Test"}, {"GIT_COMMITTER_EMAIL", "t@example.invalid"}} {
+		t.Setenv(kv[0], kv[1])
+	}
+	e, store, main, paths := lifecycleFixture(t)
+	ctx := context.Background()
+	e.now = func() time.Time { return time.Now().Add(10 * 24 * time.Hour) }
+
+	// Without --save-changes the worktree with changes stays, and a dry run touches nothing.
+	dry, err := e.ParkInactive(ctx, "app", ParkInactiveOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	by := map[string]ParkInactiveEntry{}
+	for _, en := range dry.Entries {
+		by[en.Branch] = en
+	}
+	if len(by) != 3 || by["fresh"].Reason != "" || by["work"].Reason != "" || !strings.Contains(by["dirty"].Reason, "--save-changes") {
+		t.Fatalf("dry run = %+v", dry.Entries)
+	}
+	if dry.Parkable() != 2 || dry.ParkedCount() != 0 {
+		t.Errorf("parkable %d, parked %d", dry.Parkable(), dry.ParkedCount())
+	}
+	for _, b := range []string{"fresh", "work", "dirty"} {
+		if _, err := os.Stat(paths[b]); err != nil {
+			t.Fatalf("a dry run removed %s: %v", b, err)
+		}
+	}
+
+	// Too many files for the cap: it stays.
+	testutil.WriteFile(t, paths["dirty"], "second.txt", "2\n")
+	small, _ := e.ParkInactive(ctx, "app", ParkInactiveOptions{SaveChanges: true, MaxChanges: 1})
+	for _, en := range small.Entries {
+		if en.Branch == "dirty" && !strings.Contains(en.Reason, "more than 1") {
+			t.Errorf("dirty with 2 files and cap 1: %+v", en)
+		}
+	}
+
+	r, err := e.ParkInactive(ctx, "app", ParkInactiveOptions{SaveChanges: true, Apply: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.ParkedCount() != 3 {
+		t.Fatalf("parked %d: %+v", r.ParkedCount(), r.Entries)
+	}
+	for _, b := range []string{"fresh", "work", "dirty"} {
+		if _, err := os.Stat(paths[b]); !os.IsNotExist(err) {
+			t.Errorf("%s still exists", paths[b])
+		}
+		if !(git.Git{}).IsLocalBranch(ctx, main, b) {
+			t.Errorf("branch %s was deleted", b)
+		}
+	}
+	// The uncommitted files are in the branch.
+	showOut, _ := exec.Command("git", "-C", main, "show", "--stat", "--format=%s", "dirty").CombinedOutput()
+	if out := string(showOut); !strings.Contains(out, "draft.txt") || !strings.Contains(out, "second.txt") || !strings.Contains(out, "WIP") {
+		t.Errorf("dirty tip = %s", out)
+	}
+	if len(store.projects[0].Parked) != 3 {
+		t.Errorf("parked records = %d", len(store.projects[0].Parked))
+	}
+	// Unmerged worktrees that were not inactive, and the merged ones, are untouched.
+	for _, b := range []string{"merged", "squash", "rebased"} {
+		if _, err := os.Stat(paths[b]); err != nil {
+			t.Errorf("%s was removed: %v", b, err)
+		}
+	}
+}
+
+func TestCleanShowsMergedWorktreesWithChanges(t *testing.T) {
+	e, _, _, paths := lifecycleFixture(t)
+	testutil.WriteFile(t, paths["merged"], "notes.txt", "stray\n")
+	r, err := e.Clean(context.Background(), "app", CleanOptions{Apply: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, c := range r.Close {
+		if c.Branch == "merged" {
+			found = true
+			if c.Closed || !strings.Contains(c.Reason, "uncommitted") || c.Changes != 1 {
+				t.Errorf("merged with changes = %+v", c)
+			}
+		}
+	}
+	if !found {
+		t.Error("a merged worktree with changes is not listed")
+	}
+	if _, err := os.Stat(paths["merged"]); err != nil {
+		t.Errorf("it was removed: %v", err)
+	}
+}

@@ -418,3 +418,16 @@ func WorktreeCreated(path string) (time.Time, bool) {
 	}
 	return st.ModTime(), true
 }
+
+// CommitAll stages every change of the worktree at dir (tracked and untracked,
+// never the files Git ignores) and commits it with msg, without running hooks
+// or signing, so a branch keeps unfinished work before its folder is removed.
+// It does nothing when there is nothing to commit. Only call it when the
+// person asked for it.
+func (Git) CommitAll(ctx context.Context, dir, msg string) error {
+	if _, err := execx.RunChange(ctx, dir, "git", "add", "-A"); err != nil {
+		return err
+	}
+	_, err := execx.RunChange(ctx, dir, "git", "-c", "commit.gpgsign=false", "commit", "--no-verify", "-q", "-m", msg)
+	return err
+}
