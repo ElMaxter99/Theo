@@ -1,10 +1,12 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/ElMaxter99/Theo/internal/agents"
+	"github.com/ElMaxter99/Theo/internal/prefs"
 )
 
 // DataDir is where Theo keeps its own files.
@@ -60,4 +62,39 @@ func agentWarnings(st *agents.State) []StatusWarning {
 		return []StatusWarning{{Kind: "agent-done", Message: "the agent in this worktree finished"}}
 	}
 	return nil
+}
+
+// Prefs is Theo's preferences store (tools to open, version check).
+func (e *Engine) Prefs() prefs.Store { return prefs.Store{Dir: e.dataDir} }
+
+// AgentStates returns what the agent of each worktree is doing; worktrees
+// with nothing known are left out. It lists the processes once.
+func (e *Engine) AgentStates(paths []string) map[string]*agents.State {
+	r := e.agentResolver()
+	out := map[string]*agents.State{}
+	for _, p := range paths {
+		if st := r.of(p); st != nil {
+			out[p] = st
+		}
+	}
+	return out
+}
+
+// WorktreeFolder finds the folder and branch of a worktree by the same
+// selector as Instance, without resolving its env files or asking Docker:
+// opening a folder needs neither.
+func (e *Engine) WorktreeFolder(ctx context.Context, project, selector string) (path, branch string, err error) {
+	p, err := e.Project(project)
+	if err != nil {
+		return "", "", err
+	}
+	list, err := e.worktreeList(ctx, p)
+	if err != nil {
+		return "", "", err
+	}
+	wt, err := selectWorktree(list, selector)
+	if err != nil {
+		return "", "", fmt.Errorf("project %q: %w", p.Name, err)
+	}
+	return wt.Path, wt.Branch, nil
 }

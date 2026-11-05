@@ -95,6 +95,11 @@ type handlerFunc func(w http.ResponseWriter, r *http.Request, sess *session) err
 
 // Server is the HTTP interface.
 type Server struct {
+	// agentStamp is the last look at agents.json (see agentsChanged).
+	agentStamp struct {
+		sync.Mutex
+		v int64
+	}
 	cfg    Config
 	eng    *engine.Engine
 	ln     net.Listener

@@ -12,6 +12,7 @@ import { formatTime } from "../lib/format.ts";
 import { useHealth } from "../lib/health.ts";
 import { href } from "../lib/router.ts";
 import { stateView } from "../lib/status.ts";
+import { AgentBadge } from "../components/AgentBadge.tsx";
 import { forgotten } from "../lib/lifecycle.ts";
 import { ACTIVE, statusName, statusUrl, useStatus, warningCount, wtState } from "../lib/statusStore.ts";
 import { startOperation, stopAll } from "../ops/store.ts";
@@ -90,6 +91,24 @@ export function Home({ meta }: { meta: Meta | undefined }) {
           ) : null}
           {findings > 0 || warnings > 0 ? <p><a href={href.problems()}>{t.home.seeProblems(findings + warnings)}</a></p> : null}
         </section>
+
+        {(() => {
+          // V-14: the agents that wait for the person, next to the forgotten work.
+          const waiting = (report?.projects ?? []).flatMap((p) => p.worktrees.filter((w) => w.agent?.state === "waiting").map((w) => ({ project: p.name, w })));
+          if (waiting.length === 0) return null;
+          return (
+            <section class="card stack" aria-labelledby="home-waiting" data-testid="home-waiting">
+              <h2 id="home-waiting">{t.agent.cardTitle}</h2>
+              <p class="h1">{waiting.length}</p>
+              <p class="small muted">{t.agent.cardDetail(waiting.length)}</p>
+              <ul class="plain">
+                {waiting.map(({ project, w }) => (
+                  <li key={w.id}><AgentBadge agent={w.agent} /> <a href={href.detail(project, w.id)}>{project} › {statusName(w)}</a></li>
+                ))}
+              </ul>
+            </section>
+          );
+        })()}
 
         {(() => {
           const f = forgotten(report?.projects ?? []);

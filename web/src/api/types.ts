@@ -80,6 +80,15 @@ export interface PortConflict {
   detail?: string;
 }
 
+/** What the coding agent of a worktree is doing (internal/agents). source "process" means estimated. */
+export interface AgentState {
+  state: "working" | "waiting" | "done";
+  source: "hook" | "process";
+  agent?: string;
+  session?: string;
+  since: string;
+}
+
 export interface Worktree {
   id: string;
   path: string;
@@ -106,6 +115,7 @@ export interface Worktree {
   proxy_urls?: ProxyLink[];
   error?: string;
   busy?: Busy | null;
+  agent?: AgentState;
 }
 
 /** An address the proxy serves a service on (proxy.Link). */
@@ -457,6 +467,7 @@ export interface StatusWorktree {
   warnings: WtWarning[];
   /** Where the workspace is in its life (ADR-0016); absent for the main worktree. */
   lifecycle?: Lifecycle;
+  agent?: AgentState;
 }
 
 /** GET|POST /projects/{p}/prune. */

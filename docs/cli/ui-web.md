@@ -211,3 +211,13 @@ changes), conflicting ports, slow `up` operations that stream log lines, a faili
 any length, confirmation flows, secrets. It enforces the same Host, Origin, cookie, CSRF and CSP rules as the real server.
 Test hooks (mock only): `POST /__mock/reset`, `POST /__mock/scenario {docker, empty, gap, slow, sharedEmpty, sharedWarning, healthy, composeOld, windows}`, `GET /__mock/stats`, `GET /__mock/launch`.
 The mock is a development tool: it can drift from the real API, which is why `e2e/real` exists. `docs/api.md` is the truth.
+
+## Open in and the agent (0.5)
+
+- **Open in…** (row of a worktree, Project › Instances): Editor, Terminal, Folder and Proxy URL. The programs are the
+  ones of `theo config` (`open.editor`, `open.terminal`, `open.files`) or the first usual one found. The last one used in
+  each project goes first (kept in this browser). An option that cannot work is disabled and says why next to it:
+  tool missing, folder gone, or instance not running (no URL).
+- **Agent chip:** Working, Waiting for you, Finished, with the tag *estimated* when the state comes from processes and
+  not from Claude Code's hooks. Home shows a **Waiting for you** card next to the forgotten work.
+- **Close** (and `theo worktree clean`) is blocked while an agent is alive in the worktree.

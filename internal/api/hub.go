@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"hash/fnv"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ElMaxter99/Theo/internal/agents"
 )
 
 // event is one server-sent event.
@@ -98,6 +102,7 @@ func (h *hub) pollLoop(s *Server) {
 		if h.clients() == 0 || !s.auth.anyVisible() {
 			continue
 		}
+		s.agentsChanged()
 		ctx, cancel := context.WithTimeout(s.workCtx, pollCycleTimeout)
 		s.pollOnce(ctx)
 		cancel()
@@ -272,4 +277,28 @@ func mustJSON(v any) json.RawMessage {
 		return json.RawMessage(`null`)
 	}
 	return raw
+}
+
+// agentsChanged tells the open pages when an agent's hook wrote its state:
+// the hook is another process, so the file is the only sign. Only the
+// modification time and the size are looked at.
+func (s *Server) agentsChanged() {
+	stamp := int64(-1) // no file yet
+	if fi, err := os.Stat(filepath.Join(s.eng.DataDir(), agents.FileName)); err == nil {
+		stamp = fi.ModTime().UnixNano() ^ fi.Size()
+	}
+	s.agentStamp.Lock()
+	changed := s.agentStamp.v != 0 && s.agentStamp.v != stamp
+	s.agentStamp.v = stamp
+	s.agentStamp.Unlock()
+	if !changed {
+		return
+	}
+	projects, err := s.eng.Projects()
+	if err != nil {
+		return
+	}
+	for _, p := range projects {
+		s.hub.publish("state.changed", map[string]string{"project": p.Name})
+	}
 }

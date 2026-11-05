@@ -11,6 +11,8 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/ElMaxter99/Theo/internal/agents"
+
 	"github.com/ElMaxter99/Theo/internal/compose"
 	"github.com/ElMaxter99/Theo/internal/git"
 	"github.com/ElMaxter99/Theo/internal/registry"
@@ -42,6 +44,8 @@ type CleanEntry struct {
 	MergedBy string `json:"merged_by,omitempty"`
 	IdleDays int    `json:"idle_days"`
 	Note     string `json:"note,omitempty"` // the keep note
+	// Agent is the agent alive in the workspace, which blocks closing it.
+	Agent *agents.State `json:"agent,omitempty"`
 	// Reason says why it stays; empty when it can be (or was) closed.
 	Reason        string   `json:"reason,omitempty"`
 	Closed        bool     `json:"closed"`
@@ -169,6 +173,9 @@ func (e *Engine) Clean(ctx context.Context, project string, opts CleanOptions) (
 			continue
 		}
 		switch {
+		case ws.Agent != nil && (ws.Agent.State == agents.Working || ws.Agent.State == agents.Waiting):
+			entry.Agent = ws.Agent
+			entry.Reason = "an agent is alive here (" + ws.Agent.State + "); wait for it to finish"
 		case ws.Locked:
 			entry.Reason = "locked with git worktree lock"
 		case ws.State == LifeMissing && ws.Kind != KindClone:

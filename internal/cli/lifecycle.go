@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/ElMaxter99/Theo/internal/agents"
 	"io"
 	"strings"
 	"text/tabwriter"
@@ -87,9 +88,9 @@ func runWorktrees(e *engine.Engine, args []string, stdout io.Writer) error {
 	}
 	now := time.Now()
 	tw := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
-	head := "BRANCH\tKIND\tOWNER\tSTATE\tACTIVITY\tCHANGES\tPATH"
+	head := "BRANCH\tKIND\tOWNER\tSTATE\tAGENT\tACTIVITY\tCHANGES\tPATH"
 	if *size {
-		head = "BRANCH\tKIND\tOWNER\tSTATE\tACTIVITY\tCHANGES\tSIZE\tPATH"
+		head = "BRANCH\tKIND\tOWNER\tSTATE\tAGENT\tACTIVITY\tCHANGES\tSIZE\tPATH"
 	}
 	fmt.Fprintln(tw, head)
 	for _, wt := range list {
@@ -101,7 +102,7 @@ func runWorktrees(e *engine.Engine, args []string, stdout io.Writer) error {
 		if st == "" {
 			st = "-"
 		}
-		row := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s", worktreeRef(wt.Worktree), wt.Kind, who, st, activityText(wt, now), changesText(wt))
+		row := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s", worktreeRef(wt.Worktree), wt.Kind, who, st, agentText(wt.Agent), activityText(wt, now), changesText(wt))
 		if *size {
 			row += "\t" + sizeText(wt.SizeBytes)
 		}
@@ -670,4 +671,15 @@ func printForgotten(w io.Writer, projects []engine.ProjectStatus, color bool) {
 		what, fix, _ := strings.Cut(l[1], "\x00")
 		fmt.Fprintf(w, "  %-*s  %s\n  %-*s  %s %s\n", width, l[0], what, width, "", paint(color, ansiCyan, "→"), fix)
 	}
+}
+
+// agentText is the AGENT column: what the agent of a worktree does.
+func agentText(a *agents.State) string {
+	switch {
+	case a == nil:
+		return "-"
+	case a.Source == agents.SourceProcess:
+		return a.State + " (estimated)"
+	}
+	return a.State
 }
