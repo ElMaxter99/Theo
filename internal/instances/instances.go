@@ -45,6 +45,10 @@ type Config struct {
 	// first time the instance starts with --auto-ports, so that later starts
 	// keep the address instead of going back to the configured port.
 	AutoPorts bool `json:"auto_ports,omitempty"`
+	// NoAutoPorts records that auto ports were turned off on purpose. A branch
+	// instance (not the main one) reassigns taken host ports by default, so
+	// that it can run next to the main deployment; this opts out of it.
+	NoAutoPorts bool `json:"no_auto_ports,omitempty"`
 	// Profiles are the Compose profiles the instance always starts with, on
 	// top of the ones given to `up`.
 	Profiles []string `json:"profiles,omitempty"`
@@ -65,7 +69,7 @@ type DataAddress struct {
 
 // Empty reports whether nothing is configured.
 func (c Config) Empty() bool {
-	return len(c.Env) == 0 && !c.NeutralizeContainerNames && len(c.Shared) == 0 && len(c.Join) == 0 && !c.AutoPorts && len(c.Profiles) == 0 && c.DataAddress == nil
+	return len(c.Env) == 0 && !c.NeutralizeContainerNames && len(c.Shared) == 0 && len(c.Join) == 0 && !c.AutoPorts && !c.NoAutoPorts && len(c.Profiles) == 0 && c.DataAddress == nil
 }
 
 // SharedSet is the group of services a project shares between instances.

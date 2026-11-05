@@ -133,7 +133,10 @@ func preparePorts(ctx context.Context, e *engine.Engine, inst *engine.Instance, 
 		}
 	}
 	for _, m := range plan.Conflicts() {
-		fmt.Fprintf(stderr, "theo: warning: host port %s (%s, container port %d/%s) is already in use. Free it, or start with --auto-ports.\n", m.Configured, m.Service, m.Target, m.Protocol)
+		fmt.Fprintf(stderr, "theo: host port %s (%s, container port %d/%s) is already in use\n", m.Configured, m.Service, m.Target, m.Protocol)
+	}
+	if err := plan.PortConflictError(); err != nil {
+		return err
 	}
 	for _, f := range inst.GeneratedFiles() {
 		fmt.Fprintf(stderr, "theo: using generated file %s\n", f)

@@ -891,8 +891,8 @@ func doUp(ctx context.Context, e *engine.Engine, inst *engine.Instance, a args, 
 			rep.notes = append(rep.notes, fmt.Sprintf("%s publishes %d/%s on host port %d instead of %s (%s)", m.Service, m.Target, m.Protocol, m.Effective, m.Configured, m.Status))
 		}
 	}
-	for _, m := range plan.Conflicts() {
-		rep.warnings = append(rep.warnings, fmt.Sprintf("host port %s (%s, container port %d/%s) is already in use; free it, or call up with auto_ports=true", m.Configured, m.Service, m.Target, m.Protocol))
+	if err := plan.PortConflictError(); err != nil {
+		return nil, err
 	}
 	if names := inst.FixedContainerNames(); len(names) > 0 && !inst.Main && !inst.Neutralized() {
 		rep.warnings = append(rep.warnings, fmt.Sprintf("%s set a fixed container_name, so another instance of this project cannot run at the same time; `theo instance set %s -w %s --neutralize-container-names` removes it for this instance",

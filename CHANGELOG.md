@@ -4,6 +4,9 @@ Notable changes per release. Each release on GitHub also lists every merged pull
 
 ## Unreleased
 
+### Changed
+- **Branch worktrees no longer clash with the main deployment on host ports.** An instance that is not the project's main worktree now uses free host ports by default (`--auto-ports` behaviour); `theo instance set … --no-auto-ports` opts out. When a port is taken and auto ports is off, `up` stops before calling Docker with a message naming the port, instead of only warning and letting Docker fail.
+
 ### New (v0.5: Theo in the agents' workflow)
 - **`.theo.json`:** a committed file in the repository that declares `copy` (files a new worktree gets from the main one) and `after_create` (commands to run in it). Claude Code's `.worktreeinclude` is read too. See [agents](docs/cli/agents.md).
 - **`after_create` commands** run after `theo worktree add`, and with `theo worktree setup`. They run code from the repository, so Theo asks the first time and whenever the list changes (`--yes` approves, `--no-setup` skips); without a terminal nothing runs.

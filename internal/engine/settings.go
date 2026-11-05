@@ -158,6 +158,7 @@ func (e *Engine) UnsetEnv(inst *Instance, name string) (bool, error) {
 func (e *Engine) SetAutoPorts(inst *Instance, on bool) error {
 	return e.updateSettings(inst, func(c *instances.Config) error {
 		c.AutoPorts = on
+		c.NoAutoPorts = !on
 		return nil
 	})
 }
