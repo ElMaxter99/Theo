@@ -14,6 +14,8 @@ func (s *Server) lifecycleRoutes() {
 	s.handle("GET", "/projects/{p}/lifecycle", authSession, s.handleLifecycle)
 	s.handle("GET", "/projects/{p}/clean", authSession, s.handleCleanPlan)
 	s.handle("POST", "/projects/{p}/clean", authSession, s.handleClean)
+	s.handle("GET", "/projects/{p}/park-inactive", authSession, s.handleParkInactivePlan)
+	s.handle("POST", "/projects/{p}/park-inactive", authSession, s.handleParkInactive)
 	s.handle("POST", "/projects/{p}/resume", authSession, s.handleResume)
 	s.handle("POST", "/projects/{p}/worktrees/{wt}/park", authSession, s.handlePark)
 	s.handle("POST", "/projects/{p}/worktrees/{wt}/keep", authSession, s.handleKeep)
@@ -179,4 +181,55 @@ func (s *Server) handleKeep(w http.ResponseWriter, r *http.Request, _ *session) 
 	s.cache.invalidate(project)
 	s.hub.publish("state.changed", map[string]string{"project": project})
 	return writeJSON(w, http.StatusOK, rec)
+}
+
+// handleParkInactivePlan lists what parking every inactive worktree would do;
+// the query asks for the same options as the POST (save_changes,
+// include_ignored). It changes nothing.
+func (s *Server) handleParkInactivePlan(w http.ResponseWriter, r *http.Request, _ *session) error {
+	project := r.PathValue("p")
+	if _, err := s.eng.Project(project); err != nil {
+		return projectNotFound(project)
+	}
+	q := r.URL.Query()
+	report, err := s.eng.ParkInactive(r.Context(), project, engine.ParkInactiveOptions{
+		SaveChanges: q.Get("save_changes") == "true", IncludeIgnored: q.Get("include_ignored") == "true",
+	})
+	if err != nil {
+		return fromEngine(err, &ResourceRef{Kind: "project", Project: project})
+	}
+	return writeJSON(w, http.StatusOK, report)
+}
+
+// handleParkInactive parks every inactive worktree that can be parked. It
+// needs the project name as confirmation. Branches and volumes are kept.
+func (s *Server) handleParkInactive(w http.ResponseWriter, r *http.Request, _ *session) error {
+	project := r.PathValue("p")
+	var req struct {
+		SaveChanges    bool   `json:"save_changes"`
+		IncludeIgnored bool   `json:"include_ignored"`
+		MaxChanges     int    `json:"max_changes"`
+		Confirm        string `json:"confirm"`
+	}
+	if err := decode(r, &req); err != nil {
+		return err
+	}
+	p, err := s.eng.Project(project)
+	if err != nil {
+		return projectNotFound(project)
+	}
+	if req.Confirm != p.Name {
+		e := errf(http.StatusConflict, "confirmation_required", "parking the inactive worktrees needs the project name as confirmation")
+		e.Confirm = &Confirm{Expected: p.Name, Prompt: "Type the project name to park these worktrees"}
+		return e
+	}
+	report, err := s.eng.ParkInactive(r.Context(), p.Name, engine.ParkInactiveOptions{
+		SaveChanges: req.SaveChanges, IncludeIgnored: req.IncludeIgnored, MaxChanges: req.MaxChanges, Apply: true,
+	})
+	if err != nil {
+		return fromEngine(err, &ResourceRef{Kind: "project", Project: p.Name})
+	}
+	s.cache.invalidate(p.Name)
+	s.hub.publish("state.changed", map[string]string{"project": p.Name})
+	return writeJSON(w, http.StatusOK, report)
 }

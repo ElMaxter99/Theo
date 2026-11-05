@@ -581,6 +581,9 @@ export interface CleanEntry {
   idle_days: number;
   note?: string;
   reason?: string;
+  changes?: number;
+  unpushed?: number;
+  upstream_gone?: boolean;
   closed: boolean;
   went_down?: boolean;
   branch_deleted?: boolean;
@@ -598,5 +601,27 @@ export interface CleanReport {
   kept: CleanEntry[];
   leftovers: { id: string; kind: string; subject: string; detail: string; fix?: string; forgettable?: boolean }[];
   forgot?: number;
+  notes?: string[];
+}
+
+export interface ParkInactiveEntry {
+  path: string;
+  branch?: string;
+  idle_days: number;
+  changes: number;
+  unpushed: number;
+  upstream_gone?: boolean;
+  ignored?: number;
+  reason?: string;
+  will_save?: boolean;
+  saved?: boolean;
+  parked: boolean;
+}
+
+/** GET|POST /projects/{p}/park-inactive. */
+export interface ParkInactiveReport {
+  project: string;
+  applied: boolean;
+  entries: ParkInactiveEntry[];
   notes?: string[];
 }

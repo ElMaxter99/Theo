@@ -34,6 +34,15 @@ Forgotten work (see docs/cli/worktrees.md):
                                                remove the folder, keep the branch. Refuses
                                                uncommitted changes; --confirm when ignored files
                                                (.env, node_modules...) would be lost
+  worktree park-inactive <project> [--save-changes] [--include-ignored] [--max-changes <n>] [--confirm <project>] [--json]
+                                               Park every inactive worktree at once. Without
+                                               --confirm it only lists what would be parked and
+                                               what stays, with why. --save-changes keeps the
+                                               uncommitted files in a local work-in-progress
+                                               commit on the branch (never pushed); --include-ignored
+                                               also parks the ones with .env or node_modules,
+                                               which are deleted. Branches and volumes stay and
+                                               "worktree resume" brings any of them back
   worktree resume <project> <branch> [--copy] Bring a parked worktree back
   worktree keep <project> <w> [--until <date>] [--note <text>] | --clear
                                                Never offer it for cleaning, and no warnings
@@ -682,4 +691,82 @@ func agentText(a *agents.State) string {
 		return a.State + " (estimated)"
 	}
 	return a.State
+}
+
+func runWorktreeParkInactive(ctx context.Context, e *engine.Engine, args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("worktree park-inactive", flag.ContinueOnError)
+	save := fs.Bool("save-changes", false, "keep uncommitted files in a local work-in-progress commit before parking")
+	ignored := fs.Bool("include-ignored", false, "also park worktrees with ignored files (.env, node_modules...), which are deleted")
+	maxChanges := fs.Int("max-changes", engine.DefaultParkMaxChanges, "most uncommitted files to save per worktree")
+	confirm := fs.String("confirm", "", "the project name, to park them")
+	asJSON := fs.Bool("json", false, "print JSON")
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) != 1 {
+		return usageErrorf("worktree park-inactive needs a project name")
+	}
+	p, err := e.Project(pos[0])
+	if err != nil {
+		return err
+	}
+	if *confirm != "" && *confirm != p.Name {
+		return fmt.Errorf("--confirm must be the project name, %q; nothing was parked", p.Name)
+	}
+	apply := *confirm != ""
+	r, err := e.ParkInactive(ctx, p.Name, engine.ParkInactiveOptions{SaveChanges: *save, IncludeIgnored: *ignored, MaxChanges: *maxChanges, Apply: apply})
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return writeJSON(stdout, r)
+	}
+	if len(r.Entries) == 0 {
+		fmt.Fprintf(stdout, "No inactive worktree in %s.\n", r.Project)
+		return nil
+	}
+	tw := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "BRANCH\tIDLE\tRESULT")
+	for _, c := range r.Entries {
+		ref := c.Branch
+		if ref == "" {
+			ref = c.Path
+		}
+		var res string
+		switch {
+		case c.Parked && c.Saved:
+			res = fmt.Sprintf("parked (%d file(s) saved in a WIP commit)", c.Changes)
+		case c.Parked:
+			res = "parked"
+		case c.Reason != "":
+			res = "stays: " + c.Reason
+		case c.WillSave:
+			res = fmt.Sprintf("can be parked (%d file(s) go into a WIP commit)", c.Changes)
+		default:
+			res = "can be parked"
+		}
+		fmt.Fprintf(tw, "%s\t%dd\t%s\n", ref, c.IdleDays, res)
+	}
+	tw.Flush()
+	for _, n := range r.Notes {
+		fmt.Fprintln(stdout, "Note: "+n)
+	}
+	fmt.Fprintln(stdout)
+	switch {
+	case apply:
+		fmt.Fprintf(stdout, "Parked %d of %d. Branches and volumes were kept; bring one back: theo worktree resume %s <branch>\n", r.ParkedCount(), len(r.Entries), p.Name)
+	case r.Parkable() > 0:
+		cmd := "theo worktree park-inactive " + p.Name
+		if *save {
+			cmd += " --save-changes"
+		}
+		if *ignored {
+			cmd += " --include-ignored"
+		}
+		fmt.Fprintf(stdout, "Nothing was parked. To park the %d marked \"can be parked\":\n  %s --confirm %s\n", r.Parkable(), cmd, p.Name)
+	default:
+		fmt.Fprintln(stdout, "Nothing can be parked now; see the reasons above (--save-changes, --include-ignored).")
+	}
+	return nil
 }

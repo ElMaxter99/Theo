@@ -19,6 +19,8 @@ Notable changes per release. Each release on GitHub also lists every merged pull
 - **Web interface:** an **Open in** menu in each worktree row (editor, terminal, folder, proxy URL; the last one used goes first; a disabled option says why), an **agent chip** (with an *estimated* tag when it comes from processes), a **Waiting for you** card on Home, and **Close** blocked while an agent is alive (also in `theo worktree clean`). The API gets `GET|POST /projects/{p}/worktrees/{wt}/open` and `agent` in the overview.
 - **New-version notice**, opt-in (`theo config set update-check on`), at most one request a day.
 
+- **`theo worktree park-inactive`** (and *Park all the inactive* in the Cleanup view) parks every inactive worktree at once; `--save-changes` keeps uncommitted files in a local WIP commit on the branch, and nothing is parked without `--confirm`. `worktree clean` also lists merged worktrees that have uncommitted files, and the inactive ones show whether their remote branch is gone.
+
 ### Fixed
 - **Windows:** matching worktrees with Theo's records compared every pair of paths and resolved symbolic links each time (about 70,000 file lookups for 52 worktrees); each path is now resolved once, so `theo worktrees` no longer loses seconds there.
 - **Windows PowerShell 5.1:** the console showed `ÔåÆ` instead of `→` (and similar for `·`, `…`, `▶`...) because it reads Theo's UTF-8 with the old OEM code page. On Windows Theo now writes plain ASCII (`->`, `-`, `...`) to the console. `--json` output is left as it is. `THEO_ASCII=1` does the same on any system and `THEO_ASCII=0` turns it off.

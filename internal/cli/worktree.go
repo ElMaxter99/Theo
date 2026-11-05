@@ -127,6 +127,8 @@ func runWorktree(e *engine.Engine, args []string, stdout, stderr io.Writer) erro
 		return runWorktreeClean(ctx, e, args[1:], stdout)
 	case "park":
 		return runWorktreePark(ctx, e, args[1:], stdout)
+	case "park-inactive":
+		return runWorktreeParkInactive(ctx, e, args[1:], stdout)
 	case "resume":
 		return runWorktreeResume(ctx, e, args[1:], stdout)
 	case "keep":

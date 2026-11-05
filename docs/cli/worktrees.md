@@ -257,6 +257,28 @@ branch, and the report says how many. `worktree resume` creates the worktree
 again from the parked branch (`--copy` copies the project's `copy_on_add`
 files again) and restores its owner and note.
 
+#### Park all the inactive at once
+
+When dozens of worktrees pile up (review and agent branches nobody came back
+to), parking them one by one is not practical:
+
+```
+theo worktree park-inactive shop                      # only lists: what would be parked, what stays and why
+theo worktree park-inactive shop --save-changes       # uncommitted files go into a local "WIP" commit
+theo worktree park-inactive shop --save-changes --include-ignored --confirm shop
+```
+
+Nothing is lost: every branch stays (with a work-in-progress commit of the
+uncommitted files when `--save-changes` is set; it is local and never pushed),
+volumes are kept, and `worktree resume` brings any of them back. Worktrees stay,
+each with its reason, when they are kept, have an agent alive, are clones or
+locked, have changes without `--save-changes` or more than `--max-changes`
+(50), or have ignored files (`.env`, `node_modules`) without `--include-ignored`.
+The web interface has the same under Problems, Cleanup, *Park all the inactive*
+(`GET|POST /projects/{p}/park-inactive`). `worktree clean` now also lists a
+merged worktree that has uncommitted files, instead of hiding it.
+
+
 ### Keep
 
 `worktree keep` marks a worktree as one to leave alone: it is never offered
