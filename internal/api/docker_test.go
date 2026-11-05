@@ -224,6 +224,8 @@ func TestDockerPortConflictIsClassified(t *testing.T) {
 	if f := d.waitOpLong(a.ID); f.State != "succeeded" {
 		t.Fatalf("main up = %+v", f)
 	}
+	// Branches reassign taken ports by default; turn that off to see the conflict.
+	d.c.call("PATCH", d.base(d.linked)+"/settings", map[string]any{"auto_ports": false}, nil)
 	d.c.call("POST", d.base(d.linked)+"/up", map[string]any{}, &b)
 	f := d.waitOpLong(b.ID)
 	if f.State != "failed" || f.Error == nil || f.Error.Code != "port_conflict" {

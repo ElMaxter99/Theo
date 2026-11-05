@@ -139,7 +139,8 @@ services:
 		testutil.WriteServerImage(t, worktreeDir(t, "fix/new"))
 		cleanup(t, "uc02", "acc-fix-new")
 		must(t, "up", name)
-		// The colliding port is detected before starting, and reassigned on request.
+		// Branches reassign taken ports by default; with that off, the colliding port is detected before starting.
+		must(t, "instance", "set", name, "-w", "fix/new", "--no-auto-ports")
 		contains(t, "ports", must(t, "ports", name, "-w", "fix/new"), "in use")
 		must(t, "up", name, "-w", "fix/new", "--auto-ports")
 		out := must(t, "ports", name, "-w", "fix/new")
