@@ -90,7 +90,7 @@ export function ProjectSettings({ project }: { project: string }) {
         <div class="row">
           <label for="ps-newname" class="sr-only">{ps.newName}</label>
           <input id="ps-newname" class="input auto" value={name} onInput={(e) => setName((e.currentTarget as HTMLInputElement).value)} />
-          <button type="button" class="btn" disabled={!name.trim() || name.trim() === project} onClick={() => setRenaming(true)}>{ps.rename}</button>
+          <button type="button" class="btn sm" disabled={!name.trim() || name.trim() === project} onClick={() => setRenaming(true)}>{ps.rename}</button>
         </div>
       </section>
 
