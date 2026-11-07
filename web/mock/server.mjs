@@ -38,6 +38,11 @@ const SERVICES = [
   { name: "cache", image: "redis:7", ports: [{ host_ip: "127.0.0.1", published: "6379", target: 6379, protocol: "tcp" }], networks: ["default"] },
 ];
 
+// THEO_MOCK_STALE=n adds n inactive worktrees to "shop" (screenshots of the cleanup picker); off by default.
+function staleWorktrees() {
+  const n = Number(process.env.THEO_MOCK_STALE || 0);
+  return Array.from({ length: n }, (_, i) => mkWorktree("shop", `shop-stale-${i}`, `stale-${i}`, { state: "absent", dirty: i % 3 === 2 }));
+}
 function mkWorktree(project, dir, branch, o = {}) {
   const p = `/home/ana/code/${dir}`;
   return {
@@ -70,7 +75,7 @@ function reset() {
   blogMain.compose_project = "blog"; blogDraft.compose_project = "blog-draft";
   S = {
     projects: [
-      { name: "shop", path: "/home/ana/code/shop", env_file: "", added_at: "2026-09-01T10:00:00Z", wts: [shopMain, shopFix, shopFeat, shopOld, shopDetached] },
+      { name: "shop", path: "/home/ana/code/shop", env_file: "", added_at: "2026-09-01T10:00:00Z", wts: [shopMain, shopFix, shopFeat, shopOld, shopDetached, ...staleWorktrees()] },
       { name: "blog", path: "/home/ana/code/blog", env_file: "/home/ana/code/blog.env", added_at: "2026-09-12T10:00:00Z", wts: [blogMain, blogDraft] },
     ],
     ops: new Map(),
@@ -295,7 +300,11 @@ function lifeOf(proj, w) {
   const base = { base: "main", base_recorded: true, behind: 3, origin: "theo", created_at: daysAgo(30), changes: w.dirty ? 3 : 0, running, size_bytes: 220 * 2 ** 20 };
   let l;
   if (w.branch === "draft-post") l = { ...base, state: "merged", merged_by: "content", ahead: 2, unpushed: 0, upstream: "origin/draft-post", upstream_gone: true, activity_at: daysAgo(12), activity_source: "commit", idle_days: 12, reason: "its changes are in the base (squash or rebase merge)" };
-  else if (w.branch === "old-spike") l = { ...base, state: "inactive", ahead: 5, unpushed: 5, activity_at: daysAgo(19), activity_source: "files", idle_days: 19, reason: "no activity for 19 days (threshold 7)" };
+  else if (/^stale-/.test(w.branch)) {
+    const n = Number(w.branch.slice(6)), pushed = n % 3 === 0, gone = n % 3 === 1;
+    l = { ...base, state: "inactive", ahead: 2, changes: n % 3 === 2 ? 1 : 0, unpushed: pushed || gone ? 0 : 2, upstream: pushed || gone ? `origin/${w.branch}` : undefined, upstream_gone: gone || undefined,
+      activity_at: daysAgo(8 + n * 4), activity_source: "commit", idle_days: 8 + n * 4, size_bytes: (40 + n * 30) * 2 ** 20, reason: "no activity" };
+  } else if (w.branch === "old-spike") l = { ...base, state: "inactive", ahead: 5, unpushed: 5, activity_at: daysAgo(19), activity_source: "files", idle_days: 19, reason: "no activity for 19 days (threshold 7)" };
   else if (w.branch === "feature-x") l = { ...base, state: "unpushed", ahead: 2, unpushed: 2, activity_at: daysAgo(0.1), activity_source: "files", idle_days: 0, reason: "2 commit(s) on no remote branch" };
   else if (running) l = { ...base, state: "in-use", ahead: 2, unpushed: 2, activity_at: daysAgo(0.003), activity_source: w.owner ? "mcp" : "instance", idle_days: 0, reason: "its instance is running" };
   else l = { ...base, state: "pushed", ahead: 4, unpushed: 0, upstream: `origin/${w.branch}`, activity_at: daysAgo(3), activity_source: "commit", idle_days: 3, reason: "everything is pushed" };
@@ -334,6 +343,31 @@ async function lifecycleRoutes(req, res, proj, seg) {
       emitGlobal("state.changed", { project: proj.name });
       return send(res, 200, plan), true;
     }
+  }
+  if (seg[2] === "park-inactive" && seg.length === 3) {
+    const url = new URL(req.url, "http://x");
+    const only = m === "GET" ? url.searchParams.getAll("path") : null;
+    const b = m === "POST" ? ((await readJson(req)) ?? {}) : {};
+    if (m === "POST" && b.confirm !== proj.name) return send(res, 409, { error: { code: "confirmation_required", level: 3, message: "parking needs the project name", confirm: { expected: proj.name } } }), true;
+    const save = m === "POST" ? !!b.save_changes : url.searchParams.get("save_changes") === "true";
+    const picked = m === "POST" ? b.paths ?? [] : only;
+    const entries = proj.wts.filter((w) => !w.main).map((w) => lifeView(proj, w)).filter((v) => v.state === "inactive" && (!picked.length || picked.includes(v.path))).map((v) => {
+      const safe = v.changes === 0 && v.unpushed === 0 && !!v.upstream && !v.upstream_gone;
+      const reason = v.changes > 0 && !save ? `${v.changes} uncommitted file(s); add --save-changes to keep them in a work-in-progress commit` : undefined;
+      return { path: v.path, branch: v.branch, idle_days: v.idle_days, changes: v.changes, unpushed: v.unpushed, upstream_gone: v.upstream_gone, safe, branch_deletable: safe, size_bytes: v.size_bytes, reason, parked: false };
+    });
+    if (m === "POST") {
+      for (const e of entries) {
+        if (e.reason) continue;
+        proj.wts = proj.wts.filter((w) => w.path !== e.path);
+        e.parked = true; e.branch_deleted = !!b.delete_branches && e.branch_deletable;
+        if (!e.branch_deleted) (proj.parked ??= []).push({ branch: e.branch, path: e.path, base: "main", parked_at: now() });
+      }
+      emitGlobal("state.changed", { project: proj.name });
+    }
+    const ok = entries.filter((e) => !e.reason);
+    const summary = { total: entries.length, parkable: ok.length, safe: entries.filter((e) => e.safe).length, with_changes: entries.filter((e) => e.changes > 0).length, with_unpushed: entries.filter((e) => e.unpushed > 0).length, upstream_gone: entries.filter((e) => e.upstream_gone).length, blocked: 0, size_bytes: ok.reduce((n, e) => n + (e.size_bytes ?? 0), 0) };
+    return send(res, 200, { project: proj.name, applied: m === "POST", entries, summary }), true;
   }
   if (seg[2] === "resume" && m === "POST") {
     const b = (await readJson(req)) ?? {};

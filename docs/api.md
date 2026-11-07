@@ -206,10 +206,13 @@ Compose names are not used by the renamed instances. Refused with 409 `busy` whi
 - `GET /projects/{p}/clean` lists; `POST /projects/{p}/clean` `{confirm, down?, delete_branches?, images?}` closes,
   and needs the project name in `confirm` (409 `confirmation_required` otherwise). Both answer the report of
   `theo worktree clean --json`.
-- `GET /projects/{p}/park-inactive?save_changes=&include_ignored=`: what parking every inactive worktree would do
-  (`entries[]` with `reason` when one stays). `POST` the same with `{save_changes?, include_ignored?, max_changes?,
-  confirm}` (the project name; otherwise 409 `confirmation_required`) parks them. Branches and volumes are kept;
-  `save_changes` first commits the uncommitted files in a local work-in-progress commit.
+- `GET /projects/{p}/park-inactive?save_changes=&include_ignored=&delete_branches=&size=&path=`: what parking the
+  inactive worktrees would do (`entries[]` with `reason` when one stays, `safe`, `blocked`, `branch_deletable`;
+  `summary` with the counts and, with `size=true`, the space). `path` (repeatable) limits it to those worktrees.
+  `POST` the same with `{save_changes?, include_ignored?, max_changes?, delete_branches?, paths?, confirm}` (the
+  project name; otherwise 409 `confirmation_required`) parks them. Volumes are kept; `save_changes` first commits the
+  uncommitted files in a local work-in-progress commit; `delete_branches` also deletes the local branch, but only of
+  a worktree whose commits are all on its remote (checked again right before), never the remote branch.
 - `POST /projects/{p}/worktrees/{wt}/park` `{note?, confirm?}`: 409 `confirmation_required` lists the ignored
   files that would be lost and expects the folder name in `confirm`; uncommitted changes are refused.
 - `POST /projects/{p}/resume` `{branch, copy?}` -> `{id, ...}` of the worktree created again.

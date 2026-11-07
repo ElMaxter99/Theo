@@ -274,8 +274,19 @@ volumes are kept, and `worktree resume` brings any of them back. Worktrees stay,
 each with its reason, when they are kept, have an agent alive, are clones or
 locked, have changes without `--save-changes` or more than `--max-changes`
 (50), or have ignored files (`.env`, `node_modules`) without `--include-ignored`.
-The web interface has the same under Problems, Cleanup, *Park all the inactive*
-(`GET|POST /projects/{p}/park-inactive`). `worktree clean` now also lists a
+`--only <branch|path>` (repeatable) parks just those. `--delete-branches` also
+deletes the local branch, but only of a worktree whose commits are all on its
+remote (no uncommitted files, no WIP commit, nothing missing from its upstream;
+checked again right before deleting). The remote branch and its remote-tracking
+ref stay, so `theo worktree add` brings the branch back. The listing ends with a
+summary: how many can be parked, how many have nothing to lose, how many have
+uncommitted files, unpushed commits or no remote branch, and how many cannot be
+parked (clones, locked, detached, live agent).
+
+The web interface does this under Problems, Cleanup, Inactive: counters that
+filter the list, a table to pick some or all, and two actions on the pick, *Remove
+folder (park)* and *Delete folder and local branch* (`GET|POST
+/projects/{p}/park-inactive`). `worktree clean` now also lists a
 merged worktree that has uncommitted files, instead of hiding it.
 
 

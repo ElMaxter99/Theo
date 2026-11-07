@@ -194,6 +194,7 @@ func (s *Server) handleParkInactivePlan(w http.ResponseWriter, r *http.Request, 
 	q := r.URL.Query()
 	report, err := s.eng.ParkInactive(r.Context(), project, engine.ParkInactiveOptions{
 		SaveChanges: q.Get("save_changes") == "true", IncludeIgnored: q.Get("include_ignored") == "true",
+		DeleteBranches: q.Get("delete_branches") == "true", Size: q.Get("size") == "true", Only: q["path"],
 	})
 	if err != nil {
 		return fromEngine(err, &ResourceRef{Kind: "project", Project: project})
@@ -206,10 +207,13 @@ func (s *Server) handleParkInactivePlan(w http.ResponseWriter, r *http.Request, 
 func (s *Server) handleParkInactive(w http.ResponseWriter, r *http.Request, _ *session) error {
 	project := r.PathValue("p")
 	var req struct {
-		SaveChanges    bool   `json:"save_changes"`
-		IncludeIgnored bool   `json:"include_ignored"`
-		MaxChanges     int    `json:"max_changes"`
-		Confirm        string `json:"confirm"`
+		SaveChanges    bool `json:"save_changes"`
+		IncludeIgnored bool `json:"include_ignored"`
+		MaxChanges     int  `json:"max_changes"`
+		DeleteBranches bool `json:"delete_branches"`
+		// Paths limits it to these worktrees; empty means every inactive one.
+		Paths   []string `json:"paths"`
+		Confirm string   `json:"confirm"`
 	}
 	if err := decode(r, &req); err != nil {
 		return err
@@ -224,7 +228,8 @@ func (s *Server) handleParkInactive(w http.ResponseWriter, r *http.Request, _ *s
 		return e
 	}
 	report, err := s.eng.ParkInactive(r.Context(), p.Name, engine.ParkInactiveOptions{
-		SaveChanges: req.SaveChanges, IncludeIgnored: req.IncludeIgnored, MaxChanges: req.MaxChanges, Apply: true,
+		SaveChanges: req.SaveChanges, IncludeIgnored: req.IncludeIgnored, MaxChanges: req.MaxChanges,
+		DeleteBranches: req.DeleteBranches, Only: req.Paths, Apply: true,
 	})
 	if err != nil {
 		return fromEngine(err, &ResourceRef{Kind: "project", Project: p.Name})

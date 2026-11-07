@@ -250,3 +250,22 @@ func TestCloneWorkspaceUp(t *testing.T) {
 		t.Errorf("removed clone still listed:\n%s", stdout)
 	}
 }
+
+func TestParkInactiveCommand(t *testing.T) {
+	main, _ := testutil.NewRepo(t, nil)
+	t.Setenv(registry.EnvHome, t.TempDir())
+	if _, stderr, code := run("project", "add", main, "--name", "t5park"); code != ExitOK {
+		t.Fatalf("project add: %s", stderr)
+	}
+	stdout, stderr, code := run("worktree", "park-inactive", "t5park")
+	if code != ExitOK || !strings.Contains(stdout, "No inactive worktree") {
+		t.Errorf("code %d: %q %q", code, stdout, stderr)
+	}
+	if _, _, code := run("worktree", "park-inactive", "t5park", "--confirm", "other"); code == ExitOK {
+		t.Error("a wrong --confirm was accepted")
+	}
+	stdout, _, code = run("worktree", "park-inactive", "t5park", "--json", "--only", "nothing")
+	if code != ExitOK || !strings.Contains(stdout, `"entries": []`) && !strings.Contains(stdout, `"entries":[]`) || !strings.Contains(stdout, `"summary"`) {
+		t.Errorf("json: %d %q", code, stdout)
+	}
+}

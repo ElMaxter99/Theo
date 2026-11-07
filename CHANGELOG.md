@@ -22,6 +22,7 @@ Notable changes per release. Each release on GitHub also lists every merged pull
 - **Web interface:** an **Open in** menu in each worktree row (editor, terminal, folder, proxy URL; the last one used goes first; a disabled option says why), an **agent chip** (with an *estimated* tag when it comes from processes), a **Waiting for you** card on Home, and **Close** blocked while an agent is alive (also in `theo worktree clean`). The API gets `GET|POST /projects/{p}/worktrees/{wt}/open` and `agent` in the overview.
 - **New-version notice**, opt-in (`theo config set update-check on`), at most one request a day.
 
+- **Cleanup: pick the inactive worktrees.** Counters that filter (nothing to lose, uncommitted files, unpushed commits, remote branch deleted, cannot be parked), a table to pick some or all, and two actions: remove the folder (the branch stays) or remove the folder and the local branch, only when all its commits are on its remote. `theo worktree park-inactive` gets `--only` and `--delete-branches`, and prints a summary.
 - **`theo worktree park-inactive`** (and *Park all the inactive* in the Cleanup view) parks every inactive worktree at once; `--save-changes` keeps uncommitted files in a local WIP commit on the branch, and nothing is parked without `--confirm`. `worktree clean` also lists merged worktrees that have uncommitted files, and the inactive ones show whether their remote branch is gone.
 
 ### Fixed
