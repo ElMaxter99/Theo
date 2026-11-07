@@ -3,8 +3,9 @@
 // forgotten work of ADR-0016 (below).
 import { useEffect, useState } from "preact/hooks";
 import { api, ApiError, projectPath, qs } from "../api/client.ts";
-import type { CleanEntry, CleanReport, LifeReport, LifeWorktree, ParkInactiveReport } from "../api/types.ts";
+import type { CleanEntry, CleanReport, LifeReport, LifeWorktree } from "../api/types.ts";
 import { KeepDialog, ParkDialog } from "../components/LifecycleDialogs.tsx";
+import { InactivePicker } from "../components/InactivePicker.tsx";
 import { sizeText } from "../lib/lifecycle.ts";
 import { Banner, ErrorBanner, Loading, PageHead } from "../components/ui.tsx";
 import { TypedConfirmDialog } from "../components/Dialog.tsx";
@@ -91,11 +92,6 @@ function Cleanup({ initial }: { initial?: string }) {
   const [confirming, setConfirming] = useState(false);
   const [parking, setParking] = useState<{ project: string; w: LifeWorktree } | null>(null);
   const [keeping, setKeeping] = useState<{ project: string; w: LifeWorktree } | null>(null);
-  const [parkingAll, setParkingAll] = useState(false);
-  const [parkAll, setParkAll] = useState(false);
-  const [saveChanges, setSaveChanges] = useState(false);
-  const [withIgnored, setWithIgnored] = useState(false);
-  const [parkPlan, setParkPlan] = useState<ParkInactiveReport | null>(null);
   const [actionError, setActionError] = useState<ApiError | undefined>();
   const data = plans.data ?? [];
   const lifeOf = (p: Plan, path: string) => p.life?.worktrees.find((w) => w.path === path);
@@ -105,17 +101,9 @@ function Cleanup({ initial }: { initial?: string }) {
   const leftovers = data.flatMap((p) => p.clean.leftovers.map((f) => ({ p, f })));
   const projectsWith = [...new Set(closable.map((x) => x.p.project))];
   const reload = () => { plans.reload(); void refreshStatus(); };
-  // What "park them all" would do with the options chosen: a listing, nothing changes.
   const inactiveProjects = [...new Set(inactive.map((x) => x.p.project))];
-  useEffect(() => {
-    if (!parkAll || inactiveProjects.length !== 1) { setParkPlan(null); return; }
-    let live = true;
-    api.get<ParkInactiveReport>(`${projectPath(inactiveProjects[0]!)}/park-inactive${qs({ save_changes: saveChanges, include_ignored: withIgnored })}`)
-      .then((r) => { if (live) setParkPlan(r); }, () => { if (live) setParkPlan(null); });
-    return () => { live = false; };
-  }, [parkAll, saveChanges, withIgnored, inactiveProjects.join("|"), plans.data]);
-  const parkable = parkPlan?.entries.filter((x) => !x.reason) ?? [];
-  const parkStays = parkPlan?.entries.filter((x) => x.reason) ?? [];
+  // With one project and several inactive worktrees the picker (counters, selection, delete) replaces the plain list.
+  const usePicker = inactive.length > 1 && inactiveProjects.length === 1;
   const cmd = chosen.length === 1
     ? theoCmd("worktree", "clean", chosen[0], down && "--down", branches && "--delete-branches", images && "--images", "--confirm", chosen[0])
     : theoCmd("worktree", "clean", "--all", down && "--down", branches && "--delete-branches", images && "--images", "--confirm", "all");
@@ -168,7 +156,7 @@ function Cleanup({ initial }: { initial?: string }) {
 
           <h3>{c.inactiveTitle(inactive.length)} <span class="small muted">{c.inactiveHint}</span></h3>
           {chosen.length === 1 ? <Threshold project={chosen[0]!} days={data[0]?.clean.inactive_after_days ?? 7} onSaved={reload} /> : null}
-          {inactive.length > 0 ? (
+          {usePicker ? <InactivePicker project={inactiveProjects[0]!} onChanged={reload} onKeep={(path) => { const w = lifeOf(data.find((x) => x.project === inactiveProjects[0])!, path); if (w) setKeeping({ project: inactiveProjects[0]!, w }); }} /> : inactive.length > 0 ? (
             <ul class="list-rows">
               {inactive.map(({ p, e, w }) => (
                 <li key={e.path} class="list-row">
@@ -180,34 +168,6 @@ function Cleanup({ initial }: { initial?: string }) {
             </ul>
           ) : null}
           <p class="small muted">{c.parkNote}</p>
-          {inactive.length > 1 && inactiveProjects.length === 1 ? (
-            <div class="stack-sm">
-              <button type="button" class="btn sm" aria-expanded={parkAll} onClick={() => setParkAll(!parkAll)}>{c.parkAllTitle}</button>
-              {parkAll ? (
-                <>
-                  <fieldset class="stack-sm">
-                    <label class="row"><input type="checkbox" checked={saveChanges} onChange={(e) => setSaveChanges((e.currentTarget as HTMLInputElement).checked)} /> {c.parkAllSave}</label>
-                    <label class="row"><input type="checkbox" checked={withIgnored} onChange={(e) => setWithIgnored((e.currentTarget as HTMLInputElement).checked)} /> {c.parkAllIgnored}</label>
-                  </fieldset>
-                  {parkPlan ? (
-                    <>
-                      <p>{c.parkAllPlan(parkable.length)}</p>
-                      {parkStays.length > 0 ? (
-                        <>
-                          <p class="small">{c.parkAllStays}</p>
-                          <ul class="small">{parkStays.map((x) => <li key={x.path}><span class="mono">{x.branch ?? x.path}</span> · {x.reason}</li>)}</ul>
-                        </>
-                      ) : null}
-                    </>
-                  ) : <Loading />}
-                  <div class="row">
-                    <button type="button" class="btn danger" disabled={parkable.length === 0} onClick={() => setParkingAll(true)}>{c.parkAllN(parkable.length)}</button>
-                    <CopyCommand command={theoCmd("worktree", "park-inactive", inactiveProjects[0]!, saveChanges && "--save-changes", withIgnored && "--include-ignored", "--confirm", inactiveProjects[0]!)} />
-                  </div>
-                </>
-              ) : null}
-            </div>
-          ) : null}
 
           {staying.length > 0 ? (
             <>
@@ -245,23 +205,6 @@ function Cleanup({ initial }: { initial?: string }) {
               n += out.close.filter((e) => e.closed).length;
             }
             announce(c.done(n));
-            reload();
-          }}
-        />
-      ) : null}
-      {parkingAll && inactiveProjects.length === 1 ? (
-        <TypedConfirmDialog
-          title={c.parkAllN(parkable.length)}
-          lead={c.parkAllTyped(c.word, parkable.length)}
-          expected={c.word}
-          affectedTitle={c.parkAllTitle}
-          affected={parkable.map((x) => ({ name: x.branch ?? x.path, detail: `${c.inactiveRow(x.idle_days, inactiveProjects[0]!)}${x.will_save ? ` · ${c.changes(x.changes)}` : ""}` }))}
-          preserved={[c.parkAllKeep]}
-          confirmLabel={c.parkAllN(parkable.length)}
-          onClose={() => setParkingAll(false)}
-          onConfirm={async () => {
-            const out = await api.post<ParkInactiveReport>(`${projectPath(inactiveProjects[0]!)}/park-inactive`, { save_changes: saveChanges, include_ignored: withIgnored, confirm: inactiveProjects[0] });
-            announce(c.parkAllDone(out.entries.filter((x) => x.parked).length));
             reload();
           }}
         />

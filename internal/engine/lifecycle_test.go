@@ -514,3 +514,79 @@ func TestCleanShowsMergedWorktreesWithChanges(t *testing.T) {
 		t.Errorf("it was removed: %v", err)
 	}
 }
+
+func TestParkInactiveSelectionSummaryAndBranchDeletion(t *testing.T) {
+	for _, kv := range [][2]string{{"GIT_AUTHOR_NAME", "Theo Test"}, {"GIT_AUTHOR_EMAIL", "t@example.invalid"}, {"GIT_COMMITTER_NAME", "Theo Test"}, {"GIT_COMMITTER_EMAIL", "t@example.invalid"}} {
+		t.Setenv(kv[0], kv[1])
+	}
+	e, store, main, paths := lifecycleFixture(t)
+	ctx := context.Background()
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	testutil.Git(t, filepath.Dir(remote), "init", "-q", "--bare", remote)
+	testutil.Git(t, main, "remote", "add", "origin", remote)
+	// "work" and "fresh" are fully on the remote; "dirty" is not.
+	testutil.WriteFile(t, paths["fresh"], "f.txt", "f\n")
+	testutil.Git(t, paths["fresh"], "add", "-A")
+	testutil.Git(t, paths["fresh"], "commit", "-q", "-m", "fresh work")
+	testutil.Git(t, main, "push", "-q", "-u", "origin", "work", "fresh")
+	e.now = func() time.Time { return time.Now().Add(10 * 24 * time.Hour) }
+
+	dry, err := e.ParkInactive(ctx, "app", ParkInactiveOptions{SaveChanges: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := dry.Summary
+	if s.Total != 3 || s.Parkable != 3 || s.Safe != 2 || s.WithChanges != 1 || s.WithUnpushed != 0 || s.Blocked != 0 {
+		t.Errorf("summary = %+v", s)
+	}
+	by := map[string]ParkInactiveEntry{}
+	for _, en := range dry.Entries {
+		by[en.Branch] = en
+	}
+	if !by["work"].Safe || !by["work"].BranchDeletable || by["dirty"].Safe || by["dirty"].BranchDeletable {
+		t.Errorf("entries = %+v", dry.Entries)
+	}
+
+	// Only the selected ones are touched: "work" and "dirty", not "fresh".
+	r, err := e.ParkInactive(ctx, "app", ParkInactiveOptions{
+		SaveChanges: true, DeleteBranches: true, Apply: true,
+		Only: []string{paths["work"], paths["dirty"], paths["merged"]},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]ParkInactiveEntry{}
+	for _, en := range r.Entries {
+		got[en.Branch] = en
+	}
+	if len(r.Entries) != 3 {
+		t.Fatalf("entries = %+v", r.Entries)
+	}
+	if w := got["work"]; !w.Parked || !w.BranchDeleted {
+		t.Errorf("work = %+v", w)
+	}
+	if d := got["dirty"]; !d.Parked || d.BranchDeleted || !d.Saved {
+		t.Errorf("dirty = %+v", d)
+	}
+	if m := got["merged"]; m.Parked || m.Reason == "" || !m.Blocked {
+		t.Errorf("merged (not inactive) = %+v", m)
+	}
+	if (git.Git{}).IsLocalBranch(ctx, main, "work") {
+		t.Error("the pushed branch was not deleted")
+	}
+	if !(git.Git{}).IsLocalBranch(ctx, main, "dirty") {
+		t.Error("a branch with a WIP commit was deleted")
+	}
+	if _, err := os.Stat(paths["fresh"]); err != nil {
+		t.Errorf("an unselected worktree was removed: %v", err)
+	}
+	// Its remote-tracking ref stays, so the branch can be recreated; no stale parked record is left.
+	if !(git.Git{}).IsLocalBranch(ctx, main, "fresh") {
+		t.Error("fresh lost its branch")
+	}
+	for _, pk := range store.projects[0].Parked {
+		if pk.Branch == "work" {
+			t.Errorf("parked record of a deleted branch kept: %+v", pk)
+		}
+	}
+}

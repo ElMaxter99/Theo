@@ -612,10 +612,27 @@ export interface ParkInactiveEntry {
   unpushed: number;
   upstream_gone?: boolean;
   ignored?: number;
+  safe?: boolean;
+  branch_deletable?: boolean;
+  size_bytes?: number;
   reason?: string;
+  blocked?: boolean;
   will_save?: boolean;
   saved?: boolean;
   parked: boolean;
+  branch_deleted?: boolean;
+  problems?: string[];
+}
+
+export interface ParkInactiveSummary {
+  total: number;
+  parkable: number;
+  safe: number;
+  with_changes: number;
+  with_unpushed: number;
+  upstream_gone: number;
+  blocked: number;
+  size_bytes?: number;
 }
 
 /** GET|POST /projects/{p}/park-inactive. */
@@ -623,5 +640,6 @@ export interface ParkInactiveReport {
   project: string;
   applied: boolean;
   entries: ParkInactiveEntry[];
+  summary: ParkInactiveSummary;
   notes?: string[];
 }

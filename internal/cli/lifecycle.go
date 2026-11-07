@@ -34,15 +34,17 @@ Forgotten work (see docs/cli/worktrees.md):
                                                remove the folder, keep the branch. Refuses
                                                uncommitted changes; --confirm when ignored files
                                                (.env, node_modules...) would be lost
-  worktree park-inactive <project> [--save-changes] [--include-ignored] [--max-changes <n>] [--confirm <project>] [--json]
-                                               Park every inactive worktree at once. Without
+  worktree park-inactive <project> [--only <w>]... [--save-changes] [--include-ignored] [--delete-branches] [--max-changes <n>] [--confirm <project>] [--json]
+                                               Park every inactive worktree at once (or only the --only ones). Without
                                                --confirm it only lists what would be parked and
                                                what stays, with why. --save-changes keeps the
                                                uncommitted files in a local work-in-progress
                                                commit on the branch (never pushed); --include-ignored
                                                also parks the ones with .env or node_modules,
-                                               which are deleted. Branches and volumes stay and
-                                               "worktree resume" brings any of them back
+                                               which are deleted. --delete-branches also deletes the
+                                               local branch, only when all its commits are on its
+                                               remote. Volumes stay; "worktree resume" brings
+                                               parked ones back
   worktree resume <project> <branch> [--copy] Bring a parked worktree back
   worktree keep <project> <w> [--until <date>] [--note <text>] | --clear
                                                Never offer it for cleaning, and no warnings
@@ -698,6 +700,9 @@ func runWorktreeParkInactive(ctx context.Context, e *engine.Engine, args []strin
 	save := fs.Bool("save-changes", false, "keep uncommitted files in a local work-in-progress commit before parking")
 	ignored := fs.Bool("include-ignored", false, "also park worktrees with ignored files (.env, node_modules...), which are deleted")
 	maxChanges := fs.Int("max-changes", engine.DefaultParkMaxChanges, "most uncommitted files to save per worktree")
+	delBranches := fs.Bool("delete-branches", false, "also delete the local branch of each parked worktree, only when all its commits are on its remote")
+	var only stringList
+	fs.Var(&only, "only", "park only this worktree (branch or path); can be repeated")
 	confirm := fs.String("confirm", "", "the project name, to park them")
 	asJSON := fs.Bool("json", false, "print JSON")
 	pos, err := parse(fs, args)
@@ -715,7 +720,7 @@ func runWorktreeParkInactive(ctx context.Context, e *engine.Engine, args []strin
 		return fmt.Errorf("--confirm must be the project name, %q; nothing was parked", p.Name)
 	}
 	apply := *confirm != ""
-	r, err := e.ParkInactive(ctx, p.Name, engine.ParkInactiveOptions{SaveChanges: *save, IncludeIgnored: *ignored, MaxChanges: *maxChanges, Apply: apply})
+	r, err := e.ParkInactive(ctx, p.Name, engine.ParkInactiveOptions{SaveChanges: *save, IncludeIgnored: *ignored, MaxChanges: *maxChanges, DeleteBranches: *delBranches, Only: only, Apply: apply})
 	if err != nil {
 		return err
 	}
@@ -735,16 +740,26 @@ func runWorktreeParkInactive(ctx context.Context, e *engine.Engine, args []strin
 		}
 		var res string
 		switch {
-		case c.Parked && c.Saved:
-			res = fmt.Sprintf("parked (%d file(s) saved in a WIP commit)", c.Changes)
 		case c.Parked:
 			res = "parked"
+			if c.Saved {
+				res += fmt.Sprintf(" (%d file(s) saved in a WIP commit)", c.Changes)
+			}
+			if c.BranchDeleted {
+				res += ", local branch deleted (its remote copy stays)"
+			}
+			for _, pr := range c.Problems {
+				res += "; " + pr
+			}
 		case c.Reason != "":
 			res = "stays: " + c.Reason
 		case c.WillSave:
 			res = fmt.Sprintf("can be parked (%d file(s) go into a WIP commit)", c.Changes)
 		default:
 			res = "can be parked"
+			if *delBranches && c.BranchDeletable {
+				res += ", its local branch would be deleted (all on the remote)"
+			}
 		}
 		fmt.Fprintf(tw, "%s\t%dd\t%s\n", ref, c.IdleDays, res)
 	}
@@ -752,10 +767,13 @@ func runWorktreeParkInactive(ctx context.Context, e *engine.Engine, args []strin
 	for _, n := range r.Notes {
 		fmt.Fprintln(stdout, "Note: "+n)
 	}
+	sm := r.Summary
+	fmt.Fprintf(stdout, "\n%d inactive: %d can be parked, %d with nothing to lose (all on the remote), %d with uncommitted files, %d with unpushed commits, %d without remote branch, %d that cannot be parked.\n",
+		sm.Total, sm.Parkable, sm.Safe, sm.WithChanges, sm.WithUnpushed, sm.UpstreamGone, sm.Blocked)
 	fmt.Fprintln(stdout)
 	switch {
 	case apply:
-		fmt.Fprintf(stdout, "Parked %d of %d. Branches and volumes were kept; bring one back: theo worktree resume %s <branch>\n", r.ParkedCount(), len(r.Entries), p.Name)
+		fmt.Fprintf(stdout, "Parked %d of %d. Volumes were kept. Branches too, unless deleted with --delete-branches; bring a parked one back: theo worktree resume %s <branch>\n", r.ParkedCount(), len(r.Entries), p.Name)
 	case r.Parkable() > 0:
 		cmd := "theo worktree park-inactive " + p.Name
 		if *save {
@@ -763,6 +781,12 @@ func runWorktreeParkInactive(ctx context.Context, e *engine.Engine, args []strin
 		}
 		if *ignored {
 			cmd += " --include-ignored"
+		}
+		if *delBranches {
+			cmd += " --delete-branches"
+		}
+		for _, o := range only {
+			cmd += " --only " + o
 		}
 		fmt.Fprintf(stdout, "Nothing was parked. To park the %d marked \"can be parked\":\n  %s --confirm %s\n", r.Parkable(), cmd, p.Name)
 	default:

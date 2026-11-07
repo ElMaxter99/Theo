@@ -79,7 +79,7 @@ func init() {
 			{name: "prune", args: []string{"project"}, flags: []flagSpec{{names: []string{"--merged"}}, {[]string{"--into"}, "text"}, {[]string{"--confirm"}, "text"}, jsonFlag}},
 			{name: "clean", args: []string{"project"}, flags: []flagSpec{{names: []string{"--all"}}, {names: []string{"--down"}}, {names: []string{"--delete-branches"}}, {names: []string{"--images"}}, {[]string{"--confirm"}, "text"}, jsonFlag}},
 			{name: "park", args: []string{"project", "worktree"}, flags: []flagSpec{{[]string{"--note"}, "text"}, {[]string{"--confirm"}, "text"}, jsonFlag}},
-			{name: "park-inactive", args: []string{"project"}, flags: []flagSpec{{names: []string{"--save-changes"}}, {names: []string{"--include-ignored"}}, {[]string{"--max-changes"}, "text"}, {[]string{"--confirm"}, "text"}, jsonFlag}},
+			{name: "park-inactive", args: []string{"project"}, flags: []flagSpec{{names: []string{"--save-changes"}}, {names: []string{"--include-ignored"}}, {names: []string{"--delete-branches"}}, {[]string{"--only"}, "text"}, {[]string{"--max-changes"}, "text"}, {[]string{"--confirm"}, "text"}, jsonFlag}},
 			{name: "resume", args: []string{"project", "text"}, flags: []flagSpec{{names: []string{"--copy"}}, jsonFlag}},
 			{name: "keep", args: []string{"project", "worktree"}, flags: []flagSpec{{[]string{"--until"}, "text"}, {[]string{"--note"}, "text"}, {names: []string{"--clear"}}, jsonFlag}},
 			{name: "base", args: []string{"project", "worktree"}, flags: []flagSpec{{[]string{"--set"}, "text"}, {names: []string{"--clear"}}, jsonFlag}},
