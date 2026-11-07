@@ -125,7 +125,7 @@ function Cleanup({ initial }: { initial?: string }) {
     <section class="stack" aria-labelledby="cl-title">
       <h2 id="cl-title">{c.title}</h2>
       <p>{c.lead}</p>
-      <div class="row">
+      <div class="row controls">
         <div class="field">
           <label for="cl-project">{c.project}</label>
           <select id="cl-project" class="input auto" value={project} onChange={(e) => setProject((e.currentTarget as HTMLSelectElement).value)}>

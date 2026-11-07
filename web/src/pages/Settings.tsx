@@ -210,11 +210,10 @@ function Agents() {
     <section class="card stack" aria-labelledby="st-agents">
       <h2 id="st-agents">{a.title}</h2>
       <p>{a.lead}</p>
-      <form class="row" onSubmit={(e) => { e.preventDefault(); setApplied({ owner: owner.trim(), readOnly }); }}>
+      <form class="row controls" onSubmit={(e) => { e.preventDefault(); setApplied({ owner: owner.trim(), readOnly }); }}>
         <div class="field">
           <label for="ag-owner">{a.owner}</label>
           <input id="ag-owner" class="input auto" value={owner} aria-describedby="ag-owner-hint" onInput={(e) => setOwner((e.currentTarget as HTMLInputElement).value)} />
-          <p class="hint" id="ag-owner-hint">{a.ownerHint}</p>
         </div>
         <div class="check">
           <input id="ag-ro" type="checkbox" checked={readOnly} onChange={(e) => setReadOnly((e.currentTarget as HTMLInputElement).checked)} />
@@ -222,6 +221,7 @@ function Agents() {
         </div>
         <button type="submit" class="btn sm">{a.update}</button>
       </form>
+      <p class="hint" id="ag-owner-hint">{a.ownerHint}</p>
       {res.loading && !doc ? <Loading /> : null}
       <ErrorBanner error={res.error} />
       {doc ? (
