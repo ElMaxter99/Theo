@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -155,6 +156,11 @@ func FreePort(t *testing.T) int {
 	start := 20000 + int(time.Now().UnixNano()%15000)
 	for i := 0; i < 500; i++ {
 		port := 20000 + (start-20000+i*7)%20000
+		// Never hand out a port (or its neighbour) this process already gave to another test: the time-based
+		// start can repeat on a coarse clock and the first holder may not have bound it yet.
+		if !claimPorts(port) {
+			continue
+		}
 		a, err := net.Listen("tcp", ":"+strconv.Itoa(port))
 		if err != nil {
 			last = err
@@ -171,6 +177,22 @@ func FreePort(t *testing.T) int {
 	}
 	t.Fatalf("no free pair of consecutive ports (last error: %v)", last)
 	return 0
+}
+
+var (
+	claimedMu    sync.Mutex
+	claimedPorts = map[int]bool{}
+)
+
+// claimPorts reserves port and port+1 for the life of the process; false when either was already handed out.
+func claimPorts(port int) bool {
+	claimedMu.Lock()
+	defer claimedMu.Unlock()
+	if claimedPorts[port] || claimedPorts[port+1] {
+		return false
+	}
+	claimedPorts[port], claimedPorts[port+1] = true, true
+	return true
 }
 
 // GitClean fails the test if the worktree at dir has uncommitted changes.

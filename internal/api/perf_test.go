@@ -202,6 +202,8 @@ func overviewShape(t *testing.T, e *env, project string) string {
 		// not on how Docker is read, which is what is compared here.
 		for j := range ov.Worktrees[i].Ports {
 			ov.Worktrees[i].Ports[j].Status = ""
+			ov.Worktrees[i].Ports[j].HostPort = 0
+			ov.Worktrees[i].Ports[j].URL = ""
 		}
 		ov.Worktrees[i].Warnings = nil
 	}

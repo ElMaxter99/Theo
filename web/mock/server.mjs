@@ -639,6 +639,10 @@ async function api(req, res, url) {
   if (!w) return err(res, 404, "worktree_not_found", `worktree ${seg[3]} does not exist`);
   const sub = seg[4];
   if (!sub && m === "GET") { const li = listItem(w); return send(res, 200, { ...li, containers: containersOf(w), container_counts: li.containers, settings: w.settings, expected_services: SERVICES.map((x) => x.name) }); }
+  if (sub === "open") {
+    if (m === "GET") return send(res, 200, { options: ["terminal", "editor", "files"].map((target) => ({ target, available: true })) });
+    if (m === "POST") { const b = (await readJson(req)) ?? {}; return send(res, 200, { opened: true, target: b.target, tool: ({ terminal: "Terminal", editor: "VS Code", files: "Files" })[b.target] ?? b.target }); }
+  }
   if (sub === "services") return send(res, 200, { env_file: w.env_file, services: SERVICES.map((s) => (s.name === "web" && w.rt.risky ? { ...s, mounts: [...s.mounts, { type: "bind", source: "/var/run/docker.sock", target: "/var/run/docker.sock" }, { type: "bind", source: "../shared-data", target: "/data", outside_workspace: true }] } : s)) });
   if (sub === "ports") {
     const auto = q.get("auto_ports") === "1";
