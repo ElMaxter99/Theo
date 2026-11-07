@@ -1090,7 +1090,7 @@ const en = {
     cardDetail: (n: number) => (n === 1 ? "1 agent needs you." : `${num(n)} agents need you.`),
     cardGo: "Open the worktree",
     openMenu: "Open in",
-    openMenuFor: (name: string) => `Open ${name} in…`,
+    openMenuFor: (name: string) => `Open in: ${name}`,
     target: { editor: "Editor", terminal: "Terminal", files: "Folder", url: "Proxy URL" } as Record<string, string>,
     lastUsed: "last used",
     noProxyUrl: "no proxy URL: the instance is not running",

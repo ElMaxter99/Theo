@@ -1083,7 +1083,7 @@ export const es: Catalog = {
     cardDetail: (n: number) => (n === 1 ? "1 agente te necesita." : `${num(n)} agentes te necesitan.`),
     cardGo: "Abrir el worktree",
     openMenu: "Abrir en",
-    openMenuFor: (name: string) => `Abrir ${name} en…`,
+    openMenuFor: (name: string) => `Abrir en: ${name}`,
     target: { editor: "Editor", terminal: "Terminal", files: "Carpeta", url: "URL del proxy" } as Record<string, string>,
     lastUsed: "último uso",
     noProxyUrl: "sin URL del proxy: la instancia no está en marcha",
