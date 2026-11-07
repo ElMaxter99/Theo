@@ -72,7 +72,7 @@ cd Theo
 .\scripts\build-desktop.cmd -InstallDeps -Run
 ```
 
-The result is `dist\theo-desktop.exe`: double-click it any time to open the app. `-Cli` also builds `dist\theo.exe`.
+The result is `dist\theo-desktop.exe`: double-click it any time to open the app. It also builds `dist\theo.exe` (the CLI); `-NoCli` skips it. Before building it warns if your checkout is behind its remote (`-Update` pulls first) and at the end it prints the version it built; `-Ui` rebuilds the web interface too (needs Node.js).
 
 Add `--cli` (`-Cli` in PowerShell) to build `theo` too. It cannot be cross-compiled (the window needs cgo and the system web
 view), so run it on each system. What it does, step by step:
