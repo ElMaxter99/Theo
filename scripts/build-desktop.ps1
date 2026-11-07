@@ -1,8 +1,11 @@
 # Builds theo-desktop (the web interface in a native window) for Windows into .\dist.
 # It needs Go and a C compiler (cgo), so it runs on Windows itself.
 #
-#   .\scripts\build-desktop.ps1                 build dist\theo-desktop.exe
-#   .\scripts\build-desktop.ps1 -Cli            also build dist\theo.exe
+#   .\scripts\build-desktop.ps1                 build dist\theo.exe (CLI) and dist\theo-desktop.exe
+#   .\scripts\build-desktop.ps1 -NoCli          build only dist\theo-desktop.exe
+#   .\scripts\build-desktop.ps1 -Update         first update the checkout (git pull --ff-only) from origin
+#   .\scripts\build-desktop.ps1 -Ui             also rebuild the web interface (needs Node.js; normally the
+#                                                committed internal\ui\dist is already current)
 #   .\scripts\build-desktop.ps1 -InstallDeps    install Go and gcc with winget if missing
 #   .\scripts\build-desktop.ps1 -Run            open the app when the build finishes
 #
@@ -11,7 +14,7 @@
 #
 # The version comes from $env:VERSION if set, else from `git describe`.
 # Works in Windows PowerShell 5.1 and PowerShell 7.
-param([switch]$Cli, [switch]$InstallDeps, [switch]$Run)
+param([switch]$Cli, [switch]$NoCli, [switch]$Update, [switch]$Ui, [switch]$InstallDeps, [switch]$Run)
 $ErrorActionPreference = "Stop"
 Set-Location (Join-Path $PSScriptRoot "..")
 
@@ -50,6 +53,38 @@ function Winget-Install($id) {
 
 Update-Path
 
+# --- Is this checkout current? ------------------------------------------------------------------
+# A build only contains what is in the working tree, so an old checkout gives an old exe.
+if (Get-Command git -ErrorAction SilentlyContinue) {
+  $inRepo = (Native { git rev-parse --is-inside-work-tree } | Select-Object -First 1)
+  if ($LASTEXITCODE -eq 0 -and "$inRepo" -eq "true") {
+    if ($Update) {
+      Write-Host "updating the checkout (git pull --ff-only)..."
+      Native { git pull --ff-only --tags } | Write-Host
+      if ($LASTEXITCODE -ne 0) { Fail "git pull failed (local changes or a diverged branch?). Fix that, or build without -Update" }
+    } else {
+      Native { git fetch --quiet --tags } | Out-Null
+      $behind = (Native { git rev-list --count "HEAD..@{upstream}" } | Select-Object -First 1)
+      if ($LASTEXITCODE -eq 0 -and "$behind" -match "^[1-9]") {
+        Write-Host "warning: this checkout is $behind commit(s) behind its remote branch, so the exe will NOT include the newest changes." -ForegroundColor Yellow
+        Write-Host "         run again with -Update (or: git pull) to build the latest." -ForegroundColor Yellow
+      }
+    }
+  }
+}
+
+if ($Ui) {
+  if (-not (Get-Command npm -ErrorAction SilentlyContinue)) { Fail "-Ui needs Node.js (npm). Install it from https://nodejs.org/ or build without -Ui (the committed interface is used)" }
+  Write-Host "building the web interface..."
+  Push-Location web
+  try {
+    Native { npm ci } | Write-Host
+    if ($LASTEXITCODE -ne 0) { Fail "npm ci failed" }
+    Native { npm run build } | Write-Host
+    if ($LASTEXITCODE -ne 0) { Fail "npm run build failed" }
+  } finally { Pop-Location }
+}
+
 if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
   if ($InstallDeps) { Winget-Install "GoLang.Go" }
   if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
@@ -74,11 +109,11 @@ $arch = (go env GOARCH)
 
 New-Item -ItemType Directory -Force dist | Out-Null
 
-if ($Cli) {
+if (-not $NoCli) {
   Write-Host "building dist\theo.exe ($version)"
   $env:CGO_ENABLED = "0"
   Native { go build -trimpath -ldflags "-s -w -X $pkg.Version=$version" -o dist\theo.exe .\cmd\theo } | Write-Host
-  if ($LASTEXITCODE -ne 0) { Fail "building theo failed" }
+  if ($LASTEXITCODE -ne 0) { Fail "building theo (CLI) failed (see the messages above)" }
 }
 
 # The icon of the executable.
@@ -92,6 +127,14 @@ Native { go build -tags desktop -trimpath -ldflags "-s -w -H=windowsgui -X $pkg.
 if ($LASTEXITCODE -ne 0) { Fail "building theo-desktop failed (see the messages above)" }
 
 $exe = Join-Path (Get-Location) "dist\theo-desktop.exe"
+if (-not (Test-Path $exe)) { Fail "dist\theo-desktop.exe was not produced" }
+Write-Host "built version: $version" -ForegroundColor Green
+if (-not $NoCli) {
+  $cliExe = Join-Path (Get-Location) "dist\theo.exe"
+  if (-not (Test-Path $cliExe)) { Fail "dist\theo.exe was not produced" }
+  Write-Host ("theo.exe says: " + ((Native { & $cliExe version } | Select-Object -First 1)))
+  Write-Host "done: $cliExe" -ForegroundColor Green
+}
 Write-Host "done: $exe" -ForegroundColor Green
 Write-Host "double-click it to open the app (needs the Microsoft Edge WebView2 Runtime, included in Windows 11)"
 if ($Run) { Start-Process $exe }

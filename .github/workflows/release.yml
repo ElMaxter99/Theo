@@ -17,6 +17,11 @@ on:
       - scripts/package-manifests.sh
       - packaging/**
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and publish (e.g. v0.5.0), for a release whose tag push failed or has no assets. Empty = dry run."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -31,6 +36,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -47,6 +54,8 @@ jobs:
         goarch: [amd64, arm64]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -56,7 +65,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
-          TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v0.0.0-dryrun' }}
+          TAG: ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || 'v0.0.0-dryrun' }}
         run: |
           set -euo pipefail
           bin=theo
@@ -100,9 +109,11 @@ jobs:
       CGO_ENABLED: "1"
       GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
-      TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v0.0.0-dryrun' }}
+      TAG: ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || 'v0.0.0-dryrun' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -136,11 +147,13 @@ jobs:
 
   dry-run:
     name: Assemble release (dry run, nothing published)
-    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.tag == '' }}
     needs: [build, desktop]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: actions/download-artifact@v4
         with:
           path: assets
@@ -165,13 +178,15 @@ jobs:
 
   release:
     name: Publish release
-    if: ${{ startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ startsWith(github.ref, 'refs/tags/') || inputs.tag != '' }}
     needs: [build, desktop]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: actions/download-artifact@v4
         with:
           path: assets
@@ -180,7 +195,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v0.0.0-dryrun' }}
+          TAG: ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || 'v0.0.0-dryrun' }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail

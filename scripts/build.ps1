@@ -12,8 +12,10 @@ Set-Location (Join-Path $PSScriptRoot "..")
 
 $version = $env:VERSION
 if (-not $version) {
-    $version = (git describe --tags --always --dirty 2>$null)
-    if (-not $version) { $version = "0.0.0-dev" }
+    # PowerShell 5.1 turns a native command's stderr into an error under "Stop"; relax it for git.
+    $old = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    try { $version = (git describe --tags --always --dirty 2>$null | Select-Object -First 1) } catch { $version = $null } finally { $ErrorActionPreference = $old }
+    if ($LASTEXITCODE -ne 0 -or -not $version) { $version = "0.0.0-dev" }
 }
 $pkg = "github.com/ElMaxter99/Theo/internal/engine"
 
