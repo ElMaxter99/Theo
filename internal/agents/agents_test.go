@@ -49,12 +49,36 @@ func TestResolve(t *testing.T) {
 
 func TestInWorktree(t *testing.T) {
 	root := t.TempDir()
-	procs := []Process{{"claude", root + "/src"}, {"bash", root}, {"codex", t.TempDir()}, {"claude.exe", root}}
+	procs := []Process{{Program: "claude", Cwd: root + "/src"}, {Program: "bash", Cwd: root}, {Program: "codex", Cwd: t.TempDir()}, {Program: "claude.exe", Cwd: root}}
 	got := InWorktree(procs, root)
 	if len(got) != 1 || got[0] != "claude" {
 		t.Errorf("got %v", got)
 	}
 	if _, ok := IsAgent("/usr/bin/Aider"); !ok {
 		t.Error("aider not recognised")
+	}
+}
+
+func TestParseUnixPSAndLsof(t *testing.T) {
+	ps := "  101 /usr/local/bin/claude --resume\n  102 /bin/zsh -l\n  103 node /opt/x/codex/bin/codex.js\n  104 /usr/bin/node server.js\nbad line\n"
+	got := ParseUnixPS(ps)
+	if len(got) != 2 || got[0].PID != "101" || got[0].Program != "claude" || got[1].PID != "103" || got[1].Program != "codex" {
+		t.Fatalf("ps: %+v", got)
+	}
+	cwds := ParseLsofCwd("p101\nfcwd\nn/Users/m/shop-feature\np103\nfcwd\nn/Users/m/other\n")
+	if cwds["101"] != "/Users/m/shop-feature" || cwds["103"] != "/Users/m/other" {
+		t.Fatalf("lsof: %v", cwds)
+	}
+}
+
+func TestWindowsProcessesMatchByCommandLine(t *testing.T) {
+	out := "claude.exe|\"C:\\Users\\m\\bin\\claude.exe\" --add-dir C:\\work\\shop-feature\r\ncodex.exe|codex\r\nnode.exe|node C:\\x\\aider.js\r\nsvchost.exe|\r\n"
+	procs := ParseWindowsProcesses(out)
+	if len(procs) != 3 {
+		t.Fatalf("procs: %+v", procs)
+	}
+	got := InWorktree(procs, `C:\work\shop-feature`)
+	if len(got) != 1 || got[0] != "claude" {
+		t.Errorf("only the agent naming the worktree counts: %v", got)
 	}
 }

@@ -4,6 +4,10 @@ Notable changes per release. Each release on GitHub also lists every merged pull
 
 ## Unreleased
 
+### New (v0.6)
+- **`theo doctor` notes what limits free ports per branch** in each registered project (`COMPOSE_FILE`, fixed `container_name`, `${VAR}` in `ports:`), before `theo up` fails on it.
+- **Agent state by process on macOS and Windows** (an estimate, never a warning): macOS reads each agent's working folder with `ps` and `lsof`; Windows reads command lines through PowerShell and finds agents started with the worktree's path. Node scripts such as `codex.js` are recognised. Tested on sample output only; not run on macOS or Windows yet.
+
 ### Changed
 - **Branch worktrees no longer clash with the main deployment on host ports.** An instance that is not the project's main worktree now uses free host ports by default (`--auto-ports` behaviour); `theo instance set … --no-auto-ports` opts out. When a port is taken and auto ports is off, `up` stops before calling Docker with a message naming the port, instead of only warning and letting Docker fail.
 
