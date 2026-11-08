@@ -89,7 +89,7 @@ warnings `agent-waiting` and `agent-done` in `status`.
   for each agent's working folder. Windows gives no working folder of another
   process, so Theo reads the command lines through PowerShell and only finds an
   agent started with the worktree's path in its arguments; for any other, only
-  hooks give a state. The macOS and Windows detection is covered by tests on
+  hooks give a state. On both, the scan runs in the background at most every 10 seconds and listings never wait for it, so a freshly started agent shows up a moment later. The macOS and Windows detection is covered by tests on
   sample output and has not been run on those systems.
 
 ## Open a worktree where you work: `theo open --in`

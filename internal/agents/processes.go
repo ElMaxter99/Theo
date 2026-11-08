@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ElMaxter99/Theo/internal/execx"
@@ -59,11 +60,42 @@ var Processes = func() []Process {
 	case "linux":
 		return linuxProcesses()
 	case "darwin":
-		return darwinProcesses()
+		return slowScan.get(darwinProcesses)
 	case "windows":
-		return windowsProcesses()
+		return slowScan.get(windowsProcesses)
 	}
 	return nil
+}
+
+// slowScan serves the process list of systems where listing it means running
+// other programs (ps and lsof, PowerShell: a second or more). It never makes
+// the caller wait: it returns the last list and refreshes it in the
+// background when it is older than scanEvery, so the first call after a long
+// pause sees no agents and the next ones see them.
+var slowScan scanCache
+
+const scanEvery = 10 * time.Second
+
+type scanCache struct {
+	mu       sync.Mutex
+	list     []Process
+	at       time.Time
+	scanning bool
+}
+
+func (c *scanCache) get(scan func() []Process) []Process {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.scanning && time.Since(c.at) > scanEvery {
+		c.scanning = true
+		go func() {
+			list := scan()
+			c.mu.Lock()
+			c.list, c.at, c.scanning = list, time.Now(), false
+			c.mu.Unlock()
+		}()
+	}
+	return c.list
 }
 
 func darwinProcesses() []Process {

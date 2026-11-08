@@ -82,3 +82,22 @@ func TestWindowsProcessesMatchByCommandLine(t *testing.T) {
 		t.Errorf("only the agent naming the worktree counts: %v", got)
 	}
 }
+
+func TestSlowScanNeverBlocksAndRefreshes(t *testing.T) {
+	var c scanCache
+	release := make(chan struct{})
+	scan := func() []Process { <-release; return []Process{{Program: "claude", Cwd: "/x"}} }
+	start := time.Now()
+	if got := c.get(scan); got != nil || time.Since(start) > time.Second {
+		t.Fatalf("first call must return at once and empty, got %v after %v", got, time.Since(start))
+	}
+	close(release)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if got := c.get(scan); len(got) == 1 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("the background scan never filled the cache")
+}
