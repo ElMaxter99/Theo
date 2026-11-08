@@ -15,6 +15,7 @@ and notes never fail it.
 | docker compose plugin | missing, older than **2.24.4** (`!override`, `!reset`), or `podman-compose` | install or upgrade the plugin; says if only the old `docker-compose` is found |
 | git speed | never fails; warns when Git is older than **2.41** (listing many worktrees is slower) | upgrade Git |
 | `.theo.json` | never fails; warns when the file of a registered project is not valid JSON; a note when projects use it | fix the JSON |
+| ports per branch | never fails; a note when a registered project sets `COMPOSE_FILE`, a fixed `container_name` or `${VAR}` in `ports:` | see [ports.md](ports.md#limits) |
 | Claude Code hooks | never fails; a note when Theo's hooks are in none of the user's or the projects' settings | `theo mcp install --hooks` |
 | Theo data directory | `THEO_HOME` (or the user config dir) cannot be created or written | fix permissions or set `THEO_HOME` |
 | Theo state files | `registry.json`, `ports.json`, `instances.json`, `history.jsonl` exist but are unreadable or not valid JSON | fix or move the file (Theo never deletes it) |

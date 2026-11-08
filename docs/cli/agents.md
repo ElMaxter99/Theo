@@ -85,8 +85,12 @@ warnings `agent-waiting` and `agent-done` in `status`.
 - Without hooks, Theo looks for agent programs (`claude`, `codex`, `aider`,
   `gemini`, `goose`, `opencode`, `amp`, `cursor-agent`, `copilot`) whose
   working folder is the worktree and reports `working` with source `process`:
-  an estimate, never a warning. This works on Linux; on macOS and Windows
-  detection by process is not available yet, and only hooks give a state.
+  an estimate, never a warning. Linux reads `/proc`. macOS asks `ps` and `lsof`
+  for each agent's working folder. Windows gives no working folder of another
+  process, so Theo reads the command lines through PowerShell and only finds an
+  agent started with the worktree's path in its arguments; for any other, only
+  hooks give a state. On both, the scan runs in the background at most every 10 seconds and listings never wait for it, so a freshly started agent shows up a moment later. The macOS and Windows detection is covered by tests on
+  sample output and has not been run on those systems.
 
 ## Open a worktree where you work: `theo open --in`
 

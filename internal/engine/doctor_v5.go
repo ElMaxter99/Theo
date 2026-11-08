@@ -30,6 +30,9 @@ func v5Checks(env DoctorEnv, gitLine string) []Check {
 	if c, ok := checkClaudeHooks(env); ok {
 		out = append(out, c)
 	}
+	if c, ok := checkPortLimits(env); ok {
+		out = append(out, c)
+	}
 	return out
 }
 

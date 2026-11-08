@@ -46,3 +46,23 @@ func TestV5ChecksRepoConfigAndHooks(t *testing.T) {
 		t.Errorf("hooks installed: %+v", c)
 	}
 }
+
+func TestPortLimitsCheck(t *testing.T) {
+	p, clean := t.TempDir(), t.TempDir()
+	os.WriteFile(filepath.Join(p, "compose.yaml"), []byte("services:\n  api:\n    container_name: api\n    ports:\n      - \"${API_PORT}:3000\"\n  db:\n    image: x\n    environment:\n      - A=${B}\n"), 0o644)
+	os.WriteFile(filepath.Join(p, ".env"), []byte("COMPOSE_FILE=compose.yaml:compose.dev.yaml\n"), 0o644)
+	os.WriteFile(filepath.Join(clean, "compose.yaml"), []byte("services:\n  a:\n    ports:\n      - \"8080:80\"\n    environment:\n      - X=${Y}\n"), 0o644)
+
+	c, ok := checkPortLimits(DoctorEnv{Projects: []string{p, clean}})
+	if !ok || c.Status != StatusInfo || len(c.Notes) != 3 {
+		t.Fatalf("got %+v, %v", c, ok)
+	}
+	for _, n := range c.Notes {
+		if strings.Contains(n, filepath.Base(clean)) {
+			t.Errorf("a clean project got a note: %s", n)
+		}
+	}
+	if _, ok := checkPortLimits(DoctorEnv{Projects: []string{clean}}); ok {
+		t.Error("a clean project must not report")
+	}
+}

@@ -31,3 +31,5 @@ The first `up --auto-ports` turns the behaviour on **for that instance**, and it
 - Projects that set `COMPOSE_FILE` are not supported by `--auto-ports` yet.
 - Random ports (`"3000"`) and ranges (`"8000-8010"`) are left as they are.
 - A fixed `container_name` is a different conflict that `--auto-ports` does not solve; see `instance set --neutralize-container-names` in [instance settings](instance-settings.md).
+
+`theo doctor` reads the Compose files of each registered project as text and notes a `COMPOSE_FILE`, a fixed `container_name` and `${VAR}` inside `ports:` (a new worktree has no `.env` until `copy` in `.theo.json` gives it one). It is a heuristic and never fails.
