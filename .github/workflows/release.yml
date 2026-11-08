@@ -1,15 +1,24 @@
 name: Release
 
-# Pushing a tag such as v0.1.0 tests Theo, builds it for every supported
-# system and publishes a GitHub release with the archives and checksums.txt.
+# Versions are vX.Y.Z (digits only) and release candidates are vX.Y.Z-rc.N.
+# Pushing either kind of tag tests Theo, builds it for every supported system
+# and publishes a GitHub release with the archives and checksums.txt:
 #
-# A pull request that touches this workflow or the packaging scripts, or a
-# manual run (workflow_dispatch), is a dry run: it builds and packages
+#   v0.6.0-rc.1  a pre-release to try the binaries. No Scoop/Homebrew files,
+#                and it never becomes "latest".
+#   v0.6.0       the release. The tag must be on main, CHANGELOG.md must have a
+#                "## v0.6.0" section (it becomes the release notes), and the
+#                Scoop and Homebrew files are attached.
+#
+# Any other tag fails before building anything. A pull request that touches
+# this workflow or the packaging scripts, a push to a release/** branch, or a
+# manual run (workflow_dispatch) is a dry run: it builds and packages
 # everything under the tag v0.0.0-dryrun and uploads the result as workflow
-# artifacts, but publishes nothing.
+# artifacts, but publishes nothing. See CONTRIBUTING.md, "Releasing".
 on:
   push:
     tags: ["v*"]
+    branches: ["release/**"]
   pull_request:
     paths:
       - .github/workflows/release.yml
@@ -27,7 +36,53 @@ permissions:
   contents: read
 
 jobs:
+  prepare:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      publish: ${{ steps.v.outputs.publish }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+      - name: Validate the tag
+        id: v
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || '' }}
+          IS_TAG_PUSH: ${{ startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TAG" ]; then
+            echo "Dry run: nothing will be published."
+            { echo "tag=v0.0.0-dryrun"; echo "publish=false"; echo "prerelease=false"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+            echo "::error::Tag '$TAG' is not vX.Y.Z or vX.Y.Z-rc.N (digits only)."
+            exit 1
+          fi
+          pre=false
+          [[ "$TAG" == *-rc.* ]] && pre=true
+          if [ "$pre" = false ]; then
+            # A release is cut from main, with its changelog section written.
+            if [ "$IS_TAG_PUSH" = true ] && ! git merge-base --is-ancestor HEAD origin/main; then
+              echo "::error::$TAG is not on main. Merge the release first, or tag a release candidate (${TAG}-rc.1)."
+              exit 1
+            fi
+            if ! grep -qE "^## ${TAG}( |$)" CHANGELOG.md; then
+              msg="CHANGELOG.md has no '## ${TAG}' section."
+              if [ "$IS_TAG_PUSH" = true ]; then echo "::error::$msg"; exit 1; fi
+              echo "::warning::$msg"
+            fi
+          fi
+          { echo "tag=$TAG"; echo "publish=true"; echo "prerelease=$pre"; } >> "$GITHUB_OUTPUT"
+
   test:
+    needs: prepare
     name: Test (${{ matrix.os }})
     strategy:
       fail-fast: true
@@ -46,7 +101,7 @@ jobs:
 
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
-    needs: test
+    needs: [prepare, test]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -65,7 +120,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
-          TAG: ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || 'v0.0.0-dryrun' }}
+          TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           set -euo pipefail
           bin=theo
@@ -94,7 +149,7 @@ jobs:
     # Native builds of the desktop app (it needs cgo and the system web view, so
     # it cannot be cross-compiled from the Linux runner like the CLI).
     name: Desktop (${{ matrix.goos }}/${{ matrix.goarch }})
-    needs: test
+    needs: [prepare, test]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: true
@@ -109,7 +164,7 @@ jobs:
       CGO_ENABLED: "1"
       GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
-      TAG: ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || 'v0.0.0-dryrun' }}
+      TAG: ${{ needs.prepare.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -147,8 +202,8 @@ jobs:
 
   dry-run:
     name: Assemble release (dry run, nothing published)
-    if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.tag == '' }}
-    needs: [build, desktop]
+    if: ${{ needs.prepare.outputs.publish != 'true' }}
+    needs: [prepare, build, desktop]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -178,8 +233,8 @@ jobs:
 
   release:
     name: Publish release
-    if: ${{ startsWith(github.ref, 'refs/tags/') || inputs.tag != '' }}
-    needs: [build, desktop]
+    if: ${{ needs.prepare.outputs.publish == 'true' }}
+    needs: [prepare, build, desktop]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -195,20 +250,45 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || 'v0.0.0-dryrun' }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           cd assets
           sha256sum *.tar.gz *.zip > checksums.txt
           cat checksums.txt
-          bash ../scripts/package-manifests.sh "$TAG" checksums.txt manifests
-          files=(*.tar.gz *.zip checksums.txt manifests/theo.json manifests/theo.rb)
+          files=(*.tar.gz *.zip checksums.txt)
+          if [ "$PRERELEASE" = false ]; then
+            bash ../scripts/package-manifests.sh "$TAG" checksums.txt manifests
+            files+=(manifests/theo.json manifests/theo.rb)
+          fi
           if gh release view "$TAG" --repo "$REPO" > /dev/null 2>&1; then
             # The release was already made (by hand, or by an earlier run): keep its
             # notes and put the files in it, replacing any with the same name.
             gh release upload "$TAG" --repo "$REPO" --clobber "${files[@]}"
           else
-            gh release create "$TAG" --repo "$REPO" --title "Theo $TAG" --generate-notes \
-              --verify-tag "${files[@]}"
+            # Notes: the CHANGELOG.md section of the version (a release candidate
+            # uses the one of the release it prepares); GitHub's list otherwise.
+            base="${TAG%%-rc.*}"
+            awk -v h="## $base" '
+              $0 == h || index($0, h " ") == 1 { on = 1; next }
+              /^## / { on = 0 }
+              on' ../CHANGELOG.md > ../notes.md
+            args=(--notes-file ../notes.md)
+            if ! grep -q '[^[:space:]]' ../notes.md; then
+              echo "::warning::No '## $base' section in CHANGELOG.md; using GitHub's generated notes."
+              args=(--generate-notes)
+            elif [ "$PRERELEASE" = true ]; then
+              { echo "Release candidate of $base. Try it and report problems before $base is tagged."; echo; cat ../notes.md; } > ../notes-rc.md
+              args=(--notes-file ../notes-rc.md)
+            fi
+            prerelease_flag=()
+            [ "$PRERELEASE" = true ] && prerelease_flag=(--prerelease)
+            # Draft first, published once every file is attached: a published
+            # release can be immutable and refuse new files.
+            gh release create "$TAG" --repo "$REPO" --title "Theo $TAG" --verify-tag \
+              --draft "${prerelease_flag[@]}" "${args[@]}"
+            gh release upload "$TAG" --repo "$REPO" --clobber "${files[@]}"
+            gh release edit "$TAG" --repo "$REPO" --draft=false
           fi
