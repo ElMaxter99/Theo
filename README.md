@@ -95,7 +95,13 @@ More in the [quickstart](docs/cli/quickstart.md). To try everything on a small a
 
 ## What's new
 
-### v0.5 (in development): Theo in the agents' workflow
+### v0.6: reliability
+
+- `theo doctor` notes what limits free ports per branch (`COMPOSE_FILE`, fixed `container_name`, `${VAR}` in `ports:`), see [ports](docs/cli/ports.md#limits).
+- Agent state by process also on macOS and Windows (an estimate; hooks stay the exact source), see [agents](docs/cli/agents.md).
+- Branch worktrees use free host ports by default, and Cleanup lets you pick inactive worktrees and remove them.
+
+### v0.5: Theo in the agents' workflow
 
 ```sh
 theo mcp install --hooks        # Claude Code creates and removes worktrees through Theo

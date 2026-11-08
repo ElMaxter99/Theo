@@ -4,6 +4,10 @@ Notable changes per release. Each release on GitHub also lists every merged pull
 
 ## Unreleased
 
+## v0.6.0
+
+First release since v0.5.0: it carries the v0.5.0 follow-ups merged on `main` (#46 to #51) and the two 0.6 additions. The binaries of v0.5.0 were never published; this release has them.
+
 ### New (v0.6)
 - **`theo doctor` notes what limits free ports per branch** in each registered project (`COMPOSE_FILE`, fixed `container_name`, `${VAR}` in `ports:`), before `theo up` fails on it.
 - **Agent state by process on macOS and Windows** (an estimate, never a warning): macOS reads each agent's working folder with `ps` and `lsof`; Windows reads command lines through PowerShell and finds agents started with the worktree's path. Node scripts such as `codex.js` are recognised. Tested on sample output only; not run on macOS or Windows yet.
