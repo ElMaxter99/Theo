@@ -1,20 +1,24 @@
 name: Release
 
 # Versions are vX.Y.Z (digits only) and release candidates are vX.Y.Z-rc.N.
-# Pushing either kind of tag tests Theo, builds it for every supported system
-# and publishes a GitHub release with the archives and checksums.txt:
+# Nobody has to create a tag by hand:
 #
-#   v0.6.0-rc.1  a pre-release to try the binaries. No Scoop/Homebrew files,
-#                and it never becomes "latest".
-#   v0.6.0       the release. The tag must be on main, CHANGELOG.md must have a
-#                "## v0.6.0" section (it becomes the release notes), and the
-#                Scoop and Homebrew files are attached.
+#   1. Push a branch named release/X.Y.Z. Every push to it tests Theo, builds
+#      it for every supported system and publishes the next pre-release,
+#      vX.Y.Z-rc.1, -rc.2... (the archives and checksums.txt, no Scoop or
+#      Homebrew files, never "latest"). A re-run of the same commit reuses its
+#      tag.
+#   2. Merge the pull request release/X.Y.Z -> main. release-on-merge.yml tags
+#      the merge commit vX.Y.Z and calls this workflow, which publishes the
+#      release: the same archives plus the Scoop and Homebrew files, with the
+#      "## vX.Y.Z" section of CHANGELOG.md as notes (missing = the run fails).
 #
-# Any other tag fails before building anything. A pull request that touches
-# this workflow or the packaging scripts, a push to a release/** branch, or a
-# manual run (workflow_dispatch) is a dry run: it builds and packages
-# everything under the tag v0.0.0-dryrun and uploads the result as workflow
-# artifacts, but publishes nothing. See CONTRIBUTING.md, "Releasing".
+# Pushing a tag vX.Y.Z or vX.Y.Z-rc.N by hand still works, and so does a manual
+# run with a tag (to redo a release whose files are missing). Any other tag or
+# branch version fails before building anything. A pull request that touches
+# this workflow or the packaging scripts, or a manual run with no tag, is a dry
+# run: it builds everything as v0.0.0-dryrun and publishes nothing.
+# See CONTRIBUTING.md, "Releasing".
 on:
   push:
     tags: ["v*"]
@@ -22,15 +26,26 @@ on:
   pull_request:
     paths:
       - .github/workflows/release.yml
+      - .github/workflows/release-on-merge.yml
       - scripts/package-desktop.sh
       - scripts/package-manifests.sh
       - packaging/**
+  workflow_call:
+    inputs:
+      tag:
+        description: "Existing tag to build and publish (release-on-merge.yml creates it first)."
+        type: string
+        required: true
   workflow_dispatch:
     inputs:
       tag:
         description: "Tag to build and publish (e.g. v0.5.0), for a release whose tag push failed or has no assets. Empty = dry run."
         required: false
         default: ""
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ inputs.tag || github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/heads/release/') }}
 
 permissions:
   contents: read
@@ -43,25 +58,53 @@ jobs:
       tag: ${{ steps.v.outputs.tag }}
       publish: ${{ steps.v.outputs.publish }}
       prerelease: ${{ steps.v.outputs.prerelease }}
+      target: ${{ steps.v.outputs.target }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag || github.sha }}
           fetch-depth: 0
-      - name: Validate the tag
+      - name: Resolve the version
         id: v
         shell: bash
         env:
           TAG: ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || '' }}
-          IS_TAG_PUSH: ${{ startsWith(github.ref, 'refs/tags/') }}
+          BRANCH: ${{ startsWith(github.ref, 'refs/heads/release/') && github.ref_name || '' }}
+          # Only a manual run may publish without the changelog section.
+          LAX: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
           set -euo pipefail
-          if [ -z "$TAG" ]; then
-            echo "Dry run: nothing will be published."
-            { echo "tag=v0.0.0-dryrun"; echo "publish=false"; echo "prerelease=false"; } >> "$GITHUB_OUTPUT"
+          out() { printf 'tag=%s\npublish=%s\nprerelease=%s\ntarget=%s\n' "$1" "$2" "$3" "$4" >> "$GITHUB_OUTPUT"; }
+          re='^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$'
+          if [ -n "$BRANCH" ]; then
+            # release/X.Y.Z: the next release candidate, tagged by the release step.
+            ver="${BRANCH#release/}"
+            if ! [[ "v$ver" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Branch '$BRANCH' is not release/X.Y.Z (digits only)."
+              exit 1
+            fi
+            if git rev-parse -q --verify "refs/tags/v$ver" > /dev/null; then
+              echo "::error::v$ver already exists; start a new release/ branch with the next version."
+              exit 1
+            fi
+            existing=$(git tag --points-at HEAD --list "v$ver-rc.*" | head -n 1)
+            if [ -n "$existing" ]; then
+              n=${existing##*-rc.}
+              echo "This commit is already v$ver-rc.$n."
+              out "$existing" true true ""
+            else
+              last=$(git tag --list "v$ver-rc.*" | sed 's/.*-rc\.//' | sort -n | tail -n 1)
+              n=$(( ${last:-0} + 1 ))
+              out "v$ver-rc.$n" true true "$GITHUB_SHA"
+            fi
             exit 0
           fi
-          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+          if [ -z "$TAG" ]; then
+            echo "Dry run: nothing will be published."
+            out v0.0.0-dryrun false false ""
+            exit 0
+          fi
+          if ! [[ "$TAG" =~ $re ]]; then
             echo "::error::Tag '$TAG' is not vX.Y.Z or vX.Y.Z-rc.N (digits only)."
             exit 1
           fi
@@ -69,17 +112,17 @@ jobs:
           [[ "$TAG" == *-rc.* ]] && pre=true
           if [ "$pre" = false ]; then
             # A release is cut from main, with its changelog section written.
-            if [ "$IS_TAG_PUSH" = true ] && ! git merge-base --is-ancestor HEAD origin/main; then
-              echo "::error::$TAG is not on main. Merge the release first, or tag a release candidate (${TAG}-rc.1)."
+            if [ "$LAX" = false ] && ! git merge-base --is-ancestor HEAD origin/main; then
+              echo "::error::$TAG is not on main. Merge the release first, or use a release candidate (${TAG}-rc.1)."
               exit 1
             fi
             if ! grep -qE "^## ${TAG}( |$)" CHANGELOG.md; then
               msg="CHANGELOG.md has no '## ${TAG}' section."
-              if [ "$IS_TAG_PUSH" = true ]; then echo "::error::$msg"; exit 1; fi
+              if [ "$LAX" = false ]; then echo "::error::$msg"; exit 1; fi
               echo "::warning::$msg"
             fi
           fi
-          { echo "tag=$TAG"; echo "publish=true"; echo "prerelease=$pre"; } >> "$GITHUB_OUTPUT"
+          out "$TAG" true "$pre" ""
 
   test:
     needs: prepare
@@ -92,7 +135,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag || github.sha }}
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -110,7 +153,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag || github.sha }}
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -168,7 +211,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag || github.sha }}
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -208,7 +251,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag || github.sha }}
       - uses: actions/download-artifact@v4
         with:
           path: assets
@@ -241,7 +284,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag || github.sha }}
       - uses: actions/download-artifact@v4
         with:
           path: assets
@@ -252,6 +295,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.prepare.outputs.tag }}
           PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+          TARGET: ${{ needs.prepare.outputs.target }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -287,7 +331,10 @@ jobs:
             [ "$PRERELEASE" = true ] && prerelease_flag=(--prerelease)
             # Draft first, published once every file is attached: a published
             # release can be immutable and refuse new files.
-            gh release create "$TAG" --repo "$REPO" --title "Theo $TAG" --verify-tag \
+            # A release candidate from a branch has no tag yet: it is created on
+            # that commit when the draft is published.
+            if [ -n "$TARGET" ]; then tag_args=(--target "$TARGET"); else tag_args=(--verify-tag); fi
+            gh release create "$TAG" --repo "$REPO" --title "Theo $TAG" "${tag_args[@]}" \
               --draft "${prerelease_flag[@]}" "${args[@]}"
             gh release upload "$TAG" --repo "$REPO" --clobber "${files[@]}"
             gh release edit "$TAG" --repo "$REPO" --draft=false
