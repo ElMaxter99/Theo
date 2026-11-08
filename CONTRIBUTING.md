@@ -68,7 +68,13 @@ Keep a change focused, explain why in the commit message and the description, an
 
 ## Releasing
 
-Pushing a `v*` tag runs `.github/workflows/release.yml`, which tests, builds and publishes the release. Before tagging, on a pull request of its own:
+Versions are `vX.Y.Z` (digits only). Pushing a tag runs `.github/workflows/release.yml`, which tests, builds and publishes it; any tag that is not `vX.Y.Z` or `vX.Y.Z-rc.N` fails before building anything.
+
+- **Release candidate, `vX.Y.Z-rc.N`** (`v0.6.0-rc.1`, then `-rc.2` for each fix): a GitHub pre-release with every archive and `checksums.txt`, to try the binaries before the version exists. It carries no Scoop or Homebrew files and is never "latest". It can be tagged from any branch; its notes are the `## vX.Y.Z` section of the changelog.
+- **Release, `vX.Y.Z`**: the same archives plus the Scoop and Homebrew files. The tag must be on `main` and `CHANGELOG.md` must have a `## vX.Y.Z` section (the run fails otherwise); that section is the release's notes. The release is created as a draft and published once every file is attached.
+- **Dry run:** a pull request that touches the workflow or packaging scripts, a push to a `release/**` branch, or a manual run builds everything as `v0.0.0-dryrun` and publishes nothing.
+
+Order: prepare the release on a pull request of its own and merge it, tag `vX.Y.Z-rc.1` on `main`, try the binaries, and tag `vX.Y.Z` on the same commit when they are good. Before tagging, on that pull request:
 
 1. **CHANGELOG.md** has a section for the new version.
 2. **The README is reviewed and improved, in English and in Spanish. Every release, no exceptions.** It is the first page people see and it ships inside every archive, so it must describe the release being tagged, not the previous one. `README.md` and `README.es.md` say the same thing: change one, change the other in the same pull request.
