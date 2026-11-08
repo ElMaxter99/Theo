@@ -68,13 +68,15 @@ Keep a change focused, explain why in the commit message and the description, an
 
 ## Releasing
 
-Versions are `vX.Y.Z` (digits only). Pushing a tag runs `.github/workflows/release.yml`, which tests, builds and publishes it; any tag that is not `vX.Y.Z` or `vX.Y.Z-rc.N` fails before building anything.
+Versions are `vX.Y.Z` (digits only); release candidates are `vX.Y.Z-rc.N`. Nobody creates tags by hand: `.github/workflows/release.yml` and `release-on-merge.yml` do it.
 
-- **Release candidate, `vX.Y.Z-rc.N`** (`v0.6.0-rc.1`, then `-rc.2` for each fix): a GitHub pre-release with every archive and `checksums.txt`, to try the binaries before the version exists. It carries no Scoop or Homebrew files and is never "latest". It can be tagged from any branch; its notes are the `## vX.Y.Z` section of the changelog.
-- **Release, `vX.Y.Z`**: the same archives plus the Scoop and Homebrew files. The tag must be on `main` and `CHANGELOG.md` must have a `## vX.Y.Z` section (the run fails otherwise); that section is the release's notes. The release is created as a draft and published once every file is attached.
-- **Dry run:** a pull request that touches the workflow or packaging scripts, a push to a `release/**` branch, or a manual run builds everything as `v0.0.0-dryrun` and publishes nothing.
+1. **Open the release.** Create the branch `release/X.Y.Z` (for example `release/0.6.0`) and open a pull request to `main`, with the changes listed below.
+2. **Every push to `release/X.Y.Z` is a release candidate.** It tests Theo, builds every system and publishes the pre-release `vX.Y.Z-rc.1`, then `-rc.2` for the next push. A pre-release has every archive and `checksums.txt`, no Scoop or Homebrew files, and is never "latest". Try its binaries.
+3. **Merge the pull request.** The merge commit is tagged `vX.Y.Z` and the same workflow publishes the release: the archives plus the Scoop and Homebrew files, as a draft that is published once every file is attached. `CHANGELOG.md` must have a `## vX.Y.Z` section (the run fails otherwise); it is the release's notes.
 
-Order: prepare the release on a pull request of its own and merge it, tag `vX.Y.Z-rc.1` on `main`, try the binaries, and tag `vX.Y.Z` on the same commit when they are good. Before tagging, on that pull request:
+A branch `release/` with anything but `X.Y.Z`, or a version that already has a tag, fails before building. Pushing a `vX.Y.Z` or `vX.Y.Z-rc.N` tag by hand, or running the workflow by hand with a tag, still works (to redo a release whose files are missing). A pull request that touches the workflow or the packaging scripts, or a manual run with no tag, is a dry run that builds as `v0.0.0-dryrun` and publishes nothing.
+
+Before merging, on the release pull request:
 
 1. **CHANGELOG.md** has a section for the new version.
 2. **The README is reviewed and improved, in English and in Spanish. Every release, no exceptions.** It is the first page people see and it ships inside every archive, so it must describe the release being tagged, not the previous one. `README.md` and `README.es.md` say the same thing: change one, change the other in the same pull request.
