@@ -97,7 +97,13 @@ Más en el [quickstart](docs/cli/quickstart.md) (en inglés). Para probarlo todo
 
 ## Novedades
 
-### v0.5 (en desarrollo): Theo en el flujo de los agentes
+### v0.6: fiabilidad
+
+- `theo doctor` anota lo que limita los puertos libres por rama (`COMPOSE_FILE`, `container_name` fijo, `${VAR}` en `ports:`), ver [puertos](docs/cli/ports.md#limits).
+- Estado del agente por proceso también en macOS y Windows (es una estimación; los hooks siguen siendo la fuente exacta), ver [agentes](docs/cli/agents.md).
+- Los worktrees de ramas usan puertos libres del host por defecto, y Limpieza permite elegir worktrees inactivos y quitarlos.
+
+### v0.5: Theo en el flujo de los agentes
 
 ```sh
 theo mcp install --hooks        # Claude Code crea y elimina worktrees a través de Theo
