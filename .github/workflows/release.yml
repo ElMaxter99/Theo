@@ -276,7 +276,7 @@ jobs:
           - { os: macos-latest, artifact: theo_darwin_arm64, goos: darwin, goarch: arm64 }
           - { os: windows-latest, artifact: theo_windows_amd64, goos: windows, goarch: amd64 }
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: ${{ matrix.artifact }}
           path: assets
@@ -321,7 +321,7 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: assets
           merge-multiple: true
