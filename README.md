@@ -13,7 +13,7 @@ Theo gives every Git worktree its own Docker Compose environment, so you, or sev
 [![CI](https://github.com/ElMaxter99/Theo/actions/workflows/ci.yml/badge.svg)](https://github.com/ElMaxter99/Theo/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/ElMaxter99/Theo?sort=semver&color=0f766e)](https://github.com/ElMaxter99/Theo/releases/latest)
 [![Go](https://img.shields.io/badge/go-1.26%2B-00ADD8?logo=go&logoColor=white)](go.mod)
-[![Platforms](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-5b2a4e)](#platform-notes)
+[![Platforms](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-44403c)](#platform-notes)
 [![MCP](https://img.shields.io/badge/AI%20agents-MCP-7c3aed)](docs/cli/mcp.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -178,7 +178,7 @@ Run `theo help` for the full list and `theo help <command>` for one. Every comma
   <img src="docs/images/ui-home-light.png" alt="Theo's home screen: running instances, problems that need attention, the forgotten work card and the recent activity">
 </picture>
 
-It only listens on this computer and follows the browser language (English or Spanish). See [ui](docs/cli/ui.md) and [desktop](docs/cli/desktop.md).
+It only listens on this computer, follows the browser language (English or Spanish) and opens in the light theme by default (Settings > Theme also offers System and Dark). See [ui](docs/cli/ui.md) and [desktop](docs/cli/desktop.md).
 
 ## AI agents (MCP)
 

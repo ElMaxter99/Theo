@@ -150,7 +150,7 @@ They are the ones in `docs/api.md` (sections 9 to 11 of the backend track), chec
 - **Tokens.** `styles/tokens.css` has three blocks that must stay identical in meaning: light, dark by system preference and
   dark forced by the user (`data-theme="dark"`, stored in `localStorage` inside try/catch). `test/tokens.test.mjs` checks that the
   two dark blocks are identical and that every text/background pair meets WCAG 2.2 AA (4.5:1 text, 3:1 components and focus).
-  Semantic colours (ok, warning, error, info) are independent of the brand palette: the brand coral is not the error red.
+  Semantic colours (ok, warning, error, info) are independent of the brand palette: the brand teal is not the error red. The default theme is light (cream page, white cards); the dark theme is warm charcoal.
 - **State is never colour alone.** `lib/status.ts` is the single table from API enums to text + distinct icon shape + tone.
 - **Keyboard and screen readers.** Skip link, landmarks, one polite `aria-live` region (`lib/live.ts`), ARIA tabs with
   Left/Right/Home/End, focus moves to the page heading after navigation and to the name field in the new instance panel, dialogs return focus

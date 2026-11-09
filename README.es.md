@@ -13,11 +13,11 @@ Theo da a cada worktree de Git su propio entorno de Docker Compose, para que tú
 [![CI](https://github.com/ElMaxter99/Theo/actions/workflows/ci.yml/badge.svg)](https://github.com/ElMaxter99/Theo/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/ElMaxter99/Theo?sort=semver&color=0f766e)](https://github.com/ElMaxter99/Theo/releases/latest)
 [![Go](https://img.shields.io/badge/go-1.26%2B-00ADD8?logo=go&logoColor=white)](go.mod)
-[![Plataformas](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-5b2a4e)](#notas-por-plataforma)
+[![Plataformas](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-44403c)](#notas-por-plataforma)
 [![MCP](https://img.shields.io/badge/AI%20agents-MCP-7c3aed)](docs/cli/mcp.md)
 [![Licencia: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-[Instalación](#instalación) · [Inicio rápido](#inicio-rápido) · [Novedades](#novedades) · [Comandos](#comandos) · [Interfaz](#interfaz-web-y-de-escritorio) · [Agentes de IA](#agentes-de-ia-mcp) · [Changelog](CHANGELOG.md)
+[Instalación](#instalación) · [Inicio rápido](#inicio-rápido) · [Novedades](#novedades) · [Comandos](#comandos) · [Interfaz](#interfaz-web-y-de-escritorio) · [Agentes de IA](#agentes-de-ia-mcp) · [Registro de cambios](CHANGELOG.es.md)
 
 </div>
 
@@ -180,7 +180,7 @@ Todo está en el [changelog](CHANGELOG.md) (en inglés).
   <img src="docs/images/ui-home-light-es.png" alt="La pantalla de inicio de Theo: instancias en marcha, problemas que necesitan atención, la tarjeta de trabajo olvidado y la actividad reciente">
 </picture>
 
-Solo escucha en este ordenador y sigue el idioma del navegador (inglés o español), con un selector en Ajustes. Ver [ui](docs/cli/ui.md) y [desktop](docs/cli/desktop.md).
+Solo escucha en este ordenador sigue el idioma del navegador (inglés o español), con un selector en Ajustes, y se abre por defecto en el tema claro (Ajustes › Tema también ofrece Sistema y Oscuro). Ver [ui](docs/cli/ui.md) y [desktop](docs/cli/desktop.md).
 
 ## Agentes de IA (MCP)
 
