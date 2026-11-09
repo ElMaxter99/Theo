@@ -39,7 +39,9 @@ jobs:
             exit 1
           fi
           tag="v$ver"
-          have=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" --jq .object.sha 2>/dev/null || true)
+          # gh api prints the 404 body on stdout when the tag does not exist,
+          # so only keep the output of a call that succeeded.
+          have=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" --jq .object.sha 2>/dev/null) || have=""
           if [ -z "$have" ]; then
             gh api "repos/${GITHUB_REPOSITORY}/git/refs" -f ref="refs/tags/${tag}" -f sha="$SHA" > /dev/null
           elif [ "$have" != "$SHA" ]; then
