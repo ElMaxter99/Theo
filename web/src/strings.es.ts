@@ -1106,6 +1106,14 @@ export const es: Catalog = {
     snippet: "Para el AGENTS.md o CLAUDE.md del repositorio",
     snippetHint: "Para que los agentes sepan cuándo usar Theo.",
     copySnippet: "Copiar el párrafo",
+    notifyTitle: "Avisos",
+    notifyLead: "Theo puede avisarte cuando un agente te necesita, aunque la ventana esté en segundo plano. El aviso solo nombra el proyecto, la rama y el agente.",
+    notifyOff: "No avisar",
+    notifyWaiting: "Cuando un agente me necesite (recomendado)",
+    notifyAll: "También cuando termine",
+    notifyHint: "Solo avisan los agentes que informan por hooks; los estados estimados nunca avisan. Funciona mientras la ventana de Theo o `theo ui` estén abiertos.",
+    notifySaved: "Ajuste de avisos guardado.",
+    notifyForeground: "No avisar con la ventana al frente (pendiente)",
   },
 };
 

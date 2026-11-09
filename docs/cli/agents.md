@@ -113,8 +113,8 @@ PowerShell on Windows. Rules, from design V-15:
 - The text has the project, the worktree and the agent; never the agent's message, your prompt or full paths.
 - It has no buttons: find the worktree in Theo's window (the badge and the *Waiting for you* card).
 
-Not done yet: the setting in the interface (Settings > AI agents) and
-"do not notify while Theo's window is in front". Use `theo config` for now.
+You can change it in Settings > AI agents (Notifications) or with `theo config`.
+Not done yet: "do not notify while Theo's window is in front" (the checkbox is shown disabled).
 
 ## `theo env`
 

@@ -5,7 +5,7 @@ Notable changes per release. Each release on GitHub also lists every merged pull
 ## Unreleased
 
 ### New
-- **Desktop notification when an agent waits for you or finishes** (`theo config set notify.agent waiting|all`, off by default). Only `theo-desktop` shows it, with `notify-send`, `osascript` or PowerShell, for agents with hooks; it groups three or more at once and never includes your prompt or paths. The switch in Settings and "not while the window is in front" are not done yet. Tested on Linux with a stub; not run on macOS or Windows. See [agents](docs/cli/agents.md).
+- **Desktop notification when an agent waits for you or finishes** (`theo config set notify.agent waiting|all`, off by default). Only `theo-desktop` shows it, with `notify-send`, `osascript` or PowerShell, for agents with hooks; it groups three or more at once and never includes your prompt or paths. You can also set it in Settings > AI agents; "not while the window is in front" is not done yet. Tested on Linux with a stub; not run on macOS or Windows. See [agents](docs/cli/agents.md).
 - **GitHub Copilot:** `theo agent install copilot` writes Theo's hooks to `.github/hooks/theo.json` (or `~/.copilot/hooks` with `--scope user`), so `theo worktrees` shows whether Copilot works, waits or is done, and the session learns where it runs. `theo agent install claude` is the same as `theo mcp install --hooks`. Theo uses the agents you already have and never installs them: `theo agent install` without a name registers the ones it finds and says where to get the others, and with a name it refuses a missing agent unless you pass `--force`. Written from GitHub's documentation and tested on sample payloads only; not run against Copilot yet. See [agents](docs/cli/agents.md).
 
 ### Changed
