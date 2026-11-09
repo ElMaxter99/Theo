@@ -288,8 +288,9 @@ test("security against the real server: Host, Origin, cookie, CSRF, single-use n
   for (const line of ss.split("\n")) assert.match(line, /127\.0\.0\.1:\d+/, line);
 });
 
-/** The addresses the process listens on, read from /proc (no ss needed). Linux only, like the rest of this suite. */
+/** The addresses the process listens on, read from /proc (no ss needed). On Windows it uses netstat. */
 function listeningAddresses(pid) {
+  if (process.platform === "win32") return listeningAddressesWindows(pid);
   const inodes = new Set();
   for (const fd of readdirSync(`/proc/${pid}/fd`)) {
     try {
@@ -334,3 +335,17 @@ test("a page on another origin cannot read the real API", { skip }, async () => 
     await context.close();
   } finally { evil.close(); }
 });
+
+/** Windows: the LISTENING sockets of the process, from `netstat -ano -p tcp` (and tcpv6). */
+function listeningAddressesWindows(pid) {
+  const out = [];
+  for (const proto of ["tcp", "tcpv6"]) {
+    const txt = execFileSync("netstat", ["-ano", "-p", proto], { encoding: "utf8" });
+    for (const line of txt.split(/\r?\n/)) {
+      const f = line.trim().split(/\s+/);
+      if (f.length < 5 || f[3] !== "LISTENING" || f[4] !== String(pid)) continue;
+      out.push(f[1]);
+    }
+  }
+  return out.join("\n");
+}

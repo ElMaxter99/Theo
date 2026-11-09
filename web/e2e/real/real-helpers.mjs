@@ -17,7 +17,7 @@ const repoRoot = path.resolve(webDir, "..");
 export function theoBinary() {
   if (process.env.THEO_BIN) return process.env.THEO_BIN;
   if (!existsSync(path.join(repoRoot, "internal", "api"))) return null;
-  const out = path.join(mkdtempSync(path.join(tmpdir(), "uf-bin-")), "theo");
+  const out = path.join(mkdtempSync(path.join(tmpdir(), "uf-bin-")), process.platform === "win32" ? "theo.exe" : "theo");
   execFileSync("go", ["build", "-o", out, "./cmd/theo"], { cwd: repoRoot, stdio: "inherit" });
   return out;
 }
