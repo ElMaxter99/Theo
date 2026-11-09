@@ -17,6 +17,7 @@ First release since v0.5.0: it carries the v0.5.0 follow-ups merged on `main` (#
 
 ### Changed
 - **Branch worktrees no longer clash with the main deployment on host ports.** An instance that is not the project's main worktree now uses free host ports by default (`--auto-ports` behaviour); `theo instance set … --no-auto-ports` opts out. When a port is taken and auto ports is off, `up` stops before calling Docker with a message naming the port, instead of only warning and letting Docker fail.
+- **Releases are cut from a `release/X.Y.Z` branch.** Every push to it publishes a pre-release `vX.Y.Z-rc.N` with the binaries; merging its pull request tags `vX.Y.Z` and publishes the release. No tag is created by hand. See [CONTRIBUTING.md](CONTRIBUTING.md#releasing).
 
 ### New (v0.5: Theo in the agents' workflow)
 - **`.theo.json`:** a committed file in the repository that declares `copy` (files a new worktree gets from the main one) and `after_create` (commands to run in it). Claude Code's `.worktreeinclude` is read too. See [agents](docs/cli/agents.md).
