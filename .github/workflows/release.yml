@@ -407,12 +407,11 @@ jobs:
             gh release upload "$TAG" --repo "$REPO" --clobber "${files[@]}"
           else
             # Notes: the CHANGELOG.md section of the version (a release candidate
-            # uses the one of the release it prepares); GitHub's list otherwise.
+            # uses the one of the release it prepares), followed by the
+            # CHANGELOG.es.md section in Spanish when there is one; GitHub's
+            # list otherwise.
             base="${TAG%%-rc.*}"
-            awk -v h="## $base" '
-              $0 == h || index($0, h " ") == 1 { on = 1; next }
-              /^## / { on = 0 }
-              on' ../CHANGELOG.md > ../notes.md
+            bash ../scripts/release-notes.sh "$base" ../CHANGELOG.md ../CHANGELOG.es.md > ../notes.md
             args=(--notes-file ../notes.md)
             if ! grep -q '[^[:space:]]' ../notes.md; then
               echo "::warning::No '## $base' section in CHANGELOG.md; using GitHub's generated notes."
