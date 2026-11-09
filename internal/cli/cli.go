@@ -119,7 +119,7 @@ var errUsage = errors.New("usage")
 func Run(args []string, stdout, stderr io.Writer) int {
 	// Global flags come before the command: `theo --explain up app`,
 	// `theo --color never status`.
-	defer func(mode string) { colorMode = mode }(colorMode)
+	defer setColorMode(getColorMode())
 	args, explain, err := globalFlags(args)
 	if err != nil {
 		printError(stderr, errors.Unwrap(err))

@@ -78,6 +78,8 @@ Before anything is published, the Release workflow unpacks the CLI archive on Li
 
 A branch `release/` with anything but `X.Y.Z`, or a version that already has a tag, fails before building. Pushing a `vX.Y.Z` or `vX.Y.Z-rc.N` tag by hand, or running the workflow by hand with a tag, still works (to redo a release whose files are missing). A pull request that touches the workflow or the packaging scripts, or a manual run with no tag, is a dry run that builds as `v0.0.0-dryrun` and publishes nothing.
 
+The `Release rules` check on the release pull request runs `scripts/check-release-pr.sh` (you can run it yourself): the version is new, `CHANGELOG.md` has the `## vX.Y.Z` section and nothing is left under `## Unreleased`, the same for `CHANGELOG.es.md` once it exists, and `README.md` and `README.es.md` change together. It fails the pull request on a mistake that would otherwise show only after the merge has tagged the release.
+
 Before merging, on the release pull request:
 
 1. **CHANGELOG.md** has a section for the new version.

@@ -1,0 +1,37 @@
+name: Release pull request
+
+# A pull request from release/X.Y.Z into main is checked against the release
+# rules (scripts/check-release-pr.sh): the version is new, CHANGELOG.md has its
+# section and nothing is left under "Unreleased", both READMEs change together.
+# Merging it tags and publishes the release, so a mistake has to show here, not
+# after the merge. Other pull requests skip it. See CONTRIBUTING.md, "Releasing".
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Release rules
+    if: >
+      startsWith(github.head_ref, 'release/') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Check the release pull request
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: scripts/check-release-pr.sh "$BRANCH" origin/main
