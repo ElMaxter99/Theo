@@ -50,6 +50,11 @@
   --neutral-fg: #4c3d52;
   --neutral-bg: #efe9ef;
 
+  /* Theo's symbol as loading indicator: branch follows the text, nodes are the logo coral and teal. */
+  --mark-branch: #361a3d;
+  --mark-coral: #fc483f;
+  --mark-teal: #298f90;
+
   --log-bg: #17101b;
   --log-text: #f1ebf3;
   --log-muted: #b9aebf;
@@ -89,6 +94,8 @@
     --neutral-fg: #d6c9db;
     --neutral-bg: #3a2542;
 
+    --mark-branch: #d9cbe0;
+
     --log-bg: #120a16;
     --log-text: #f1ebf3;
     --log-muted: #b9aebf;
@@ -127,6 +134,8 @@
   --info-bg: #14264a;
   --neutral-fg: #d6c9db;
   --neutral-bg: #3a2542;
+
+  --mark-branch: #d9cbe0;
 
   --log-bg: #120a16;
   --log-text: #f1ebf3;

@@ -274,6 +274,14 @@ volumes are kept, and `worktree resume` brings any of them back. Worktrees stay,
 each with its reason, when they are kept, have an agent alive, are clones or
 locked, have changes without `--save-changes` or more than `--max-changes`
 (50), or have ignored files (`.env`, `node_modules`) without `--include-ignored`.
+Ignored folders that are rebuilt (`node_modules`, `logs`, `dist`, `build`,
+`coverage`, `.cache`, `target`...) never stop a worktree from being parked; other
+ignored files (`.env`, `certs/`...) do, unless `--include-ignored` says to delete
+them. A worktree with a detached HEAD has no branch to come back to, so it stays
+unless `--rescue-detached` is given: Theo then creates `theo-rescue/<folder>` at
+its commit (`git switch -c`, files untouched) and parks it, so its commits are
+kept. `--max-changes <n>` raises the 50-file limit of `--save-changes`.
+
 `--only <branch|path>` (repeatable) parks just those. `--delete-branches` also
 deletes the local branch, but only of a worktree whose commits are all on its
 remote (no uncommitted files, no WIP commit, nothing missing from its upstream;

@@ -52,7 +52,7 @@ export function ProjectSettings({ project }: { project: string }) {
   });
   const snippet = useResource<McpInstall>(() => api.get<McpInstall>(`/mcp/install${qs({})}`), []);
 
-  if (res.loading && !res.data) return <><ProjectHeader project={project} tab="settings" /><Loading /></>;
+  if (res.loading && !res.data) return <><ProjectHeader project={project} tab="settings" /><Loading hero /></>;
   if (!p) return <><ProjectHeader project={project} tab="settings" /><ErrorBanner error={res.error ?? { message: t.panel.notFound }} /></>;
 
   return (

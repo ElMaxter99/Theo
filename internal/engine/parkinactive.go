@@ -24,10 +24,15 @@ type ParkInactiveOptions struct {
 	// MaxChanges is the most files SaveChanges commits in one worktree
 	// (DefaultParkMaxChanges when zero).
 	MaxChanges int
-	// IncludeIgnored parks worktrees that have ignored files (.env,
-	// node_modules...), which removing the folder deletes. Without it they
-	// are skipped.
+	// IncludeIgnored parks worktrees that have ignored files that cannot be
+	// rebuilt (.env, certs...), which removing the folder deletes. Without it
+	// they are skipped. Folders that are rebuilt (node_modules, logs, dist,
+	// build...) never stop a worktree from being parked.
 	IncludeIgnored bool
+	// RescueDetached parks a worktree whose HEAD is detached by first
+	// creating a branch (theo-rescue/<folder>) at that commit, so its commits
+	// are not lost. Without it such a worktree stays.
+	RescueDetached bool
 	// Only limits it to these workspaces (by path or branch name); empty means every
 	// inactive one. A path that is no longer inactive stays, with a reason.
 	Only []string
@@ -40,6 +45,19 @@ type ParkInactiveOptions struct {
 	Size bool
 	// Apply parks. Without it nothing changes.
 	Apply bool
+	// Progress, when set, is called while applying: before each worktree is
+	// handled (Entry nil) and again when it is done (Entry set).
+	Progress func(ParkProgress)
+}
+
+// ParkProgress reports how far a bulk park has got.
+type ParkProgress struct {
+	Total   int    `json:"total"`   // worktrees it will go through
+	Done    int    `json:"done"`    // finished so far
+	Current string `json:"current"` // path of the one being handled, empty at the end
+	Branch  string `json:"branch,omitempty"`
+	// Entry is the outcome of the one that just finished.
+	Entry *ParkInactiveEntry `json:"entry,omitempty"`
 }
 
 // ParkInactiveEntry is one inactive workspace in a ParkInactiveReport.
@@ -50,8 +68,16 @@ type ParkInactiveEntry struct {
 	Changes      int    `json:"changes"`
 	Unpushed     int    `json:"unpushed"`
 	UpstreamGone bool   `json:"upstream_gone,omitempty"`
-	// Ignored counts the ignored files and folders parking would delete.
-	Ignored int `json:"ignored,omitempty"`
+	// Ignored counts the ignored files and folders that cannot be rebuilt and
+	// parking would delete; IgnoredNames lists the first of them.
+	Ignored      int      `json:"ignored,omitempty"`
+	IgnoredNames []string `json:"ignored_names,omitempty"`
+	// RescueBranch is the branch created for a detached HEAD.
+	RescueBranch string `json:"rescue_branch,omitempty"`
+	// ReasonCode says why it stays in a word, for translating: no-branch,
+	// clone, locked, agent, unreadable, changes, too-many-changes, ignored,
+	// not-inactive or failed.
+	ReasonCode string `json:"reason_code,omitempty"`
 	// Safe is true when everything it has is on its remote and nothing is
 	// uncommitted: removing it loses nothing even without its branch.
 	Safe bool `json:"safe,omitempty"`
@@ -176,70 +202,101 @@ func (e *Engine) ParkInactive(ctx context.Context, project string, opts ParkInac
 	}
 	report := &ParkInactiveReport{Project: p.Name, Applied: opts.Apply, Entries: []ParkInactiveEntry{}, Notes: states.Notes}
 	committer, canCommit := e.git.(allCommitter)
-	for i, ws := range states.Worktrees {
+	selected := func(i int, ws WorktreeState) bool {
 		if i == 0 || ws.Bare {
+			return false
+		}
+		if len(opts.Only) > 0 {
+			return containsPath(opts.Only, ws.Path) || containsBranch(opts.Only, ws.Branch)
+		}
+		return ws.State == LifeInactive
+	}
+	total, done := 0, 0
+	for i, ws := range states.Worktrees {
+		if selected(i, ws) {
+			total++
+		}
+	}
+	progress := func(pp ParkProgress) {
+		if opts.Apply && opts.Progress != nil {
+			pp.Total = total
+			opts.Progress(pp)
+		}
+	}
+	for i, ws := range states.Worktrees {
+		if !selected(i, ws) {
 			continue
 		}
-		if len(opts.Only) > 0 && !containsPath(opts.Only, ws.Path) && !containsBranch(opts.Only, ws.Branch) {
-			continue
+		if opts.Apply && ctx.Err() != nil {
+			break
 		}
-		if len(opts.Only) == 0 && ws.State != LifeInactive {
-			continue
-		}
+		progress(ParkProgress{Done: done, Current: ws.Path, Branch: ws.Branch})
 		pushedAll := ws.Changes == 0 && ws.Upstream != "" && !ws.UpstreamGone && ws.Unpushed == 0
 		ent := ParkInactiveEntry{Path: ws.Path, Branch: ws.Branch, IdleDays: ws.IdleDays, Changes: max(ws.Changes, 0), Unpushed: ws.Unpushed,
 			UpstreamGone: ws.UpstreamGone, Safe: pushedAll, BranchDeletable: pushedAll && ws.Branch != "", SizeBytes: ws.SizeBytes}
-		switch {
-		case ws.State != LifeInactive:
-			ent.Reason = "it is no longer inactive (" + ws.State + ")"
-			ent.Blocked = true
-			ent.BranchDeletable = false
-		case ws.Kind == KindClone || ws.Branch == "" || ws.Locked:
-			ent.Blocked = true
-		case ws.Agent != nil && (ws.Agent.State == agents.Working || ws.Agent.State == agents.Waiting):
-			ent.Blocked = true
+		detached := ws.Branch == "" && ws.Head != "" && ws.Kind != KindClone
+		rescue := detached && opts.RescueDetached
+		if rescue {
+			ent.RescueBranch = e.rescueBranchName(ctx, p, ws)
+		}
+		fail := func(code, reason string) {
+			if ent.Reason == "" {
+				ent.ReasonCode, ent.Reason = code, reason
+			}
 		}
 		switch {
-		case ent.Reason != "":
+		case ws.State != LifeInactive:
+			fail("not-inactive", "it is no longer inactive ("+ws.State+")")
+			ent.Blocked = true
+			ent.BranchDeletable = false
 		case ws.Kind == KindClone:
-			ent.Reason = "an independent clone: only linked worktrees can be parked"
-		case ws.Branch == "":
-			ent.Reason = "no branch checked out (detached HEAD), so nothing would bring it back"
+			fail("clone", "an independent clone: only linked worktrees can be parked")
+			ent.Blocked = true
+		case ws.Branch == "" && !rescue:
+			fail("no-branch", "no branch checked out (detached HEAD), so nothing would bring it back; add --rescue-detached to keep it in a branch")
+			ent.Blocked = !detached // a detached HEAD is fixed by an option, a missing one is not
 		case ws.Locked:
-			ent.Reason = "locked with git worktree lock"
+			fail("locked", "locked with git worktree lock")
+			ent.Blocked = true
 		case ws.Agent != nil && (ws.Agent.State == agents.Working || ws.Agent.State == agents.Waiting):
-			ent.Reason = "an agent is alive here (" + ws.Agent.State + ")"
+			fail("agent", "an agent is alive here ("+ws.Agent.State+")")
+			ent.Blocked = true
 		case ws.Changes < 0:
-			ent.Reason = "its files could not be read"
+			fail("unreadable", "its files could not be read")
 		case ws.Changes > 0 && !opts.SaveChanges:
-			ent.Reason = fmt.Sprintf("%d uncommitted file(s); add --save-changes to keep them in a work-in-progress commit", ws.Changes)
+			fail("changes", fmt.Sprintf("%d uncommitted file(s); add --save-changes to keep them in a work-in-progress commit", ws.Changes))
 		case ws.Changes > maxChanges:
-			ent.Reason = fmt.Sprintf("%d uncommitted files (more than %d): review them by hand", ws.Changes, maxChanges)
+			fail("too-many-changes", fmt.Sprintf("%d uncommitted files (more than %d): review them by hand or raise --max-changes", ws.Changes, maxChanges))
 		case ws.Changes > 0 && !canCommit:
-			ent.Reason = "this Git adapter cannot save changes"
+			fail("unreadable", "this Git adapter cannot save changes")
 		}
 		if ent.Reason == "" {
 			if il, ok := e.git.(ignoredLister); ok {
 				ignored, err := il.IgnoredEntries(ctx, ws.Path)
 				if err != nil {
-					ent.Reason = "cannot read its ignored files: " + firstLine(err.Error())
+					fail("unreadable", "cannot read its ignored files: "+firstLine(err.Error()))
 				}
-				ent.Ignored = len(ignored)
-				if ent.Reason == "" && len(ignored) > 0 && !opts.IncludeIgnored {
-					shown := ignored
-					if len(shown) > 3 {
-						shown = append(append([]string{}, shown[:3]...), fmt.Sprintf("and %d more", len(ignored)-3))
-					}
-					ent.Reason = "has files Git ignores that parking deletes (" + strings.Join(shown, ", ") + "); add --include-ignored"
+				keep := irreplaceableIgnored(ignored)
+				ent.Ignored, ent.IgnoredNames = len(keep), firstN(keep, 5)
+				if ent.Reason == "" && len(keep) > 0 && !opts.IncludeIgnored {
+					fail("ignored", "has files Git ignores that cannot be rebuilt and parking deletes ("+strings.Join(firstN(keep, 3), ", ")+"); add --include-ignored")
 				}
 			}
 		}
 		ent.WillSave = ent.Reason == "" && ws.Changes > 0
 		if ent.Reason == "" && opts.Apply {
-			if ent.WillSave {
+			if rescue {
+				sw, ok := e.git.(branchSwitcher)
+				if !ok {
+					ent.ReasonCode, ent.Reason = "failed", "this Git adapter cannot create the rescue branch"
+				} else if err := sw.SwitchNewBranch(ctx, ws.Path, ent.RescueBranch); err != nil {
+					ent.ReasonCode, ent.Reason = "failed", "cannot create the rescue branch (nothing was removed): "+firstLine(err.Error())
+				}
+			}
+			if ent.Reason == "" && ent.WillSave {
 				msg := "WIP: saved by Theo before parking " + filepath.Base(ws.Path)
 				if err := committer.CommitAll(ctx, ws.Path, msg); err != nil {
-					ent.Reason = "cannot save its changes (nothing was removed): " + firstLine(err.Error())
+					ent.ReasonCode, ent.Reason = "failed", "cannot save its changes (nothing was removed): "+firstLine(err.Error())
 				} else {
 					ent.Saved = true
 				}
@@ -247,7 +304,7 @@ func (e *Engine) ParkInactive(ctx context.Context, project string, opts ParkInac
 			if ent.Reason == "" {
 				note := "parked in bulk after " + fmt.Sprint(ws.IdleDays) + " idle days"
 				if _, err := e.Park(ctx, p.Name, ws.Path, ParkOptions{Note: note, Confirm: filepath.Base(ws.Path)}); err != nil {
-					ent.Reason = firstLine(err.Error())
+					ent.ReasonCode, ent.Reason = "failed", firstLine(err.Error())
 				} else {
 					ent.Parked = true
 					if opts.DeleteBranches {
@@ -261,7 +318,11 @@ func (e *Engine) ParkInactive(ctx context.Context, project string, opts ParkInac
 			}
 		}
 		report.Entries = append(report.Entries, ent)
+		done++
+		finished := ent
+		progress(ParkProgress{Done: done, Current: ws.Path, Branch: ws.Branch, Entry: &finished})
 	}
+	progress(ParkProgress{Done: done})
 	report.Summary = summarizeParkInactive(report.Entries)
 	return report, nil
 }
@@ -332,4 +393,65 @@ func containsBranch(list []string, branch string) bool {
 		}
 	}
 	return false
+}
+
+type branchSwitcher interface {
+	SwitchNewBranch(ctx context.Context, dir, name string) error
+}
+
+// rescueBranchName is the branch that keeps the commits of a detached
+// worktree: theo-rescue/<folder>, with the start of the commit added when the
+// name is taken.
+func (e *Engine) rescueBranchName(ctx context.Context, p registry.Project, ws WorktreeState) string {
+	var b strings.Builder
+	for _, r := range filepath.Base(ws.Path) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	name := "theo-rescue/" + strings.Trim(b.String(), "-.")
+	if name == "theo-rescue/" {
+		name += "worktree"
+	}
+	if lg, ok := e.git.(lifecycleGit); ok {
+		if refs, err := lg.LocalBranches(ctx, p.Path); err == nil {
+			if _, taken := refs[name]; taken && len(ws.Head) >= 7 {
+				name += "-" + ws.Head[:7]
+			}
+		}
+	}
+	return name
+}
+
+// regenerable names the ignored files and folders that are rebuilt (by a
+// package manager or a build) and so never stop a worktree from being parked.
+var regenerable = map[string]bool{
+	"node_modules": true, "logs": true, "log": true, "dist": true, "build": true, "coverage": true,
+	".cache": true, ".next": true, ".nuxt": true, ".turbo": true, ".parcel-cache": true, "target": true,
+	"__pycache__": true, ".pytest_cache": true, ".gradle": true, "tmp": true, "package-lock.json": true,
+	".ds_store": true, "thumbs.db": true,
+}
+
+// irreplaceableIgnored keeps the entries of `git status --ignored` that are
+// not regenerable: what is left would be lost for good with the folder.
+func irreplaceableIgnored(entries []string) []string {
+	var out []string
+	for _, e := range entries {
+		first, _, _ := strings.Cut(strings.TrimSuffix(filepath.ToSlash(e), "/"), "/")
+		if regenerable[strings.ToLower(first)] {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+func firstN(list []string, n int) []string {
+	if len(list) <= n {
+		return list
+	}
+	return list[:n]
 }

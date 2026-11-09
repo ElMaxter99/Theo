@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ func (s *Server) lifecycleRoutes() {
 	s.handle("POST", "/projects/{p}/clean", authSession, s.handleClean)
 	s.handle("GET", "/projects/{p}/park-inactive", authSession, s.handleParkInactivePlan)
 	s.handle("POST", "/projects/{p}/park-inactive", authSession, s.handleParkInactive)
+	s.handle("GET", "/projects/{p}/park-inactive/{op}", authSession, s.handleParkInactiveRun)
 	s.handle("POST", "/projects/{p}/resume", authSession, s.handleResume)
 	s.handle("POST", "/projects/{p}/worktrees/{wt}/park", authSession, s.handlePark)
 	s.handle("POST", "/projects/{p}/worktrees/{wt}/keep", authSession, s.handleKeep)
@@ -74,6 +76,7 @@ func (s *Server) handleClean(w http.ResponseWriter, r *http.Request, _ *session)
 	var req struct {
 		Down           bool   `json:"down"`
 		DeleteBranches bool   `json:"delete_branches"`
+		RescueDetached bool   `json:"rescue_detached"`
 		Images         bool   `json:"images"`
 		Confirm        string `json:"confirm"`
 	}
@@ -192,9 +195,11 @@ func (s *Server) handleParkInactivePlan(w http.ResponseWriter, r *http.Request, 
 		return projectNotFound(project)
 	}
 	q := r.URL.Query()
+	maxChanges, _ := strconv.Atoi(q.Get("max_changes"))
 	report, err := s.eng.ParkInactive(r.Context(), project, engine.ParkInactiveOptions{
-		SaveChanges: q.Get("save_changes") == "true", IncludeIgnored: q.Get("include_ignored") == "true",
-		DeleteBranches: q.Get("delete_branches") == "true", Size: q.Get("size") == "true", Only: q["path"],
+		SaveChanges: queryBool(q.Get("save_changes")), IncludeIgnored: queryBool(q.Get("include_ignored")),
+		RescueDetached: queryBool(q.Get("rescue_detached")), MaxChanges: maxChanges,
+		DeleteBranches: queryBool(q.Get("delete_branches")), Size: queryBool(q.Get("size")), Only: q["path"],
 	})
 	if err != nil {
 		return fromEngine(err, &ResourceRef{Kind: "project", Project: project})
@@ -203,14 +208,16 @@ func (s *Server) handleParkInactivePlan(w http.ResponseWriter, r *http.Request, 
 }
 
 // handleParkInactive parks every inactive worktree that can be parked. It
-// needs the project name as confirmation. Branches and volumes are kept.
-func (s *Server) handleParkInactive(w http.ResponseWriter, r *http.Request, _ *session) error {
+// needs the project name as confirmation. Branches and volumes are kept. It
+// runs as an operation (202); GET park-inactive/{op} tells how far it is.
+func (s *Server) handleParkInactive(w http.ResponseWriter, r *http.Request, sess *session) error {
 	project := r.PathValue("p")
 	var req struct {
 		SaveChanges    bool `json:"save_changes"`
 		IncludeIgnored bool `json:"include_ignored"`
 		MaxChanges     int  `json:"max_changes"`
 		DeleteBranches bool `json:"delete_branches"`
+		RescueDetached bool `json:"rescue_detached"`
 		// Paths limits it to these worktrees; empty means every inactive one.
 		Paths   []string `json:"paths"`
 		Confirm string   `json:"confirm"`
@@ -227,14 +234,17 @@ func (s *Server) handleParkInactive(w http.ResponseWriter, r *http.Request, _ *s
 		e.Confirm = &Confirm{Expected: p.Name, Prompt: "Type the project name to park these worktrees"}
 		return e
 	}
-	report, err := s.eng.ParkInactive(r.Context(), p.Name, engine.ParkInactiveOptions{
+	op, err := s.startParkInactive(sess, r.Header.Get("Idempotency-Key"), p.Name, engine.ParkInactiveOptions{
 		SaveChanges: req.SaveChanges, IncludeIgnored: req.IncludeIgnored, MaxChanges: req.MaxChanges,
-		DeleteBranches: req.DeleteBranches, Only: req.Paths, Apply: true,
+		DeleteBranches: req.DeleteBranches, RescueDetached: req.RescueDetached, Only: req.Paths, Apply: true,
 	})
 	if err != nil {
-		return fromEngine(err, &ResourceRef{Kind: "project", Project: p.Name})
+		return err
 	}
-	s.cache.invalidate(p.Name)
-	s.hub.publish("state.changed", map[string]string{"project": p.Name})
-	return writeJSON(w, http.StatusOK, report)
+	w.Header().Set("Location", apiBase+"/projects/"+p.Name+"/park-inactive/"+op.ID)
+	return writeJSON(w, http.StatusAccepted, op.view())
 }
+
+// queryBool reads a flag of a query string the way the web client writes it
+// ("1") or spelled out ("true").
+func queryBool(v string) bool { return v == "1" || v == "true" }

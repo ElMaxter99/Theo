@@ -51,7 +51,7 @@ export function InstanceDetail({ project, wt, tab }: { project: string; wt: stri
       </>
     );
   }
-  if (!w) return <><PageHead title={t.app.loading} /><Loading /></>;
+  if (!w) return <><PageHead title={t.app.loading} /><Loading hero /></>;
 
   const op = ops.find((o) => o.worktree === wt && isActiveOp(o));
   const busyKind = op?.kind ?? w.busy?.kind ?? null;

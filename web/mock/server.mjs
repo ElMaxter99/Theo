@@ -201,6 +201,7 @@ function send(res, status, body, headers = {}) {
   res.end(isStr ? body : JSON.stringify(body));
 }
 const err = (res, status, code, message, extra = {}) => send(res, status, { error: { code, message, ...extra } });
+const parkRuns = new Map();
 async function readJson(req) {
   const chunks = [];
   for await (const c of req) chunks.push(c);
@@ -344,12 +345,23 @@ async function lifecycleRoutes(req, res, proj, seg) {
       return send(res, 200, plan), true;
     }
   }
+  if (seg[2] === "park-inactive" && seg.length === 4 && m === "GET") {
+    const r = parkRuns.get(seg[3]);
+    if (!r) return err(res, 404, "operation_not_found", `no bulk park ${seg[3]}`), true;
+    const done = Math.min(r.entries.length, Math.floor((Date.now() - r.at) / 600));
+    const fin = done >= r.entries.length;
+    const cur = r.entries[done];
+    return send(res, 200, {
+      operation: { id: seg[3], kind: "park-inactive", project: proj.name, state: fin ? "succeeded" : "running", result: fin ? { ok: true, summary: "done" } : undefined },
+      total: r.entries.length, done, current: cur?.path, branch: cur?.branch, entries: r.entries.slice(0, done), report: fin ? { project: proj.name, applied: true, entries: r.entries, summary: {} } : undefined,
+    }), true;
+  }
   if (seg[2] === "park-inactive" && seg.length === 3) {
     const url = new URL(req.url, "http://x");
     const only = m === "GET" ? url.searchParams.getAll("path") : null;
     const b = m === "POST" ? ((await readJson(req)) ?? {}) : {};
     if (m === "POST" && b.confirm !== proj.name) return send(res, 409, { error: { code: "confirmation_required", level: 3, message: "parking needs the project name", confirm: { expected: proj.name } } }), true;
-    const save = m === "POST" ? !!b.save_changes : url.searchParams.get("save_changes") === "true";
+    const save = m === "POST" ? !!b.save_changes : ["1", "true"].includes(url.searchParams.get("save_changes"));
     const picked = m === "POST" ? b.paths ?? [] : only;
     const entries = proj.wts.filter((w) => !w.main).map((w) => lifeView(proj, w)).filter((v) => v.state === "inactive" && (!picked.length || picked.includes(v.path))).map((v) => {
       const safe = v.changes === 0 && v.unpushed === 0 && !!v.upstream && !v.upstream_gone;
@@ -367,7 +379,12 @@ async function lifecycleRoutes(req, res, proj, seg) {
     }
     const ok = entries.filter((e) => !e.reason);
     const summary = { total: entries.length, parkable: ok.length, safe: entries.filter((e) => e.safe).length, with_changes: entries.filter((e) => e.changes > 0).length, with_unpushed: entries.filter((e) => e.unpushed > 0).length, upstream_gone: entries.filter((e) => e.upstream_gone).length, blocked: 0, size_bytes: ok.reduce((n, e) => n + (e.size_bytes ?? 0), 0) };
-    return send(res, 200, { project: proj.name, applied: m === "POST", entries, summary }), true;
+    if (m === "POST") {
+      const id = `op_park${parkRuns.size + 1}`;
+      parkRuns.set(id, { at: Date.now(), entries });
+      return send(res, 202, { id, kind: "park-inactive", project: proj.name, state: "running" }), true;
+    }
+    return send(res, 200, { project: proj.name, applied: false, entries, summary }), true;
   }
   if (seg[2] === "resume" && m === "POST") {
     const b = (await readJson(req)) ?? {};

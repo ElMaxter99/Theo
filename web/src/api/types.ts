@@ -612,6 +612,9 @@ export interface ParkInactiveEntry {
   unpushed: number;
   upstream_gone?: boolean;
   ignored?: number;
+  ignored_names?: string[];
+  rescue_branch?: string;
+  reason_code?: string;
   safe?: boolean;
   branch_deletable?: boolean;
   size_bytes?: number;
@@ -642,4 +645,15 @@ export interface ParkInactiveReport {
   entries: ParkInactiveEntry[];
   summary: ParkInactiveSummary;
   notes?: string[];
+}
+
+/** GET /projects/{p}/park-inactive/{op}: how far a bulk park has got. */
+export interface ParkInactiveRun {
+  operation: Operation;
+  total: number;
+  done: number;
+  current?: string;
+  branch?: string;
+  entries: ParkInactiveEntry[];
+  report?: ParkInactiveReport;
 }
