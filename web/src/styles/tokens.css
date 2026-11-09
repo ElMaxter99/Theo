@@ -4,6 +4,7 @@
  * Semantic colours (ok / warn / error / info) are independent of the brand palette on purpose:
  * the brand coral is NOT the error red.
  *
+ * Light (the default) follows the design canvases: cream page, white cards. Dark is warm charcoal, no purple tint.
  * Three blocks, identical in meaning:
  *   1. light (default)
  *   2. dark by system preference, unless the user forced light
@@ -18,7 +19,7 @@
   --theo-coral-500: #f45b50;
   --theo-cream-50: #faf5eb;
 
-  --bg: #ffffff;
+  --bg: #faf5eb;
   --bg-subtle: #faf5eb;
   --surface: #ffffff;
   --surface-2: #f4eee3;
@@ -64,14 +65,14 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #1b0e21;
-    --bg-subtle: #231229;
-    --surface: #27132f;
-    --surface-2: #331a3b;
-    --border: #8f7d97;
-    --border-soft: #4a3452;
-    --text: #f4eef6;
-    --text-muted: #c4b5cb;
+    --bg: #181614;
+    --bg-subtle: #1f1c19;
+    --surface: #262320;
+    --surface-2: #302c28;
+    --border: #8a8279;
+    --border-soft: #443f39;
+    --text: #f5f0e8;
+    --text-muted: #c2b8aa;
     --link: #55d6cd;
     --brand: #2fb3aa;
     --accent: #3cc4ba;
@@ -91,12 +92,12 @@
     --error-bg: #430f0c;
     --info-fg: #9fc2ff;
     --info-bg: #14264a;
-    --neutral-fg: #d6c9db;
-    --neutral-bg: #3a2542;
+    --neutral-fg: #d6cbbd;
+    --neutral-bg: #3a342e;
 
-    --mark-branch: #d9cbe0;
+    --mark-branch: #e5dccf;
 
-    --log-bg: #120a16;
+    --log-bg: #100e0d;
     --log-text: #f1ebf3;
     --log-muted: #b9aebf;
     --log-err: #ff9d95;
@@ -105,14 +106,14 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #1b0e21;
-  --bg-subtle: #231229;
-  --surface: #27132f;
-  --surface-2: #331a3b;
-  --border: #8f7d97;
-  --border-soft: #4a3452;
-  --text: #f4eef6;
-  --text-muted: #c4b5cb;
+  --bg: #181614;
+  --bg-subtle: #1f1c19;
+  --surface: #262320;
+  --surface-2: #302c28;
+  --border: #8a8279;
+  --border-soft: #443f39;
+  --text: #f5f0e8;
+  --text-muted: #c2b8aa;
   --link: #55d6cd;
   --brand: #2fb3aa;
   --accent: #3cc4ba;
@@ -132,12 +133,12 @@
   --error-bg: #430f0c;
   --info-fg: #9fc2ff;
   --info-bg: #14264a;
-  --neutral-fg: #d6c9db;
-  --neutral-bg: #3a2542;
+  --neutral-fg: #d6cbbd;
+  --neutral-bg: #3a342e;
 
-  --mark-branch: #d9cbe0;
+  --mark-branch: #e5dccf;
 
-  --log-bg: #120a16;
+  --log-bg: #100e0d;
   --log-text: #f1ebf3;
   --log-muted: #b9aebf;
   --log-err: #ff9d95;

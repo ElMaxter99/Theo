@@ -105,13 +105,14 @@ test("status is never colour alone: every state badge has text and an icon", asy
   await page.ctx.close();
 });
 
-for (const [name, opts] of [["dark mode", { colorScheme: "dark" }], ["forced colors", { forcedColors: "active" }], ["forced theme dark by the user", { colorScheme: "light", force: "dark" }]]) {
+for (const [name, opts] of [["dark mode", { colorScheme: "dark", system: true }], ["forced colors", { forcedColors: "active" }], ["forced theme dark by the user", { colorScheme: "light", force: "dark" }]]) {
   test(`${name} keeps all the text of every main screen`, async () => {
     const light = await openApp(browser, mock, { route: "#/p/shop", wait: "table.data" });
     const ref = await light.locator("main").innerText();
     await light.ctx.close();
     const page = await openApp(browser, mock, { ...opts, route: "#/p/shop", wait: "table.data" });
     if (opts.force) { await page.evaluate(() => localStorage.setItem("theo.theme", "dark")); await page.reload(); await page.waitForSelector("table.data"); assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), "dark"); }
+    if (opts.system) { await page.evaluate(() => localStorage.setItem("theo.theme", "system")); await page.reload(); await page.waitForSelector("table.data"); assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), undefined); }
     assert.equal(await page.locator("main").innerText(), ref);
     // Text is actually painted: foreground differs from background for body text.
     const colours = await page.evaluate(() => { const c = getComputedStyle(document.querySelector("main h1")); return { fg: c.color, bg: getComputedStyle(document.body).backgroundColor }; });

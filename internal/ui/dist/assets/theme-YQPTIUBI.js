@@ -1,0 +1,1 @@
+try{let t=localStorage.getItem("theo.theme");t!=="system"&&document.documentElement.setAttribute("data-theme",t==="dark"?"dark":"light")}catch{document.documentElement.setAttribute("data-theme","light")}

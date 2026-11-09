@@ -1,13 +1,13 @@
-// Theme preference: "system" (default), "light" or "dark". Stored in localStorage, always wrapped in try/catch.
+// Theme preference: "light" (default), "dark" or "system". Stored in localStorage, always wrapped in try/catch.
 export type ThemePref = "system" | "light" | "dark";
 const KEY = "theo.theme";
 
 export function readTheme(): ThemePref {
   try {
     const v = localStorage.getItem(KEY);
-    if (v === "light" || v === "dark") return v;
-  } catch { /* storage unavailable: follow the system */ }
-  return "system";
+    if (v === "light" || v === "dark" || v === "system") return v;
+  } catch { /* storage unavailable: light */ }
+  return "light";
 }
 
 export function applyTheme(pref: ThemePref): void {
@@ -18,8 +18,7 @@ export function applyTheme(pref: ThemePref): void {
 
 export function saveTheme(pref: ThemePref): void {
   try {
-    if (pref === "system") localStorage.removeItem(KEY);
-    else localStorage.setItem(KEY, pref);
+    localStorage.setItem(KEY, pref);
   } catch { /* the choice just does not persist */ }
   applyTheme(pref);
 }
