@@ -42,6 +42,30 @@ jobs:
         run: |
           go test -count=1 -v ./internal/acceptance 2>&1 | grep -E '^\s*(---|[a-z_]+_test.go:[0-9]+:)'
 
+  coverage:
+    # How much of the code the tests run, reported and never enforced: there is
+    # no threshold, nothing here can fail a pull request except the tests
+    # themselves. The numbers are in the run's summary and the profile is
+    # attached to the run.
+    name: Coverage report (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Tests with a coverage profile
+        run: go test -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Report
+        run: scripts/coverage-summary.sh coverage.out >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: coverage
+          path: coverage.out
+
   smoke:
     # The whole examples/demo walk-through (scripts/smoke.sh) against the
     # runner's real Docker daemon: about 100 checks, from project add to
