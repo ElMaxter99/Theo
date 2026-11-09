@@ -6,6 +6,7 @@ import { api, ApiError, projectPath, qs } from "../api/client.ts";
 import type { CleanEntry, CleanReport, LifeReport, LifeWorktree } from "../api/types.ts";
 import { KeepDialog, ParkDialog } from "../components/LifecycleDialogs.tsx";
 import { InactivePicker } from "../components/InactivePicker.tsx";
+import { ParkRunWindow } from "../components/ParkProgress.tsx";
 import { sizeText } from "../lib/lifecycle.ts";
 import { Banner, ErrorBanner, Loading, PageHead } from "../components/ui.tsx";
 import { TypedConfirmDialog } from "../components/Dialog.tsx";
@@ -111,6 +112,7 @@ function Cleanup({ initial }: { initial?: string }) {
 
   return (
     <section class="stack" aria-labelledby="cl-title">
+      <ParkRunWindow onClosed={reload} />
       <h2 id="cl-title">{c.title}</h2>
       <p>{c.lead}</p>
       <div class="row controls">
