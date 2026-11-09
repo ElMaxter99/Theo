@@ -47,13 +47,16 @@ concurrency:
   group: release-${{ github.workflow }}-${{ inputs.tag || github.ref }}
   cancel-in-progress: ${{ startsWith(github.ref, 'refs/heads/release/') }}
 
-permissions:
-  contents: read
+# Nothing by default: each job asks for what it needs.
+permissions: {}
 
 jobs:
   prepare:
     name: Resolve version
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
     outputs:
       tag: ${{ steps.v.outputs.tag }}
       publish: ${{ steps.v.outputs.publish }}
@@ -133,6 +136,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -148,6 +154,9 @@ jobs:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
     needs: [prepare, test]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
     strategy:
       matrix:
         goos: [linux, darwin, windows]
@@ -197,6 +206,9 @@ jobs:
     name: Desktop (${{ matrix.goos }}/${{ matrix.goarch }})
     needs: [prepare, test]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
     strategy:
       fail-fast: true
       matrix:
@@ -247,11 +259,87 @@ jobs:
             dist/*.zip
           if-no-files-found: error
 
+  smoke:
+    # The archive a user downloads, unpacked on a clean runner of each system:
+    # the tests run the code, this runs the packaged program. Nothing is
+    # published until it passes.
+    name: Smoke (${{ matrix.os }})
+    needs: [prepare, build]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    permissions: {}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, artifact: theo_linux_amd64, goos: linux, goarch: amd64 }
+          - { os: macos-latest, artifact: theo_darwin_arm64, goos: darwin, goarch: arm64 }
+          - { os: windows-latest, artifact: theo_windows_amd64, goos: windows, goarch: amd64 }
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: assets
+      - name: Unpack and run the archive
+        shell: bash
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          cd assets
+          ls -l
+          name="theo_${TAG}_${GOOS}_${GOARCH}"
+          bin=theo
+          if [ "$GOOS" = windows ]; then
+            bin=theo.exe
+            powershell -NoProfile -Command "Expand-Archive -Path '$name.zip' -DestinationPath ."
+          else
+            tar -xzf "$name.tar.gz"
+          fi
+          for f in "$bin" LICENSE README.md README.es.md; do
+            test -f "$name/$f" || { echo "::error::$f is missing from $name"; exit 1; }
+          done
+          out=$("$name/$bin" --version)
+          echo "$out"
+          case "$out" in
+            "theo ${TAG}"*) ;;
+            *) echo "::error::--version printed '$out', expected it to start with 'theo ${TAG}'"; exit 1 ;;
+          esac
+          "$name/$bin" --help > /dev/null
+
+  attest:
+    # Signed build provenance for every archive, from a job that has no
+    # checkout and cannot write to the repository. The release waits for it.
+    name: Attest provenance
+    if: ${{ needs.prepare.outputs.publish == 'true' }}
+    needs: [prepare, build, desktop]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - uses: actions/attest@v4
+        with:
+          subject-path: |
+            assets/*.tar.gz
+            assets/*.zip
+
   dry-run:
     name: Assemble release (dry run, nothing published)
     if: ${{ needs.prepare.outputs.publish != 'true' }}
-    needs: [prepare, build, desktop]
+    needs: [prepare, build, desktop, smoke]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -282,8 +370,9 @@ jobs:
   release:
     name: Publish release
     if: ${{ needs.prepare.outputs.publish == 'true' }}
-    needs: [prepare, build, desktop]
+    needs: [prepare, build, desktop, smoke, attest]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
