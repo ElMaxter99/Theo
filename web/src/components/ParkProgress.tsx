@@ -9,7 +9,8 @@ import { showParkRun, useParkRun } from "../lib/parkRun.ts";
 import { t } from "../strings.ts";
 import { Modal } from "./Dialog.tsx";
 import { Icon } from "./Icon.tsx";
-import { ErrorBanner } from "./ui.tsx";
+import { Mark } from "./Mark.tsx";
+import { ErrorBanner, SkeletonRows } from "./ui.tsx";
 
 /** Why a worktree stayed, in words. */
 export function parkReason(e: ParkInactiveEntry): string {
@@ -74,23 +75,31 @@ export function ParkProgress({ project, opId, onClose }: { project: string; opId
     <Modal title={c.progTitle} onClose={onClose}>
       <div class="stack-sm" aria-live="off">
         {!run || (total === 0 && !finished) ? (
-          <p class="row"><Icon name="busy" size={16} /> {c.progPreparing}</p>
+          <>
+            <p class="row"><Mark size={20} /> {c.progPreparing}</p>
+            <SkeletonRows n={3} />
+          </>
         ) : (
           <>
-            <p class="row"><strong>{c.progCount(done, total)}</strong>{!finished ? <Icon name="busy" size={16} /> : null}</p>
-            <progress max={Math.max(total, 1)} value={done} aria-label={c.progCount(done, total)} style={{ width: "100%" }} />
-            {!finished && run.current ? <p class="small">{c.progNow} <span class="mono">{run.branch || run.current}</span></p> : null}
+            <p class="row">{!finished ? <Mark size={20} /> : <Icon name="ok" size={18} />}<strong class="count-roll" key={done}>{c.progCount(done, total)}</strong></p>
+            <progress class="progress" max={Math.max(total, 1)} value={done} aria-label={c.progCount(done, total)} />
           </>
         )}
         {!finished ? <p class="small muted">{c.progWait}</p> : null}
-        {run && run.entries.length > 0 ? (
-          <ul class="affected" aria-label={c.progTitle} style={{ maxHeight: "16rem", overflow: "auto" }}>
+        {run && (run.entries.length > 0 || (!finished && run.current)) ? (
+          <ul class="affected steps" aria-label={c.progTitle} style={{ maxHeight: "16rem", overflow: "auto" }}>
             {run.entries.map((e) => (
-              <li key={e.path}>
-                <Icon name={e.parked ? "ok" : "warn"} size={14} /> <strong class="mono">{e.branch ?? e.path}</strong>{" "}
+              <li key={e.path} class={`step ${e.parked ? "step-ok" : "step-stays"}`}>
+                <span class="step-icon"><Icon name={e.parked ? "ok" : "warn"} size={14} /></span> <strong class="mono">{e.branch ?? e.path}</strong>{" "}
                 <span class="muted">— {e.parked ? `${c.progOk}${e.branch_deleted ? ` · ${c.progBranchGone}` : ""}` : `${c.progStays}: ${parkReason(e)}`}</span>
               </li>
             ))}
+            {!finished && run.current ? (
+              <li key="current" class="step step-now" aria-current="step">
+                <span class="step-icon"><Mark size={14} /></span> <strong class="mono">{run.branch || run.current}</strong>{" "}
+                <span class="muted">— {c.progNow}</span>
+              </li>
+            ) : null}
           </ul>
         ) : null}
         {finished && !failedOp ? <p><strong>{parked === total ? c.progAllDone(parked) : c.progResult(parked, total)}</strong></p> : null}

@@ -1,5 +1,6 @@
 // HTTP client for /api/v1: cookie session + CSRF header, typed errors, Idempotency-Key for operations.
 // No secret is ever put in a URL: the launch nonce lives in the URL fragment only until it is exchanged.
+import { beginRequest } from "../lib/busy.ts";
 import type { ApiErrorBody } from "./types.ts";
 import { t } from "../strings.ts";
 
@@ -78,6 +79,7 @@ async function request<T>(method: string, path: string, body?: unknown, opts: Re
     if (opts.idempotent) headers["Idempotency-Key"] = uuid();
   }
   let res: Response;
+  const endRequest = beginRequest();
   try {
     res = await fetch(BASE + path, {
       method,
@@ -92,6 +94,8 @@ async function request<T>(method: string, path: string, body?: unknown, opts: Re
     if ((e as Error).name === "AbortError") throw e;
     sessionLost("server-gone");
     throw new ApiError(0, { code: "network", message: t.app.unreachable });
+  } finally {
+    endRequest();
   }
   if (res.status === 401) {
     sessionLost("no-session");

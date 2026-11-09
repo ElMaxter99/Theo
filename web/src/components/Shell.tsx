@@ -1,6 +1,9 @@
 // The frame of every screen (0.2): a header with the search (command palette) and the operations in progress, and a
 // sidebar with Home, the projects (each with its running instances), Problems and Settings. The theme and language
 // moved to Settings › Preferences.
+import { useBusy } from "../lib/busy.ts";
+import { isActiveOp } from "../lib/status.ts";
+import { useOps } from "../ops/store.ts";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import type { ComponentChildren } from "preact";
 import type { Meta } from "../api/types.ts";
@@ -54,6 +57,7 @@ export function Shell({ meta, onRefresh, children }: { meta: Meta | undefined; o
 
   const dockerDown = meta && !meta.docker.available;
   const gitDown = meta && !meta.git.available;
+  const working = useBusy() || useOps().some(isActiveOp);
   const inProjects = route.name === "projects" || route.name === "add";
 
   return (
@@ -71,6 +75,7 @@ export function Shell({ meta, onRefresh, children }: { meta: Meta | undefined; o
         </button>
         <span class="header-spacer" />
         <OpsIndicator />
+        {working ? <div class="progress-bar" aria-hidden="true" /> : null}
       </header>
       <nav class="app-nav" aria-label={t.app.nav}>
         <ul>

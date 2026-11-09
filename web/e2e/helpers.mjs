@@ -47,8 +47,9 @@ export async function startMock() {
  * Opens a page through the real launch exchange (nonce in the fragment). Console messages and CSP violations
  * are collected in page.problems.
  */
+// Motion is off by default in tests: axe would otherwise sample elements half-way through their entrance animation.
 export async function openApp(browser, mock, { route = "", viewport = { width: 1100, height: 760 }, colorScheme, forcedColors, reducedMotion, deviceScaleFactor = 1, locale, wait = "main h1, .welcome h1" } = {}) {
-  const context = await browser.newContext({ viewport, colorScheme, forcedColors, reducedMotion, deviceScaleFactor, locale });
+  const context = await browser.newContext({ viewport, colorScheme, forcedColors, reducedMotion: reducedMotion ?? "reduce", deviceScaleFactor, locale });
   const page = await context.newPage();
   page.problems = [];
   page.on("console", (m) => { if (["error", "warning"].includes(m.type())) page.problems.push(`${m.type()}: ${m.text()}`); });

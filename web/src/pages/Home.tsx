@@ -35,7 +35,7 @@ export function Home({ meta }: { meta: Meta | undefined }) {
   const stop = useAction(async () => { await stopAll(); announce(t.home.stoppingAll); });
   const stopOne = useAction(async (project: string, id: string) => { await startOperation(project, id, "stop"); });
 
-  if (!report && status.loading) return <><PageHead title={t.home.title} /><Loading /></>;
+  if (!report && status.loading) return <><PageHead title={t.home.title} /><Loading hero /></>;
   if (!report && status.error) return <><PageHead title={t.home.title} /><ErrorBanner error={status.error} /></>;
   if (report && report.projects.length === 0) return <Welcome meta={meta} />;
 
