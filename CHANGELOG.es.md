@@ -2,6 +2,15 @@
 
 Cambios destacados de cada versión, en español. Las notas de cada release en GitHub llevan esta sección después de la inglesa, con el título *Español*. Es la misma lista que [CHANGELOG.md](CHANGELOG.md), que es la de referencia: cada `## vX.Y.Z` de allí tiene aquí su sección. Las versiones anteriores a la primera de este archivo solo tienen notas en inglés.
 
+## v0.7.1
+
+Versión de corrección: la limpieza se rediseña como un flujo de cuatro pasos y se actualizan las dependencias de compilación.
+
+### Changed
+- **La limpieza es un flujo de cuatro pasos con un estado por worktree.** Problemas > Limpieza pasa ahora por Revisar, Confirmar, Quitando y Resultado. Cada worktree está Listo, Espera tu OK, Bloqueado o Conservado, y cuatro contadores suman el total y filtran la lista. Se agrupan por lo que decides (por ejemplo «carpetas que Git ignora y no se pueden regenerar»: una decisión para todos, con `certs/` o `.claude/` por su nombre), las columnas dicen qué se guarda solo y qué se borra para siempre, «Ver archivos» abre la fila y cada fila bloqueada dice cómo desbloquearla. La confirmación lista lo que se quita, lo que se guarda antes, lo que se borra para siempre y lo que se conserva; el resultado cuenta qué pasó con cada worktree, con «Reintentar» y un enlace para retomarlo. Los fusionados con archivos sin confirmar también se pueden quitar (antes se guardan en un commit local). `POST /projects/{p}/clean` acepta `paths` para cerrar solo algunos, y `POST /projects/{p}/park-inactive` acepta un worktree fusionado nombrado en `paths`. Quitar la carpeta pasa siempre por aparcar (la rama se queda y se puede retomar); la opción de borrar imágenes de la página web queda solo en `theo worktree clean --images`.
+- **Dependencia de la interfaz:** preact 11.2.0 (antes 11.1.1); la interfaz se ve y funciona igual.
+- **Los flujos de publicación y CI usan versiones nuevas de GitHub Actions** (`actions/checkout` 7, `actions/setup-go` 7, `actions/download-artifact` 8). Sin cambios en Theo ni en sus binarios.
+
 ## v0.7.0
 
 Claude Code y GitHub Copilot en el flujo de los agentes, y un aviso de escritorio cuando un agente te necesita.
@@ -13,8 +22,6 @@ Claude Code y GitHub Copilot en el flujo de los agentes, y un aviso de escritori
 
 ### Fixed
 - **Limpieza, worktrees inactivos:** la interfaz pedía el plan con `?save_changes=1` y el servidor solo leía `true`, así que las opciones no tenían efecto y todo worktree con cambios seguía sin poder elegirse. El servidor lee ambos. Las carpetas ignoradas que se pueden reconstruir (`node_modules`, `logs`, `dist`...) ya no impiden aparcar, un HEAD desacoplado se puede conservar en una rama `theo-rescue/<carpeta>` (`--rescue-detached`), los motivos se muestran en el idioma de la interfaz, y guardar cambios y rescatar vienen activados en la interfaz.
-
-- **La limpieza es un flujo de cuatro pasos con un estado por worktree.** Problemas > Limpieza pasa ahora por Revisar, Confirmar, Quitando y Resultado. Cada worktree está Listo, Espera tu OK, Bloqueado o Conservado, y cuatro contadores suman el total y filtran la lista. Se agrupan por lo que decides (por ejemplo «carpetas que Git ignora y no se pueden regenerar»: una decisión para todos, con `certs/` o `.claude/` por su nombre), las columnas dicen qué se guarda solo y qué se borra para siempre, «Ver archivos» abre la fila y cada fila bloqueada dice cómo desbloquearla. La confirmación lista lo que se quita, lo que se guarda antes, lo que se borra para siempre y lo que se conserva; el resultado cuenta qué pasó con cada worktree, con «Reintentar» y un enlace para retomarlo. Los fusionados con archivos sin confirmar también se pueden quitar (antes se guardan en un commit local). `POST /projects/{p}/clean` acepta `paths` para cerrar solo algunos, y `POST /projects/{p}/park-inactive` acepta un worktree fusionado nombrado en `paths`. Quitar la carpeta pasa siempre por aparcar (la rama se queda y se puede retomar); la opción de borrar imágenes de la página web queda solo en `theo worktree clean --images`.
 
 ### Changed
 - **La interfaz web se compila con preact 11 y TypeScript 7** (dependencias de desarrollo de `web/`; la interfaz se ve y funciona igual). El campo de contraseña del formulario de variables son ahora dos `input` literales, que es lo que exigen los tipos de preact 11.

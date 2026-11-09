@@ -99,6 +99,8 @@ Más en el [quickstart](docs/cli/quickstart.md) (en inglés). Para probarlo todo
 
 ### v0.7: Claude Code, Copilot y avisos
 
+**v0.7.1** rediseña Problemas > Limpieza en cuatro pasos (Revisar, Confirmar, Quitando, Resultado): cada worktree está Listo, Espera tu OK, Bloqueado o Conservado, y cada bloqueado dice cómo desbloquearlo. Mira el [registro de cambios](CHANGELOG.es.md).
+
 ```sh
 theo agent install              # registra los agentes que ya tienes (Claude Code, GitHub Copilot)
 theo agent install copilot      # hooks de Copilot: .github/hooks/theo.json, o --scope user

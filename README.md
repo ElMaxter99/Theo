@@ -97,6 +97,8 @@ More in the [quickstart](docs/cli/quickstart.md). To try everything on a small a
 
 ### v0.7: Claude Code, Copilot and notices
 
+**v0.7.1** redesigns Problems > Cleanup as four steps (Review, Confirm, Removing, Result): each worktree is Ready, Waiting for your OK, Blocked or Kept, and every blocked one says how to unblock it. See the [changelog](CHANGELOG.md).
+
 ```sh
 theo agent install              # registers the agents you already have (Claude Code, GitHub Copilot)
 theo agent install copilot      # Copilot hooks: .github/hooks/theo.json, or --scope user
