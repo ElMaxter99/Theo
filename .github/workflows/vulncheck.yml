@@ -1,0 +1,43 @@
+name: Vulnerabilities
+
+# govulncheck reports known vulnerabilities that the code really reaches, in
+# Theo's dependencies and in the Go standard library it is built with.
+# It runs when the dependencies change, on main, and weekly, because a new
+# advisory can appear with no change on our side.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths: [go.mod, go.sum, .github/workflows/vulncheck.yml]
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  govulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install the WebKitGTK headers (the desktop app is part of the module)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-3-dev libwebkit2gtk-4.1-dev
+          echo "PKG_CONFIG_PATH=$(scripts/webkit40-shim.sh):${PKG_CONFIG_PATH:-}" >> "$GITHUB_ENV"
+      - name: govulncheck (CLI and server)
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+      - name: govulncheck (desktop app)
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 -tags desktop ./cmd/theo-desktop ./internal/desktop
