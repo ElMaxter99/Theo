@@ -5,6 +5,7 @@ Notable changes per release. Each release on GitHub also lists every merged pull
 ## Unreleased
 
 ### Changed
+- **The web interface is built with preact 11 and TypeScript 7** (development dependencies of `web/`; the interface looks and behaves the same). The password field of the variable form is now two literal inputs, which preact 11's types require.
 - **Theo is built with Go 1.26** (it needs Go 1.26 or later to build from source). Go 1.24 no longer gets security fixes, and `govulncheck` found 25 vulnerabilities in the standard library it was built with; release binaries from this version on carry the fixes.
 
 ## v0.6.0
