@@ -94,6 +94,28 @@ session, so run `eval "$(theo env)"` yourself if a command needs them. The
 format was written from GitHub's hooks documentation and tested on sample
 payloads only; it has not been run against Copilot yet.
 
+## Desktop notification when an agent waits: `notify.agent`
+
+```sh
+theo config set notify.agent waiting   # when an agent waits for you
+theo config set notify.agent all       # also when it finishes
+theo config set notify.agent off       # the default
+```
+
+Only the desktop app (`theo-desktop`) shows notifications, with the system's own
+tool: `notify-send` on Linux (install libnotify), `osascript` on macOS and
+PowerShell on Windows. Rules, from design V-15:
+
+- One notification per change of state of a worktree; it does not repeat while the agent keeps waiting.
+- Three or more changes in one look (every 3 seconds) become one notification.
+- Only agents with hooks notify; the `estimated` state from processes never does.
+- Whatever was already waiting when the app opened is not announced.
+- The text has the project, the worktree and the agent; never the agent's message, your prompt or full paths.
+- It has no buttons: find the worktree in Theo's window (the badge and the *Waiting for you* card).
+
+Not done yet: the setting in the interface (Settings > AI agents) and
+"do not notify while Theo's window is in front". Use `theo config` for now.
+
 ## `theo env`
 
 ```sh

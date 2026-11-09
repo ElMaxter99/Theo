@@ -127,6 +127,22 @@ func (s Store) Get(worktree string) (State, bool) {
 	return st, true
 }
 
+// All returns the states from hooks that are still believed, by cleaned
+// worktree path.
+func (s Store) All() map[string]State {
+	out := map[string]State{}
+	f, err := s.read()
+	if err != nil {
+		return out
+	}
+	for path, st := range f.Worktrees {
+		if time.Since(st.Since) <= StaleAfter {
+			out[path] = st
+		}
+	}
+	return out
+}
+
 // Counts totals agents by state.
 func Counts(states []State) map[string]int {
 	out := map[string]int{}
