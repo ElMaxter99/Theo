@@ -2,7 +2,9 @@
 
 Cambios destacados de cada versión, en español. Las notas de cada release en GitHub llevan esta sección después de la inglesa, con el título *Español*. Es la misma lista que [CHANGELOG.md](CHANGELOG.md), que es la de referencia: cada `## vX.Y.Z` de allí tiene aquí su sección. Las versiones anteriores a la primera de este archivo solo tienen notas en inglés.
 
-## Unreleased
+## v0.7.0
+
+Claude Code y GitHub Copilot en el flujo de los agentes, y un aviso de escritorio cuando un agente te necesita.
 
 ### New
 - **Notificación de escritorio cuando un agente te espera o termina** (`theo config set notify.agent waiting|all`, apagada por defecto). Solo la muestra `theo-desktop`, con `notify-send`, `osascript` o PowerShell, para agentes con hooks; agrupa tres o más a la vez y nunca incluye tu prompt ni rutas. También se ajusta en Ajustes › Agentes de IA; «no avisar con la ventana en primer plano» aún no está. Probada en Linux con un sustituto; no se ha ejecutado en macOS ni Windows. Ver [agents](docs/cli/agents.md) (en inglés).

@@ -2,7 +2,9 @@
 
 Notable changes per release. Each release on GitHub also lists every merged pull request.
 
-## Unreleased
+## v0.7.0
+
+Claude Code and GitHub Copilot in the agent workflow, and a desktop notice when an agent needs you.
 
 ### New
 - **Desktop notification when an agent waits for you or finishes** (`theo config set notify.agent waiting|all`, off by default). Only `theo-desktop` shows it, with `notify-send`, `osascript` or PowerShell, for agents with hooks; it groups three or more at once and never includes your prompt or paths. You can also set it in Settings > AI agents; "not while the window is in front" is not done yet. Tested on Linux with a stub; not run on macOS or Windows. See [agents](docs/cli/agents.md).

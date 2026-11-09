@@ -95,22 +95,25 @@ More in the [quickstart](docs/cli/quickstart.md). To try everything on a small a
 
 ## What's new
 
-### v0.6: reliability
+### v0.7: Claude Code, Copilot and notices
 
-- `theo doctor` notes what limits free ports per branch (`COMPOSE_FILE`, fixed `container_name`, `${VAR}` in `ports:`), see [ports](docs/cli/ports.md#limits).
-- Agent state by process also on macOS and Windows (an estimate; hooks stay the exact source), see [agents](docs/cli/agents.md).
-- Branch worktrees use free host ports by default, and Cleanup lets you pick inactive worktrees and remove them.
+```sh
+theo agent install              # registers the agents you already have (Claude Code, GitHub Copilot)
+theo agent install copilot      # Copilot hooks: .github/hooks/theo.json, or --scope user
+theo config set notify.agent waiting   # desktop notice when an agent needs you (off by default)
+```
+
+Theo works with Claude Code and GitHub Copilot, and only if you already have them: it never installs them and tells you where to get a missing one. Their hooks tell Theo whether each agent works, waits or is done. In `theo-desktop`, a notice names the project, the branch and the agent when one waits for you (`all` adds when it finishes); it never includes your prompt or paths. You can also set it in Settings > AI agents. Copilot's hooks and the notices on Windows and macOS were tested on samples only. See [agents](docs/cli/agents.md).
 
 ### v0.5: Theo in the agents' workflow
 
 ```sh
 theo mcp install --hooks        # Claude Code creates and removes worktrees through Theo
-theo agent install copilot      # GitHub Copilot: agent state and session context
 eval "$(theo env)"              # THEO_PORT_WEB, THEO_URL... of this worktree
 theo worktree setup my-api feature/x   # run the after_create commands of .theo.json
 ```
 
-A committed [`.theo.json`](docs/cli/agents.md) says which files a new worktree copies (it reads Claude Code's `.worktreeinclude` too) and which commands to run in it, after you approve them once. Hooks tell Theo whether each agent is working, waiting for you or done. More commands accept `--json`, and `theo doctor` checks more. The "Open in..." menu and the agent badge in the interface are still being designed. See [agents](docs/cli/agents.md).
+A committed [`.theo.json`](docs/cli/agents.md) says which files a new worktree copies (it reads Claude Code's `.worktreeinclude` too) and which commands to run in it, after you approve them once. Hooks tell Theo whether each agent is working, waiting for you or done. More commands accept `--json`, and `theo doctor` checks more. See [agents](docs/cli/agents.md).
 
 ### v0.4: forgotten work
 
@@ -129,6 +132,7 @@ Merged is detected even after a squash or rebase on GitHub. Remote branches and 
 
 ### Earlier releases
 
+- **v0.6:** `theo doctor` notes what limits free ports per branch, agent state by process on macOS and Windows, branch worktrees use free host ports by default, and Cleanup picks inactive worktrees.
 - **v0.3:** local HTTPS for the local domains (`theo proxy --https`, `theo proxy trust`), MCP progress notifications and `wait_for`, and a warning when an app keeps its old address in its data (WordPress, Ghost, Nextcloud...).
 - **v0.2:** the redesigned interface with a command palette, the MCP server, the local proxy, container engine detection (Docker Desktop, Colima, OrbStack, Podman...), the Spanish interface, `theo open`, and `theo stop --all`.
 
