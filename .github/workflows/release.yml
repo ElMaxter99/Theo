@@ -268,7 +268,7 @@ jobs:
         run: |
           set -euo pipefail
           cd assets
-          sha256sum *.tar.gz *.zip > checksums.txt
+          sha256sum -- *.tar.gz *.zip > checksums.txt
           cat checksums.txt
           # 6 CLI archives and 4 desktop archives.
           test "$(wc -l < checksums.txt)" -eq 10
@@ -306,7 +306,7 @@ jobs:
         run: |
           set -euo pipefail
           cd assets
-          sha256sum *.tar.gz *.zip > checksums.txt
+          sha256sum -- *.tar.gz *.zip > checksums.txt
           cat checksums.txt
           files=(*.tar.gz *.zip checksums.txt)
           if [ "$PRERELEASE" = false ]; then

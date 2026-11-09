@@ -1,0 +1,32 @@
+name: Workflows
+
+# actionlint checks the workflow files themselves (expressions, job wiring,
+# and the shell scripts in `run:` through shellcheck) before they run.
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/**"]
+  pull_request:
+    paths: [".github/workflows/**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # shellcheck is preinstalled on the runner image.
+      - run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
