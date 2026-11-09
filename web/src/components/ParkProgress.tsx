@@ -5,7 +5,8 @@ import { api, projectPath } from "../api/client.ts";
 import type { ApiError } from "../api/client.ts";
 import type { ParkInactiveEntry, ParkInactiveRun } from "../api/types.ts";
 import { announce } from "../lib/live.ts";
-import { showParkRun, useParkRun } from "../lib/parkRun.ts";
+import { setParkResult, showParkRun, useParkRun } from "../lib/parkRun.ts";
+import type { ParkRunRef } from "../lib/parkRun.ts";
 import { t } from "../strings.ts";
 import { Modal } from "./Dialog.tsx";
 import { Icon } from "./Icon.tsx";
@@ -31,7 +32,7 @@ export function parkReason(e: ParkInactiveEntry): string {
 const POLL_MS = 700;
 const active = (s?: string) => s === "queued" || s === "running" || s === "cancelling";
 
-export function ParkProgress({ project, opId, onClose }: { project: string; opId: string; onClose: () => void }) {
+export function ParkProgress({ project, opId, saves, options, onClose }: ParkRunRef & { onClose: () => void }) {
   const c = t.cleanup;
   const [run, setRun] = useState<ParkInactiveRun | undefined>();
   const [error, setError] = useState<ApiError | undefined>();
@@ -63,6 +64,7 @@ export function ParkProgress({ project, opId, onClose }: { project: string; opId
     if (finished && !announced.current) {
       announced.current = true;
       announce(c.progResult(parked, run?.total ?? 0));
+      if (run) setParkResult({ project, run, options: options ?? { include_ignored: false, delete_branches: false } });
     }
   }, [finished]);
 
@@ -97,7 +99,7 @@ export function ParkProgress({ project, opId, onClose }: { project: string; opId
             {!finished && run.current ? (
               <li key="current" class="step step-now" aria-current="step">
                 <span class="step-icon"><Mark size={14} /></span> <strong class="mono">{run.branch || run.current}</strong>{" "}
-                <span class="muted">— {c.progNow}</span>
+                <span class="muted">— {(saves?.[run.current] ?? 0) > 0 ? t.cleanFlow.saves(saves![run.current]!) + "…" : c.progNow}</span>
               </li>
             ) : null}
           </ul>
@@ -107,7 +109,7 @@ export function ParkProgress({ project, opId, onClose }: { project: string; opId
         <ErrorBanner error={error} />
       </div>
       <div class="dialog-actions">
-        <button type="button" class="btn" autoFocus onClick={onClose}>{finished ? c.progClose : c.progHide}</button>
+        <button type="button" class="btn" autoFocus onClick={onClose}>{finished ? t.cleanFlow.resultTitle : c.progHide}</button>
       </div>
     </Modal>
   );
@@ -117,5 +119,5 @@ export function ParkProgress({ project, opId, onClose }: { project: string; opId
 export function ParkRunWindow({ onClosed }: { onClosed: () => void }) {
   const run = useParkRun();
   if (!run) return null;
-  return <ParkProgress project={run.project} opId={run.opId} onClose={() => { showParkRun(null); onClosed(); }} />;
+  return <ParkProgress {...run} onClose={() => { showParkRun(null); onClosed(); }} />;
 }

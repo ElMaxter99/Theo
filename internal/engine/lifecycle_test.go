@@ -573,8 +573,9 @@ func TestParkInactiveSelectionSummaryAndBranchDeletion(t *testing.T) {
 	if d := got["dirty"]; !d.Parked || d.BranchDeleted || !d.Saved {
 		t.Errorf("dirty = %+v", d)
 	}
-	if m := got["merged"]; m.Parked || m.Reason == "" || !m.Blocked {
-		t.Errorf("merged (not inactive) = %+v", m)
+	// A merged worktree that is named is parked too (the redesigned cleanup lists them with the others).
+	if m := got["merged"]; !m.Parked || m.BranchDeleted {
+		t.Errorf("merged (named) = %+v", m)
 	}
 	if (git.Git{}).IsLocalBranch(ctx, main, "work") {
 		t.Error("the pushed branch was not deleted")
@@ -662,5 +663,54 @@ func TestParkInactiveIgnoredFoldersAndDetachedHead(t *testing.T) {
 	}
 	if _, err := os.Stat(paths["fresh"]); err != nil {
 		t.Errorf("fresh (certs/) was removed: %v", err)
+	}
+}
+
+// A merged worktree with an uncommitted file is parked, saving the file, when it is named; and Clean only closes
+// the ones named in Only.
+func TestParkInactiveTakesNamedMergedWorktreeWithChanges(t *testing.T) {
+	for _, kv := range [][2]string{{"GIT_AUTHOR_NAME", "Theo Test"}, {"GIT_AUTHOR_EMAIL", "t@example.invalid"}, {"GIT_COMMITTER_NAME", "Theo Test"}, {"GIT_COMMITTER_EMAIL", "t@example.invalid"}} {
+		t.Setenv(kv[0], kv[1])
+	}
+	e, _, _, paths := lifecycleFixture(t)
+	ctx := context.Background()
+	testutil.WriteFile(t, paths["merged"], "notes.txt", "stray\n")
+
+	// Not named: it is not part of the inactive ones.
+	r, err := e.ParkInactive(ctx, "app", ParkInactiveOptions{SaveChanges: true, Apply: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, en := range r.Entries {
+		if en.Branch == "merged" {
+			t.Fatalf("merged worktree handled without being named: %+v", en)
+		}
+	}
+	// Named: it is saved in a commit and parked.
+	r, err = e.ParkInactive(ctx, "app", ParkInactiveOptions{SaveChanges: true, Only: []string{"merged"}, Apply: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Entries) != 1 || !r.Entries[0].Parked || !r.Entries[0].Saved {
+		t.Fatalf("named merged worktree = %+v", r.Entries)
+	}
+	if _, err := os.Stat(paths["merged"]); !os.IsNotExist(err) {
+		t.Errorf("its folder is still there: %v", err)
+	}
+}
+
+func TestCleanOnlyClosesTheNamedOnes(t *testing.T) {
+	e, _, _, paths := lifecycleFixture(t)
+	r, err := e.Clean(context.Background(), "app", CleanOptions{Apply: true, Only: []string{"no-such-branch"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range r.Close {
+		if c.Closed {
+			t.Errorf("%s was closed although it was not named", c.Branch)
+		}
+	}
+	if _, err := os.Stat(paths["merged"]); err != nil {
+		t.Errorf("merged worktree removed: %v", err)
 	}
 }
