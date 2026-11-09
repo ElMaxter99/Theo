@@ -120,6 +120,11 @@ function VarForm({ base, existing, onClose, onSaved }: { base: string; existing:
     setNameErr("");
     void save.run();
   };
+  const valueProps = {
+    id: "var-value", class: "input mono", value, autocomplete: "off", spellcheck: false,
+    onInput: (e: Event) => setValue((e.currentTarget as HTMLInputElement).value),
+    ...describedBy("var-value", existing?.secret ? t.vars.valueEditSecretHint : undefined),
+  };
   return (
     <Modal title={existing ? t.vars.formEdit(existing.name) : t.vars.formAdd} onClose={onClose}>
       <form onSubmit={submit} noValidate>
@@ -128,8 +133,8 @@ function VarForm({ base, existing, onClose, onSaved }: { base: string; existing:
             onInput={(e) => setName((e.currentTarget as HTMLInputElement).value)} {...describedBy("var-name", t.vars.nameHint, nameErr)} />
         </Field>
         <Field id="var-value" label={t.vars.value} hint={existing?.secret ? t.vars.valueEditSecretHint : undefined}>
-          <input id="var-value" class="input mono" type={secret ? "password" : "text"} value={value} autocomplete="off" spellcheck={false}
-            onInput={(e) => setValue((e.currentTarget as HTMLInputElement).value)} {...describedBy("var-value", existing?.secret ? t.vars.valueEditSecretHint : undefined)} />
+          {/* Two literal types: preact 11 types a "password" input apart from a "text" one, so one dynamic type does not compile. */}
+          {secret ? <input {...valueProps} type="password" /> : <input {...valueProps} type="text" />}
         </Field>
         <div class="check field">
           <input id="var-secret" type="checkbox" checked={secret} onChange={(e) => setSecret((e.currentTarget as HTMLInputElement).checked)} />
