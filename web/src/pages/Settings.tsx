@@ -47,7 +47,7 @@ export function Settings({ meta, section }: { meta: Meta | undefined; section: S
         <div class="stack grow">
           {section === "preferences" ? <Preferences /> : null}
           {section === "domains" ? <ProxyCard /> : null}
-          {section === "agents" ? <Agents /> : null}
+          {section === "agents" ? <><Agents /><NotifyCard /></> : null}
           {section === "diagnostics" ? <DiagnosticsSection meta={meta} /> : null}
           {section === "about" ? <About meta={meta} /> : null}
         </div>
@@ -238,6 +238,45 @@ function Agents() {
           <div><button type="button" class="btn" onClick={() => copy(doc.snippet)}>{a.copySnippet}</button></div>
         </>
       ) : null}
+    </section>
+  );
+}
+
+/** The switch of desktop notices for agents (board V-15): the `notify.agent` preference. */
+function NotifyCard() {
+  const a = t.agents;
+  const res = useResource<{ mode: string }>(() => api.get<{ mode: string }>("/notify"), []);
+  const save = useAction(async (mode: string) => {
+    await api.post<{ mode: string }>("/notify", { mode });
+    announce(a.notifySaved);
+    res.reload();
+  });
+  const mode = res.data?.mode ?? "off";
+  const options: Array<[string, string]> = [["off", a.notifyOff], ["waiting", a.notifyWaiting], ["all", a.notifyAll]];
+  return (
+    <section class="card stack" aria-labelledby="st-notify">
+      <h2 id="st-notify">{a.notifyTitle}</h2>
+      <p>{a.notifyLead}</p>
+      {res.loading && !res.data ? <Loading /> : null}
+      <ErrorBanner error={res.error} />
+      {res.data ? (
+        <fieldset class="stack" aria-describedby="notify-hint">
+          <legend class="sr-only">{a.notifyTitle}</legend>
+          {options.map(([value, label]) => (
+            <div class="check" key={value}>
+              <input id={`notify-${value}`} type="radio" name="notify-mode" value={value} checked={mode === value} disabled={save.busy}
+                onChange={() => { void save.run(value); }} />
+              <label for={`notify-${value}`}>{label}</label>
+            </div>
+          ))}
+          <div class="check">
+            <input id="notify-fg" type="checkbox" disabled />
+            <label for="notify-fg">{a.notifyForeground}</label>
+          </div>
+        </fieldset>
+      ) : null}
+      <p class="hint" id="notify-hint">{a.notifyHint}</p>
+      <ErrorBanner error={save.error} />
     </section>
   );
 }

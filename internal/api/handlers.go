@@ -33,6 +33,8 @@ func (s *Server) routesTable() {
 	s.stream("GET", "/events", s.handleEvents)
 	s.handle("POST", "/events/focus", authSession, s.handleFocus)
 	s.handle("GET", "/fs/browse", authSession, s.handleBrowse)
+	s.handle("GET", "/notify", authSession, s.handleNotifyGet)
+	s.handle("POST", "/notify", authSession, s.handleNotifySet)
 	s.handle("GET", "/proxy", authSession, s.handleProxyStatus)
 	s.handle("POST", "/proxy/start", authSession, s.handleProxyStart)
 	s.handle("POST", "/proxy/stop", authSession, s.handleProxyStop)

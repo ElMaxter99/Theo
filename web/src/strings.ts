@@ -1113,6 +1113,14 @@ const en = {
     snippet: "For the repository's AGENTS.md or CLAUDE.md",
     snippetHint: "So agents know when to use Theo.",
     copySnippet: "Copy the paragraph",
+    notifyTitle: "Notifications",
+    notifyLead: "Theo can tell you when an agent needs you, even if the window is in the background. The notice only names the project, the branch and the agent.",
+    notifyOff: "Don't notify",
+    notifyWaiting: "When an agent needs me (recommended)",
+    notifyAll: "Also when it finishes",
+    notifyHint: "Only agents that report through hooks notify; estimated states never do. It works while Theo's window or `theo ui` is open.",
+    notifySaved: "Notification setting saved.",
+    notifyForeground: "Don't notify while the window is in front (pending)",
   },
 };
 
