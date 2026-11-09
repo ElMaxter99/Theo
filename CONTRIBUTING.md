@@ -74,6 +74,8 @@ Versions are `vX.Y.Z` (digits only); release candidates are `vX.Y.Z-rc.N`. Nobod
 2. **Every push to `release/X.Y.Z` is a release candidate.** It tests Theo, builds every system and publishes the pre-release `vX.Y.Z-rc.1`, then `-rc.2` for the next push. A pre-release has every archive and `checksums.txt`, no Scoop or Homebrew files, and is never "latest". Try its binaries.
 3. **Merge the pull request.** The merge commit is tagged `vX.Y.Z` and the same workflow publishes the release: the archives plus the Scoop and Homebrew files, as a draft that is published once every file is attached. `CHANGELOG.md` must have a `## vX.Y.Z` section (the run fails otherwise); it is the release's notes.
 
+Before anything is published, the Release workflow unpacks the CLI archive on Linux, macOS and Windows and checks that `theo --version` prints the tag, and it signs a build provenance attestation for every archive (`gh attestation verify <archive> --repo ElMaxter99/Theo` checks one).
+
 A branch `release/` with anything but `X.Y.Z`, or a version that already has a tag, fails before building. Pushing a `vX.Y.Z` or `vX.Y.Z-rc.N` tag by hand, or running the workflow by hand with a tag, still works (to redo a release whose files are missing). A pull request that touches the workflow or the packaging scripts, or a manual run with no tag, is a dry run that builds as `v0.0.0-dryrun` and publishes nothing.
 
 Before merging, on the release pull request:
