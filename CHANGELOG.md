@@ -4,6 +4,9 @@ Notable changes per release. Each release on GitHub also lists every merged pull
 
 ## Unreleased
 
+### New
+- **GitHub Copilot:** `theo agent install copilot` writes Theo's hooks to `.github/hooks/theo.json` (or `~/.copilot/hooks` with `--scope user`), so `theo worktrees` shows whether Copilot works, waits or is done, and the session learns where it runs. `theo agent install claude` is the same as `theo mcp install --hooks`. Written from GitHub's documentation and tested on sample payloads only; not run against Copilot yet. See [agents](docs/cli/agents.md).
+
 ### Changed
 - **The web interface is built with preact 11 and TypeScript 7** (development dependencies of `web/`; the interface looks and behaves the same). The password field of the variable form is now two literal inputs, which preact 11's types require.
 - **Theo is built with Go 1.26** (it needs Go 1.26 or later to build from source). Go 1.24 no longer gets security fixes, and `govulncheck` found 25 vulnerabilities in the standard library it was built with; release binaries from this version on carry the fixes.

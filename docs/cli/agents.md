@@ -58,6 +58,33 @@ not added twice. The hooks call:
 A hook never gets in the agent's way: apart from `worktree-create`, which must
 return a path or say why not, failures are written to `theo log`.
 
+## GitHub Copilot hooks: `theo agent install copilot`
+
+```sh
+theo agent install copilot                  # .github/hooks/theo.json (the team's)
+theo agent install copilot --scope user     # ~/.copilot/hooks/theo.json ($COPILOT_HOME/hooks if set)
+theo agent install copilot --print          # only show the file
+theo agent install claude                   # the same as theo mcp install --hooks
+```
+
+Theo writes its own file, `theo.json`, in Copilot's hooks folder, and never
+touches your other hook files; it replaces `theo.json` only if it is Theo's.
+Each hook has a `bash` and a `powershell` command, as Copilot's format asks.
+
+| Copilot event | Command | What it does |
+|---|---|---|
+| `sessionStart` | `theo hook session-start --agent copilot` | tells the session where it runs (ports and URLs) as `additionalContext` |
+| `userPromptSubmitted`, `postToolUse` | `theo hook agent-state --state working` | the agent works |
+| `notification` | `theo hook agent-state --state waiting` | the agent needs you (Copilot CLI only) |
+| `agentStop` | `theo hook agent-state --state done` | the agent is done |
+| `sessionEnd` | `theo hook agent-state --state clear` | the session is over |
+
+Differences from Claude Code: Copilot has no worktree events, so create
+worktrees with `theo worktree add`; and it cannot export variables to the
+session, so run `eval "$(theo env)"` yourself if a command needs them. The
+format was written from GitHub's hooks documentation and tested on sample
+payloads only; it has not been run against Copilot yet.
+
 ## `theo env`
 
 ```sh
