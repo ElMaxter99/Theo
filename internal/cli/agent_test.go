@@ -11,6 +11,7 @@ import (
 )
 
 func TestAgentInstallCopilotPrintAndWrite(t *testing.T) {
+	withInstalled(t, "copilot", "claude")
 	stdout, stderr, code := run("agent", "install", "copilot", "--print")
 	if code != ExitOK {
 		t.Fatalf("print: %d %s", code, stderr)
@@ -92,5 +93,49 @@ func TestHookCopilotAgentStateAndSessionStart(t *testing.T) {
 	}
 	if _, stderr, code := run("hook", "agent-state", "--agent", "cursor"); code == ExitOK || !strings.Contains(stderr, "--agent") {
 		t.Errorf("unknown agent: %d %s", code, stderr)
+	}
+}
+
+// withInstalled makes only these agents look installed.
+func withInstalled(t *testing.T, names ...string) {
+	t.Helper()
+	orig := agentInstalled
+	t.Cleanup(func() { agentInstalled = orig })
+	agentInstalled = func(a string) bool {
+		for _, n := range names {
+			if n == a {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+func TestAgentInstallNeedsTheAgentOnThisMachine(t *testing.T) {
+	main, _ := testutil.NewRepo(t, nil)
+	t.Chdir(main)
+	withInstalled(t) // nothing installed
+	_, stderr, code := run("agent", "install", "copilot")
+	if code == ExitOK || !strings.Contains(stderr, "does not install it") || !strings.Contains(stderr, "--force") {
+		t.Errorf("a missing agent should be refused with a hint: %d %s", code, stderr)
+	}
+	if _, err := os.Stat(filepath.Join(main, ".github", "hooks", "theo.json")); err == nil {
+		t.Errorf("nothing should be written for a missing agent")
+	}
+	if out, _, code := run("agent", "install"); code != ExitOK || !strings.Contains(out, "No supported coding agent found") {
+		t.Errorf("none installed: %d %q", code, out)
+	}
+	if _, _, code := run("agent", "install", "copilot", "--print"); code != ExitOK {
+		t.Errorf("--print does not need the agent")
+	}
+	if _, stderr, code := run("agent", "install", "copilot", "--force"); code != ExitOK {
+		t.Errorf("--force: %d %s", code, stderr)
+	}
+	os.Remove(filepath.Join(main, ".github", "hooks", "theo.json"))
+
+	withInstalled(t, "copilot") // only Copilot
+	out, _, code := run("agent", "install")
+	if code != ExitOK || !strings.Contains(out, "Claude Code: not found") || !strings.Contains(out, "Wrote Theo's Copilot hooks") {
+		t.Errorf("only the installed agent gets hooks: %d %q", code, out)
 	}
 }

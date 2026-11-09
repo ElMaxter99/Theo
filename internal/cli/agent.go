@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -18,14 +19,16 @@ import (
 func init() {
 	registerCommand("agent", runAgent)
 	registerHelp(52, `
-  agent install claude|copilot [--scope S] [--print]
-                                               Register Theo's hooks with a coding agent. claude is
-                                               the same as mcp install --hooks. copilot writes
-                                               .github/hooks/theo.json (--scope project, the default)
-                                               or ~/.copilot/hooks/theo.json (--scope user), so
-                                               Theo shows whether Copilot works, waits or is done
+  agent install [claude|copilot] [--scope S] [--print] [--force]
+                                               Register Theo's hooks with the coding agents installed
+                                               on this machine (Theo never installs them: if one is
+                                               missing it says where to get it; --force writes the
+                                               hooks anyway). claude is the same as mcp install
+                                               --hooks. copilot writes .github/hooks/theo.json
+                                               (--scope project, the default) or
+                                               ~/.copilot/hooks/theo.json (--scope user)
 `)
-	registerCompletion(cmdSpec{name: "agent", subs: []cmdSpec{{name: "install", subs: []cmdSpec{{name: "claude"}, {name: "copilot"}}, flags: []flagSpec{{names: []string{"--scope"}}, {names: []string{"--print"}}}}}})
+	registerCompletion(cmdSpec{name: "agent", subs: []cmdSpec{{name: "install", subs: []cmdSpec{{name: "claude"}, {name: "copilot"}}, flags: []flagSpec{{names: []string{"--scope"}}, {names: []string{"--print"}}, {names: []string{"--force"}}}}}})
 }
 
 func runAgent(_ *engine.Engine, args []string, stdout, stderr io.Writer) error {
@@ -35,20 +38,84 @@ func runAgent(_ *engine.Engine, args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("agent install", flag.ContinueOnError)
 	scope := fs.String("scope", "", "claude: local (default), user or project; copilot: project (default) or user")
 	printOnly := fs.Bool("print", false, "print the settings instead of writing them")
+	force := fs.Bool("force", false, "write the hooks even if the agent is not installed on this machine")
 	pos, err := parse(fs, args[1:])
 	if err != nil {
 		return err
 	}
-	if len(pos) != 1 {
+	if len(pos) > 1 {
 		return usageErrorf("agent install takes one agent: claude or copilot")
 	}
-	switch pos[0] {
-	case "claude":
-		return installHooks(*scope, *printOnly, stdout)
-	case "copilot":
-		return installCopilotHooks(*scope, *printOnly, stdout)
+	if len(pos) == 0 {
+		if *printOnly || *scope != "" {
+			return usageErrorf("--print and --scope need an agent: claude or copilot")
+		}
+		// Every agent that is on this machine; the others get a hint.
+		found := false
+		for _, a := range agentNames {
+			if !agentInstalled(a) {
+				fmt.Fprintf(stdout, "%s: not found on this machine, skipped. %s\n", agentLabel[a], agentHint[a])
+				continue
+			}
+			found = true
+			if err := installAgent(a, "", false, stdout); err != nil {
+				return err
+			}
+		}
+		if !found {
+			fmt.Fprintln(stdout, "No supported coding agent found. Theo does not install them; install one and run this again.")
+		}
+		return nil
 	}
-	return usageErrorf("unknown agent %q (claude or copilot)", pos[0])
+	a := pos[0]
+	if _, ok := agentLabel[a]; !ok {
+		return usageErrorf("unknown agent %q (claude or copilot)", a)
+	}
+	if !*printOnly && !*force && !agentInstalled(a) {
+		return fmt.Errorf("%s was not found on this machine, and Theo does not install it. %s\nTo write the hooks anyway (for a teammate or the cloud agent): theo agent install %s --force", agentLabel[a], agentHint[a], a)
+	}
+	return installAgent(a, *scope, *printOnly, stdout)
+}
+
+var agentNames = []string{"claude", "copilot"}
+
+var agentLabel = map[string]string{"claude": "Claude Code", "copilot": "GitHub Copilot"}
+
+var agentHint = map[string]string{
+	"claude":  "Install Claude Code: https://code.claude.com/docs",
+	"copilot": "Install Copilot (CLI or the VS Code extension): https://docs.github.com/en/copilot",
+}
+
+func installAgent(a, scope string, printOnly bool, stdout io.Writer) error {
+	if a == "claude" {
+		return installHooks(scope, printOnly, stdout)
+	}
+	return installCopilotHooks(scope, printOnly, stdout)
+}
+
+// agentInstalled says whether the agent is on this machine: its command on
+// PATH or its folder in the home folder. Tests replace it.
+var agentInstalled = func(a string) bool {
+	command, dir := "claude", ".claude"
+	if a == "copilot" {
+		command, dir = "copilot", ".copilot"
+	}
+	if _, err := exec.LookPath(command); err == nil {
+		return true
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(home, dir)); err == nil {
+		return true
+	}
+	if a == "copilot" { // the VS Code extension
+		if m, _ := filepath.Glob(filepath.Join(home, ".vscode", "extensions", "github.copilot-*")); len(m) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // copilotHooks are the Copilot events Theo listens to and the theo hook each
