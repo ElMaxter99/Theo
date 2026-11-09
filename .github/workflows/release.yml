@@ -320,7 +320,6 @@ jobs:
     permissions:
       id-token: write
       attestations: write
-      artifact-metadata: write
     steps:
       - uses: actions/download-artifact@v4
         with:
