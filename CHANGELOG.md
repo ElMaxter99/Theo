@@ -2,10 +2,13 @@
 
 Notable changes per release. Each release on GitHub also lists every merged pull request.
 
-## Unreleased
+## v0.7.2
+
+Patch release: a light interface by default, and screenshots and READMEs that show it.
 
 ### Changed
 - **Light palette like the design canvases.** The interface now opens in the light theme by default, even if the system is dark (Settings > Theme still offers System and Dark, and remembers the choice). The page is cream everywhere with white cards, and the dark theme is warm charcoal instead of plum. All text pairs still meet WCAG AA.
+- **README screenshots and interface docs show the new palette.** The pictures in `README.md`, `README.es.md` and `web/e2e/screenshots` are regenerated, and `docs/cli/ui-web.md` describes the light default and the charcoal dark theme.
 
 ## v0.7.1
 

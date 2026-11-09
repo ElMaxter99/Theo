@@ -97,7 +97,7 @@ More in the [quickstart](docs/cli/quickstart.md). To try everything on a small a
 
 ### v0.7: Claude Code, Copilot and notices
 
-**v0.7.1** redesigns Problems > Cleanup as four steps (Review, Confirm, Removing, Result): each worktree is Ready, Waiting for your OK, Blocked or Kept, and every blocked one says how to unblock it. See the [changelog](CHANGELOG.md).
+**v0.7.2** opens the interface in a light cream theme by default (dark is warm charcoal, still one click away in Settings > Theme). **v0.7.1** redesigns Problems > Cleanup as four steps (Review, Confirm, Removing, Result): each worktree is Ready, Waiting for your OK, Blocked or Kept, and every blocked one says how to unblock it. See the [changelog](CHANGELOG.md).
 
 ```sh
 theo agent install              # registers the agents you already have (Claude Code, GitHub Copilot)
