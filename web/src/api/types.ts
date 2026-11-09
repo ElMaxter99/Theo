@@ -646,3 +646,14 @@ export interface ParkInactiveReport {
   summary: ParkInactiveSummary;
   notes?: string[];
 }
+
+/** GET /projects/{p}/park-inactive/{op}: how far a bulk park has got. */
+export interface ParkInactiveRun {
+  operation: Operation;
+  total: number;
+  done: number;
+  current?: string;
+  branch?: string;
+  entries: ParkInactiveEntry[];
+  report?: ParkInactiveReport;
+}

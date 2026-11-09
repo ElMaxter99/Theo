@@ -533,3 +533,27 @@ dialog.palette[open] { animation: pop-in var(--dur) var(--ease); }
 @media (prefers-reduced-motion: reduce) { .progress-bar::before, .progress-line::before { animation: none; width: 100%; opacity: 0.6; } }
 :root[data-motion="reduce"] .progress-bar::before, :root[data-motion="reduce"] .progress-line::before { animation: none; width: 100%; opacity: 0.6; }
 @media (forced-colors: active) { .mark-branch { stroke: CanvasText; } .mark-node { fill: Highlight; } .progress-bar::before, .progress-line::before { background: Highlight; } }
+
+/* ---------- Skeletons, animated count and step states (approved motion designs) ---------- */
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.skeleton-rows { display: grid; gap: var(--space-3); margin: var(--space-3) 0; }
+.sk { height: 2.5rem; border-radius: var(--radius); background: linear-gradient(90deg, var(--surface-2) 25%, var(--bg-subtle) 50%, var(--surface-2) 75%); background-size: 200% 100%; animation: shimmer 1.6s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
+:root[data-motion="reduce"] .sk { animation: none; }
+
+/* The counter rolls up each time the number changes. */
+@keyframes roll-in { from { opacity: 0; transform: translateY(0.6em); } }
+.count-roll { display: inline-block; animation: roll-in var(--dur-slow) var(--ease); font-variant-numeric: tabular-nums; }
+
+/* Parking progress: a branded bar that fills smoothly and one row per worktree with its state. */
+progress.progress { appearance: none; -webkit-appearance: none; width: 100%; height: 0.5rem; border: 0; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+progress.progress::-webkit-progress-bar { background: var(--surface-2); border-radius: 999px; }
+progress.progress::-webkit-progress-value { background: linear-gradient(90deg, var(--brand), var(--theo-coral-500)); border-radius: 999px; transition: width var(--dur-slow) var(--ease); }
+progress.progress::-moz-progress-bar { background: linear-gradient(90deg, var(--brand), var(--theo-coral-500)); border-radius: 999px; }
+.steps .step { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; animation: rise-in var(--dur-slow) var(--ease); }
+.steps .step-icon { display: inline-flex; flex: none; }
+.steps .step-ok .step-icon { color: var(--ok-fg); animation: check-pop var(--dur-slow) var(--ease); }
+.steps .step-stays .step-icon { color: var(--warn-fg); }
+.steps .step-now { background: var(--selected); border-radius: var(--radius-sm); padding-inline: var(--space-2); }
+@keyframes check-pop { 0% { transform: scale(0.4); opacity: 0; } 60% { transform: scale(1.25); } 100% { transform: scale(1); opacity: 1; } }
+@media (forced-colors: active) { progress.progress::-webkit-progress-value { background: Highlight; } progress.progress::-moz-progress-bar { background: Highlight; } }

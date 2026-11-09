@@ -45,6 +45,19 @@ type ParkInactiveOptions struct {
 	Size bool
 	// Apply parks. Without it nothing changes.
 	Apply bool
+	// Progress, when set, is called while applying: before each worktree is
+	// handled (Entry nil) and again when it is done (Entry set).
+	Progress func(ParkProgress)
+}
+
+// ParkProgress reports how far a bulk park has got.
+type ParkProgress struct {
+	Total   int    `json:"total"`   // worktrees it will go through
+	Done    int    `json:"done"`    // finished so far
+	Current string `json:"current"` // path of the one being handled, empty at the end
+	Branch  string `json:"branch,omitempty"`
+	// Entry is the outcome of the one that just finished.
+	Entry *ParkInactiveEntry `json:"entry,omitempty"`
 }
 
 // ParkInactiveEntry is one inactive workspace in a ParkInactiveReport.
@@ -189,16 +202,35 @@ func (e *Engine) ParkInactive(ctx context.Context, project string, opts ParkInac
 	}
 	report := &ParkInactiveReport{Project: p.Name, Applied: opts.Apply, Entries: []ParkInactiveEntry{}, Notes: states.Notes}
 	committer, canCommit := e.git.(allCommitter)
-	for i, ws := range states.Worktrees {
+	selected := func(i int, ws WorktreeState) bool {
 		if i == 0 || ws.Bare {
+			return false
+		}
+		if len(opts.Only) > 0 {
+			return containsPath(opts.Only, ws.Path) || containsBranch(opts.Only, ws.Branch)
+		}
+		return ws.State == LifeInactive
+	}
+	total, done := 0, 0
+	for i, ws := range states.Worktrees {
+		if selected(i, ws) {
+			total++
+		}
+	}
+	progress := func(pp ParkProgress) {
+		if opts.Apply && opts.Progress != nil {
+			pp.Total = total
+			opts.Progress(pp)
+		}
+	}
+	for i, ws := range states.Worktrees {
+		if !selected(i, ws) {
 			continue
 		}
-		if len(opts.Only) > 0 && !containsPath(opts.Only, ws.Path) && !containsBranch(opts.Only, ws.Branch) {
-			continue
+		if opts.Apply && ctx.Err() != nil {
+			break
 		}
-		if len(opts.Only) == 0 && ws.State != LifeInactive {
-			continue
-		}
+		progress(ParkProgress{Done: done, Current: ws.Path, Branch: ws.Branch})
 		pushedAll := ws.Changes == 0 && ws.Upstream != "" && !ws.UpstreamGone && ws.Unpushed == 0
 		ent := ParkInactiveEntry{Path: ws.Path, Branch: ws.Branch, IdleDays: ws.IdleDays, Changes: max(ws.Changes, 0), Unpushed: ws.Unpushed,
 			UpstreamGone: ws.UpstreamGone, Safe: pushedAll, BranchDeletable: pushedAll && ws.Branch != "", SizeBytes: ws.SizeBytes}
@@ -286,7 +318,11 @@ func (e *Engine) ParkInactive(ctx context.Context, project string, opts ParkInac
 			}
 		}
 		report.Entries = append(report.Entries, ent)
+		done++
+		finished := ent
+		progress(ParkProgress{Done: done, Current: ws.Path, Branch: ws.Branch, Entry: &finished})
 	}
+	progress(ParkProgress{Done: done})
 	report.Summary = summarizeParkInactive(report.Entries)
 	return report, nil
 }

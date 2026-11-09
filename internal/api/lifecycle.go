@@ -17,6 +17,7 @@ func (s *Server) lifecycleRoutes() {
 	s.handle("POST", "/projects/{p}/clean", authSession, s.handleClean)
 	s.handle("GET", "/projects/{p}/park-inactive", authSession, s.handleParkInactivePlan)
 	s.handle("POST", "/projects/{p}/park-inactive", authSession, s.handleParkInactive)
+	s.handle("GET", "/projects/{p}/park-inactive/{op}", authSession, s.handleParkInactiveRun)
 	s.handle("POST", "/projects/{p}/resume", authSession, s.handleResume)
 	s.handle("POST", "/projects/{p}/worktrees/{wt}/park", authSession, s.handlePark)
 	s.handle("POST", "/projects/{p}/worktrees/{wt}/keep", authSession, s.handleKeep)
@@ -207,8 +208,9 @@ func (s *Server) handleParkInactivePlan(w http.ResponseWriter, r *http.Request, 
 }
 
 // handleParkInactive parks every inactive worktree that can be parked. It
-// needs the project name as confirmation. Branches and volumes are kept.
-func (s *Server) handleParkInactive(w http.ResponseWriter, r *http.Request, _ *session) error {
+// needs the project name as confirmation. Branches and volumes are kept. It
+// runs as an operation (202); GET park-inactive/{op} tells how far it is.
+func (s *Server) handleParkInactive(w http.ResponseWriter, r *http.Request, sess *session) error {
 	project := r.PathValue("p")
 	var req struct {
 		SaveChanges    bool `json:"save_changes"`
@@ -232,16 +234,15 @@ func (s *Server) handleParkInactive(w http.ResponseWriter, r *http.Request, _ *s
 		e.Confirm = &Confirm{Expected: p.Name, Prompt: "Type the project name to park these worktrees"}
 		return e
 	}
-	report, err := s.eng.ParkInactive(r.Context(), p.Name, engine.ParkInactiveOptions{
+	op, err := s.startParkInactive(sess, r.Header.Get("Idempotency-Key"), p.Name, engine.ParkInactiveOptions{
 		SaveChanges: req.SaveChanges, IncludeIgnored: req.IncludeIgnored, MaxChanges: req.MaxChanges,
 		DeleteBranches: req.DeleteBranches, RescueDetached: req.RescueDetached, Only: req.Paths, Apply: true,
 	})
 	if err != nil {
-		return fromEngine(err, &ResourceRef{Kind: "project", Project: p.Name})
+		return err
 	}
-	s.cache.invalidate(p.Name)
-	s.hub.publish("state.changed", map[string]string{"project": p.Name})
-	return writeJSON(w, http.StatusOK, report)
+	w.Header().Set("Location", apiBase+"/projects/"+p.Name+"/park-inactive/"+op.ID)
+	return writeJSON(w, http.StatusAccepted, op.view())
 }
 
 // queryBool reads a flag of a query string the way the web client writes it

@@ -9,7 +9,7 @@ import type { LifeReport, LifeState, LifeWorktree, Overview, Worktree } from "..
 import { KeepDialog, ParkDialog, resumeParked, unkeep } from "../components/LifecycleDialogs.tsx";
 import { activityText, gitText, lifeChip, shortDate, STATE_ORDER } from "../lib/lifecycle.ts";
 import type { LifeChip } from "../lib/lifecycle.ts";
-import { Badge, Banner, ErrorBanner, ExternalLink, Loading } from "../components/ui.tsx";
+import { Badge, Banner, ErrorBanner, ExternalLink, Loading, SkeletonRows } from "../components/ui.tsx";
 import { Icon } from "../components/Icon.tsx";
 import { AgentBadge, agentAlive } from "../components/AgentBadge.tsx";
 import { OpenMenu } from "../components/OpenMenu.tsx";
@@ -160,7 +160,7 @@ export function ProjectPanel({ project, drawer, onRefreshMeta }: { project: stri
         <Banner tone="warn"><p class="row">{t.life.banner(merged, inactiveN, days)} <a class="btn sm" href={href.problems("cleanup", project)}>{t.life.reviewCleanup}</a></p></Banner>
       ) : null}
       <ErrorBanner error={actionError} />
-      {res.loading && !res.data ? <Loading hero /> : null}
+      {res.loading && !res.data ? <><Loading /><SkeletonRows n={5} /></> : null}
       {res.data ? (
         <>
           <div class="toolbar">

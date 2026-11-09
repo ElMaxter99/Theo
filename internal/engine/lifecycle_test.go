@@ -460,9 +460,14 @@ func TestParkInactiveInBulk(t *testing.T) {
 		}
 	}
 
-	r, err := e.ParkInactive(ctx, "app", ParkInactiveOptions{SaveChanges: true, Apply: true})
+	var ticks []ParkProgress
+	r, err := e.ParkInactive(ctx, "app", ParkInactiveOptions{SaveChanges: true, Apply: true, Progress: func(p ParkProgress) { ticks = append(ticks, p) }})
 	if err != nil {
 		t.Fatal(err)
+	}
+	// Two ticks per worktree (starting, finished) and a last one at the end.
+	if len(ticks) != 7 || ticks[0].Total != 3 || ticks[0].Done != 0 || ticks[0].Current == "" || ticks[1].Entry == nil || ticks[1].Done != 1 || ticks[6].Done != 3 {
+		t.Errorf("progress = %+v", ticks)
 	}
 	if r.ParkedCount() != 3 {
 		t.Fatalf("parked %d: %+v", r.ParkedCount(), r.Entries)
