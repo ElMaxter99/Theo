@@ -139,3 +139,15 @@ func TestAgentInstallNeedsTheAgentOnThisMachine(t *testing.T) {
 		t.Errorf("only the installed agent gets hooks: %d %q", code, out)
 	}
 }
+
+func TestConfigNotifyAgent(t *testing.T) {
+	t.Setenv("THEO_HOME", t.TempDir())
+	if _, stderr, code := run("config", "set", "notify.agent", "sometimes"); code == ExitOK || !strings.Contains(stderr, "off, waiting or all") {
+		t.Errorf("a wrong value should be refused: %d %s", code, stderr)
+	}
+	for _, v := range []string{"waiting", "all", "off"} {
+		if out, stderr, code := run("config", "set", "notify.agent", v); code != ExitOK || !strings.Contains(out, v) {
+			t.Errorf("set %s: %d %q %s", v, code, out, stderr)
+		}
+	}
+}

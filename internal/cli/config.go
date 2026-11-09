@@ -16,7 +16,10 @@ func init() {
   config list | get <key> | set <key> <value> | unset <key> [--json]
                                                Your own settings: open.editor, open.terminal, open.files
                                                (what theo open --in starts) and update-check (on or off:
-                                               look once a day for a new version; off by default)
+                                               look once a day for a new version; off by default) and
+                                               notify.agent (off, waiting or all: the desktop app
+                                               notifies when an agent waits for you, or also when it
+                                               finishes; off by default)
 `)
 	registerCompletion(cmdSpec{name: "config", subs: []cmdSpec{{name: "list"}, {name: "get"}, {name: "set"}, {name: "unset"}}})
 }

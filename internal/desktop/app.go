@@ -10,10 +10,14 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 
+	"github.com/ElMaxter99/Theo/internal/agents"
 	"github.com/ElMaxter99/Theo/internal/api"
 	"github.com/ElMaxter99/Theo/internal/engine"
+	"github.com/ElMaxter99/Theo/internal/notify"
 )
 
 // Title is the title of the window.
@@ -56,6 +60,8 @@ type Options struct {
 	RequestLog *log.Logger
 	// Stderr receives the app's own messages. Nil discards.
 	Stderr io.Writer
+	// Notify shows a desktop notification; nil uses notify.Send.
+	Notify func(notify.Message) error
 }
 
 // Backend is the server the window shows.
@@ -201,7 +207,73 @@ func Run(ctx context.Context, o Options) error {
 		}
 	}()
 
+	// Desktop notifications when an agent waits or finishes (off unless the
+	// person set notify.agent).
+	ctxN, stopN := context.WithCancel(ctx)
+	defer stopN()
+	go watchAgents(ctxN, o)
+
 	w.Navigate(be.URL)
 	w.Run()
 	return nil
+}
+
+// watchAgents runs the notifications of agents until ctx ends.
+func watchAgents(ctx context.Context, o Options) {
+	send := o.Notify
+	if send == nil {
+		send = notify.Send
+	}
+	lang := strings.ToLower(os.Getenv("LC_ALL") + os.Getenv("LC_MESSAGES") + os.Getenv("LANG"))
+	reported := false
+	notify.Watch(ctx, notify.Deps{
+		Mode:   func() string { return o.Engine.Prefs().Get("notify.agent") },
+		States: func() map[string]agents.State { return agents.Store{Dir: o.DataDir}.All() },
+		Label:  func(path string) string { return worktreeLabel(ctx, o.Engine, path) },
+		Send:   send,
+		// Spanish when the system says so; the interface has its own language setting.
+		Spanish: strings.HasPrefix(lang, "es"),
+		OnError: func(err error) {
+			if !reported { // one line, not one per notification
+				reported = true
+				fmt.Fprintf(o.Stderr, "theo-desktop: notifications: %v\n", err)
+			}
+		},
+	})
+}
+
+// worktreeLabel names a worktree for a notification: "project / branch".
+func worktreeLabel(ctx context.Context, e *engine.Engine, path string) string {
+	projects, err := e.Projects()
+	if err == nil {
+		for _, p := range projects {
+			list, err := e.Worktrees(ctx, p.Name)
+			if err != nil {
+				continue
+			}
+			for _, wt := range list {
+				if sameDir(wt.Path, path) {
+					name := wt.Branch
+					if name == "" {
+						name = wt.Path[strings.LastIndexAny(wt.Path, `/\`)+1:]
+					}
+					return p.Name + " / " + name
+				}
+			}
+		}
+	}
+	return path[strings.LastIndexAny(path, `/\`)+1:]
+}
+
+// sameDir says whether two paths are the same folder, as the agent store
+// compares them: cleaned, with symbolic links resolved, slashes forward.
+func sameDir(a, b string) bool {
+	canon := func(p string) string {
+		p = filepath.Clean(p)
+		if real, err := filepath.EvalSymlinks(p); err == nil {
+			p = real
+		}
+		return filepath.ToSlash(p)
+	}
+	return canon(a) == canon(b)
 }
