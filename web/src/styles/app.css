@@ -165,7 +165,7 @@ fieldset { border: 1px solid var(--border-soft); border-radius: var(--radius); p
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
   .spin { animation: none; }
-  * { scroll-behavior: auto !important; transition: none !important; }
+  * { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
 }
 
 /* ---------- Tables ---------- */
@@ -299,7 +299,7 @@ h1:focus, h2:focus { outline: none; }
 .count-pill { margin-left: auto; min-width: 1.5rem; padding: 0 var(--space-2); border-radius: 999px; text-align: center; font-size: 0.8125rem; font-weight: 700; background: var(--surface-2); border: 1px solid var(--border); }
 :root[data-density="compact"] { --space-2: 0.375rem; --space-3: 0.5rem; --space-4: 0.75rem; --space-5: 1rem; }
 :root[data-motion="reduce"] .spin { animation: none; }
-:root[data-motion="reduce"] * { scroll-behavior: auto !important; transition: none !important; }
+:root[data-motion="reduce"] * { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
 .report-text { width: 100%; min-height: 9rem; font-family: var(--font-mono); }
 /* ---------- 0.2 redesign ---------- */
 .lead { font-size: 1.05rem; color: var(--text-muted); }
@@ -456,3 +456,80 @@ table.data .break-any, table.data .break-any * { overflow-wrap: anywhere; }
 /* Controls take their height from min-height, never from the font's line box (a monospace input was 2px taller than the button beside it). */
 .input, select.input, textarea.input { line-height: 1.25; }
 textarea.input { line-height: 1.5; }
+
+/* ---------- Motion and states (0.7 polish) ----------
+   One speed and one curve for everything that moves. Only colour, shadow and opacity/transform are animated, never
+   layout. Entrances use keyframes (no delay on close); both reduced-motion switches above turn all of it off. */
+:root { --dur: 140ms; --dur-slow: 200ms; --ease: cubic-bezier(0.2, 0, 0, 1); accent-color: var(--accent); }
+::selection { background: var(--selected); color: var(--text); }
+.btn, .chip, .search-trigger, .input, .menu-item, .app-nav a, .subnav a, .tablist [role="tab"], .palette-item, .linklike, .count-pill, .segmented label, .radio-card, table.data tbody tr > * {
+  transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.btn:active:not(:disabled):not([aria-disabled="true"]) { transform: translateY(1px); }
+.btn.primary:disabled, .btn.primary[aria-disabled="true"] { background: var(--accent); }
+.chip:active { transform: translateY(1px); }
+.input:hover:not(:disabled):not([aria-invalid="true"]) { border-color: var(--brand); }
+.input:focus-visible { border-color: var(--focus); }
+.input:disabled { opacity: 0.6; cursor: not-allowed; background: var(--surface-2); }
+table.data tbody tr:hover > * { background: var(--bg-subtle); }
+table.data tbody tr.picked:hover > * { background: var(--selected); }
+.card { transition: box-shadow var(--dur-slow) var(--ease), border-color var(--dur-slow) var(--ease); }
+.cards > .card:hover { border-color: var(--border); }
+.tablist [role="tab"]:active, .subnav a:active { background: var(--selected); }
+.btn.sm svg, .btn svg { flex: none; }
+
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes rise-in { from { opacity: 0; transform: translateY(0.375rem); } }
+@keyframes pop-in { from { opacity: 0; transform: translateY(-0.25rem) scale(0.98); } }
+@keyframes slide-in { from { opacity: 0.6; transform: translateX(2rem); } }
+@keyframes toast-in { from { opacity: 0; transform: translateY(0.75rem); } }
+@keyframes bar-in { from { opacity: 0; transform: scaleY(0.9); } }
+
+.app-main > * { animation: fade-in var(--dur-slow) var(--ease) both; }
+dialog[open] { animation: rise-in var(--dur-slow) var(--ease); }
+dialog[open]::backdrop { animation: fade-in var(--dur-slow) var(--ease); }
+dialog.drawer[open] { animation: slide-in var(--dur-slow) var(--ease); }
+dialog.palette[open] { animation: pop-in var(--dur) var(--ease); }
+.menu-list { animation: pop-in var(--dur) var(--ease); transform-origin: top; }
+.ops-panel { animation: pop-in var(--dur-slow) var(--ease); }
+.toast { animation: toast-in var(--dur-slow) var(--ease); }
+.banner { animation: fade-in var(--dur-slow) var(--ease); }
+.bulkbar { animation: bar-in var(--dur) var(--ease); transform-origin: top; }
+.skip-link { transition: top var(--dur) var(--ease); }
+
+/* ---------- Loading and progress, drawn from Theo's symbol ----------
+   .mark: the branches draw themselves, then the three nodes pop in one after another, and it repeats. Without
+   animation (reduced motion) every part is visible, so the symbol is just the logo. */
+.mark { flex: none; overflow: visible; vertical-align: middle; }
+.mark-branch { fill: none; stroke: var(--mark-branch); stroke-width: 13; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; }
+.mark-node { transform-box: fill-box; transform-origin: center; }
+.mark-node.n1, .mark-node.n3 { fill: var(--mark-coral); }
+.mark-node.n2 { fill: var(--mark-teal); }
+@keyframes mark-draw { 0% { stroke-dashoffset: 1; } 45%, 85% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 0; opacity: 0.25; } }
+@keyframes mark-pop { 0%, 8% { transform: scale(0); } 30% { transform: scale(1.25); } 40%, 85% { transform: scale(1); } 100% { transform: scale(1); opacity: 0.25; } }
+.mark-branch { animation: mark-draw 1.9s var(--ease) infinite; }
+.mark-branch.b2 { animation-delay: 0.25s; }
+.mark-node { animation: mark-pop 1.9s var(--ease) infinite; }
+.mark-node.n1 { animation-delay: 0s; }
+.mark-node.n2 { animation-delay: 0.3s; }
+.mark-node.n3 { animation-delay: 0.45s; }
+
+.loading { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-3) 0; }
+.loading-hero { flex-direction: column; justify-content: center; gap: var(--space-3); min-height: 40vh; margin: 0; color: var(--text-muted); font-family: var(--font-display); font-weight: 600; font-size: 1.1rem; }
+/* The label eases in after a beat, so a fast load never flashes it. */
+.loading-hero > span { animation: fade-in var(--dur-slow) var(--ease) 0.4s both; }
+.btn .mark { margin: 0 -0.125rem; }
+
+/* Thin bar under the header while requests or operations are running; it appears only after a short delay. */
+.app-header { position: relative; }
+.progress-bar { position: absolute; left: 0; right: 0; bottom: -1px; height: 0.1875rem; overflow: hidden; animation: fade-in var(--dur-slow) var(--ease) 0.25s both; }
+.progress-bar::before, .progress-line::before {
+  content: ""; position: absolute; inset: 0 auto 0 0; width: 35%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--brand), var(--theo-coral-500)); animation: progress-run 1.3s var(--ease) infinite;
+}
+@keyframes progress-run { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+.progress-line { position: relative; height: 0.25rem; margin: var(--space-2) 0; overflow: hidden; border-radius: 999px; background: var(--surface-2); }
+.progress-line::before { width: 30%; }
+@media (prefers-reduced-motion: reduce) { .progress-bar::before, .progress-line::before { animation: none; width: 100%; opacity: 0.6; } }
+:root[data-motion="reduce"] .progress-bar::before, :root[data-motion="reduce"] .progress-line::before { animation: none; width: 100%; opacity: 0.6; }
+@media (forced-colors: active) { .mark-branch { stroke: CanvasText; } .mark-node { fill: Highlight; } .progress-bar::before, .progress-line::before { background: Highlight; } }

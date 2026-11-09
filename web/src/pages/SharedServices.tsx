@@ -81,7 +81,7 @@ export function SharedServices({ project }: { project: string }) {
     }
   });
 
-  if (res.loading && res.data === undefined) return <>{crumbs}<Loading /></>;
+  if (res.loading && res.data === undefined) return <>{crumbs}<Loading hero /></>;
   if (res.error && res.data === undefined) {
     return <>{crumbs}<ErrorBanner error={res.error} title={res.error.status === 404 ? t.panel.notFound : t.shared.loadError} /></>;
   }

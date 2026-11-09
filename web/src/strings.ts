@@ -18,6 +18,7 @@ const en = {
     themeLight: "Light",
     themeDark: "Dark",
     loading: "Loading…",
+    starting: "Starting Theo…",
     retry: "Try again",
     refresh: "Refresh",
     cancel: "Cancel",

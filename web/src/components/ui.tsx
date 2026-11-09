@@ -1,4 +1,5 @@
 // Small presentational building blocks.
+import { Mark } from "./Mark.tsx";
 import type { ComponentChildren } from "preact";
 import { Icon } from "./Icon.tsx";
 import type { IconName } from "./Icon.tsx";
@@ -49,10 +50,12 @@ export function ErrorBanner({ error, title }: { error: ApiError | { message: str
   );
 }
 
-export function Loading({ label = t.app.loading }: { label?: string }) {
+/** Inline loading line with Theo's animated symbol. `hero` is the larger, centred version for whole pages. */
+export function Loading({ label = t.app.loading, hero = false }: { label?: string; hero?: boolean }) {
   return (
-    <p class="muted">
-      <Icon name="busy" spin /> {label}
+    <p class={hero ? "loading loading-hero" : "loading muted"} role="status">
+      <Mark size={hero ? 64 : 20} />
+      <span>{label}</span>
     </p>
   );
 }

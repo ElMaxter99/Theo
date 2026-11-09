@@ -50,7 +50,7 @@ export function App() {
   }, [phase]);
 
   if (phase === "checking") {
-    return <main id="main" class="app-main"><Loading /></main>;
+    return <main id="main" class="app-main"><Loading hero label={t.app.starting} /></main>;
   }
   if (phase !== "ok") return <Disconnected reason={phase} />;
   return (

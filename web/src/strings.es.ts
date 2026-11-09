@@ -16,6 +16,7 @@ export const es: Catalog = {
     themeLight: "Claro",
     themeDark: "Oscuro",
     loading: "Cargando…",
+    starting: "Arrancando Theo…",
     retry: "Reintentar",
     refresh: "Actualizar",
     cancel: "Cancelar",

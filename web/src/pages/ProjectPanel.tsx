@@ -160,7 +160,7 @@ export function ProjectPanel({ project, drawer, onRefreshMeta }: { project: stri
         <Banner tone="warn"><p class="row">{t.life.banner(merged, inactiveN, days)} <a class="btn sm" href={href.problems("cleanup", project)}>{t.life.reviewCleanup}</a></p></Banner>
       ) : null}
       <ErrorBanner error={actionError} />
-      {res.loading && !res.data ? <Loading /> : null}
+      {res.loading && !res.data ? <Loading hero /> : null}
       {res.data ? (
         <>
           <div class="toolbar">

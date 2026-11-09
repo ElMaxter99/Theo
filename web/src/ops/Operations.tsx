@@ -1,4 +1,5 @@
 // Global operations indicator (header) and panel. Operations run on the server and survive closing the tab.
+import { Mark } from "../components/Mark.tsx";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Operation } from "../api/types.ts";
 import { Icon } from "../components/Icon.tsx";
@@ -26,7 +27,7 @@ export function OpsIndicator() {
   return (
     <div class="ops-indicator">
       <button ref={btn} type="button" class="btn sm" aria-expanded={open} aria-controls="ops-panel" onClick={() => setOpen(!open)}>
-        <Icon name={active.length > 0 ? "busy" : "ops"} spin={active.length > 0} />
+        {active.length > 0 ? <Mark size={18} /> : <Icon name="ops" />}
         <span>{t.ops.indicator(active.length)}</span>
       </button>
       {open ? <OpsPanel ops={ops} onClose={() => { setOpen(false); btn.current?.focus(); }} /> : null}
@@ -88,6 +89,7 @@ function OpItem({ op, viewing, toggle }: { op: Operation; viewing: boolean; togg
             onClick={async () => { setCancelling(true); try { await cancelOperation(op.id); } finally { setCancelling(false); } }}>{t.ops.cancel}</button>
         ) : null}
       </div>
+      {active ? <div class="progress-line" aria-hidden="true" /> : null}
       {active ? <p class="hint">{t.ops.cancelNote}</p> : null}
       {viewing ? <OpOutput id={op.id} /> : null}
     </li>
