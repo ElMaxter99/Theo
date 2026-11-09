@@ -42,6 +42,22 @@ jobs:
         run: |
           go test -count=1 -v ./internal/acceptance 2>&1 | grep -E '^\s*(---|[a-z_]+_test.go:[0-9]+:)'
 
+  race:
+    # The same tests under the race detector, on Linux only: it makes them
+    # several times slower and the data races it finds do not depend on the
+    # system. A separate job so the matrix above stays as fast as it was.
+    name: Race detector (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go test -race ./...
+
   coverage:
     # How much of the code the tests run, reported and never enforced: there is
     # no threshold, nothing here can fail a pull request except the tests

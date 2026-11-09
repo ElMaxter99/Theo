@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ElMaxter99/Theo/internal/engine"
@@ -26,10 +27,27 @@ import (
 // colorMode is the value of the global --color flag: auto, always or never.
 var colorMode = "auto"
 
+// colorMu guards colorMode: Run restores it on the way out, and two Runs can
+// overlap (a server running in the background while a second command starts,
+// as the tests do).
+var colorMu sync.Mutex
+
+func getColorMode() string {
+	colorMu.Lock()
+	defer colorMu.Unlock()
+	return colorMode
+}
+
+func setColorMode(m string) {
+	colorMu.Lock()
+	defer colorMu.Unlock()
+	colorMode = m
+}
+
 // useColor reports whether output to w gets ANSI colors: --color always, or
 // auto on a terminal without NO_COLOR (https://no-color.org).
 func useColor(w io.Writer) bool {
-	switch colorMode {
+	switch getColorMode() {
 	case "always":
 		return true
 	case "never":
@@ -75,16 +93,18 @@ func globalFlags(args []string) (rest []string, explain bool, err error) {
 			explain = true
 			args = args[1:]
 		case a == "--no-color":
-			colorMode = "never"
+			setColorMode("never")
 			args = args[1:]
 		case a == "--color" && len(args) > 1:
-			colorMode, args = args[1], args[2:]
+			setColorMode(args[1])
+			args = args[2:]
 		case strings.HasPrefix(a, "--color="):
-			colorMode, args = strings.TrimPrefix(a, "--color="), args[1:]
+			setColorMode(strings.TrimPrefix(a, "--color="))
+			args = args[1:]
 		default:
 			goto done
 		}
-		switch colorMode {
+		switch getColorMode() {
 		case "auto", "always", "never":
 		default:
 			return nil, false, usageErrorf("--color must be auto, always or never")
