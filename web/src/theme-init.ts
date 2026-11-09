@@ -1,8 +1,8 @@
 // Classic script run from <head> before first paint, so a forced theme never flashes. No imports on purpose
-// (the build emits it as a plain script).
+// (the build emits it as a plain script). Default is light; "system" is an explicit choice.
 try {
   const v = localStorage.getItem("theo.theme");
-  if (v === "light" || v === "dark") document.documentElement.setAttribute("data-theme", v);
+  if (v !== "system") document.documentElement.setAttribute("data-theme", v === "dark" ? "dark" : "light");
 } catch {
-  /* storage unavailable: follow the system */
+  document.documentElement.setAttribute("data-theme", "light");
 }

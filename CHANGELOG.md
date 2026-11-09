@@ -2,6 +2,11 @@
 
 Notable changes per release. Each release on GitHub also lists every merged pull request.
 
+## Unreleased
+
+### Changed
+- **Light palette like the design canvases.** The interface now opens in the light theme by default, even if the system is dark (Settings > Theme still offers System and Dark, and remembers the choice). The page is cream everywhere with white cards, and the dark theme is warm charcoal instead of plum. All text pairs still meet WCAG AA.
+
 ## v0.7.1
 
 Patch release: Cleanup is redesigned as a four-step flow, and the build dependencies are updated.

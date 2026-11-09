@@ -2,6 +2,11 @@
 
 Cambios destacados de cada versión, en español. Las notas de cada release en GitHub llevan esta sección después de la inglesa, con el título *Español*. Es la misma lista que [CHANGELOG.md](CHANGELOG.md), que es la de referencia: cada `## vX.Y.Z` de allí tiene aquí su sección. Las versiones anteriores a la primera de este archivo solo tienen notas en inglés.
 
+## Sin publicar
+
+### Cambiado
+- **Paleta clara como los lienzos de diseño.** La interfaz abre por defecto en el tema claro, aunque el sistema esté en oscuro (en Ajustes > Tema siguen Sistema y Oscuro, y se recuerda la elección). La página es crema en todo el ancho con tarjetas blancas, y el tema oscuro es carbón cálido en vez de ciruela. Todos los pares de texto siguen cumpliendo WCAG AA.
+
 ## v0.7.1
 
 Versión de corrección: la limpieza se rediseña como un flujo de cuatro pasos y se actualizan las dependencias de compilación.
