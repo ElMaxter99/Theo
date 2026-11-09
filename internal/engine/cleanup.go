@@ -31,6 +31,9 @@ type CleanOptions struct {
 	Images bool
 	// Apply closes what can be closed. Without it nothing changes.
 	Apply bool
+	// Only limits what Apply closes to these workspaces (by path or branch
+	// name); empty means everything that can be closed.
+	Only []string
 	// Output receives the output of `docker compose down`; nil discards it.
 	Output io.Writer
 }
@@ -142,6 +145,9 @@ func (e *Engine) Clean(ctx context.Context, project string, opts CleanOptions) (
 		Close: []CleanEntry{}, Inactive: []CleanEntry{}, Kept: []CleanEntry{}, Leftovers: []Finding{}, Notes: states.Notes}
 
 	pruneGit := false
+	chosen := func(path, branch string) bool {
+		return len(opts.Only) == 0 || containsPath(opts.Only, path) || containsBranch(opts.Only, branch)
+	}
 	for i, ws := range states.Worktrees {
 		if i == 0 || ws.Bare {
 			continue
@@ -195,9 +201,9 @@ func (e *Engine) Clean(ctx context.Context, project string, opts CleanOptions) (
 		case ws.Locked:
 			entry.Reason = "locked with git worktree lock"
 		case ws.State == LifeMissing && ws.Kind != KindClone:
-			pruneGit = true
+			pruneGit = pruneGit || chosen(ws.Path, ws.Branch)
 		}
-		if entry.Reason == "" && opts.Apply {
+		if entry.Reason == "" && opts.Apply && chosen(ws.Path, ws.Branch) {
 			e.closeOne(ctx, p, ws, &entry, opts, out)
 		}
 		report.Close = append(report.Close, entry)
@@ -208,7 +214,7 @@ func (e *Engine) Clean(ctx context.Context, project string, opts CleanOptions) (
 				report.Notes = append(report.Notes, "git worktree prune failed: "+firstLine(err.Error()))
 			} else {
 				for i := range report.Close {
-					if report.Close[i].State == LifeMissing && report.Close[i].Reason == "" {
+					if report.Close[i].State == LifeMissing && report.Close[i].Reason == "" && chosen(report.Close[i].Path, report.Close[i].Branch) {
 						report.Close[i].Closed = true
 					}
 				}

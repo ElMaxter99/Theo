@@ -5,7 +5,7 @@ bundle (`internal/ui/dist`); everything else is a development tool and is never 
 
 | Package | Version | Licence | Used for | Shipped |
 |---|---|---|---|---|
-| `preact` | 11.1.1 | MIT | UI runtime (about 5 KiB gzipped) | yes, bundled; its licence is copied to `dist/assets/THIRD-PARTY.txt` |
+| `preact` | 11.2.0 | MIT | UI runtime (about 5 KiB gzipped) | yes, bundled; its licence is copied to `dist/assets/THIRD-PARTY.txt` |
 | `esbuild` | 0.28.2 | MIT | bundler (`npm run build`); installs its platform binary `@esbuild/<os>-<arch>` (same version, MIT) | no |
 | `typescript` | 7.0.2 | Apache-2.0 | type check (`npm run check`) | no |
 | Fredoka (typeface, weights 600 and 700, latin subset, woff2 from `@fontsource/fredoka`) | 5.2.8, copied into `src/fonts` | **SIL OFL 1.1** | headings; not an npm dependency, the two files are committed | yes, bundled; the OFL is copied to `dist/assets/THIRD-PARTY.txt` |

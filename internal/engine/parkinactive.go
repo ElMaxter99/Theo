@@ -211,6 +211,15 @@ func (e *Engine) ParkInactive(ctx context.Context, project string, opts ParkInac
 		}
 		return ws.State == LifeInactive
 	}
+	// A merged worktree (also one with uncommitted files, which a work-in-progress
+	// commit saves) can be parked when it is named in Only.
+	parkable := func(ws WorktreeState) bool {
+		if ws.State == LifeInactive {
+			return true
+		}
+		named := containsPath(opts.Only, ws.Path) || containsBranch(opts.Only, ws.Branch)
+		return named && (ws.State == LifeMerged || (ws.State == LifeUnpushed && ws.MergedBy != ""))
+	}
 	total, done := 0, 0
 	for i, ws := range states.Worktrees {
 		if selected(i, ws) {
@@ -245,7 +254,7 @@ func (e *Engine) ParkInactive(ctx context.Context, project string, opts ParkInac
 			}
 		}
 		switch {
-		case ws.State != LifeInactive:
+		case !parkable(ws):
 			fail("not-inactive", "it is no longer inactive ("+ws.State+")")
 			ent.Blocked = true
 			ent.BranchDeletable = false

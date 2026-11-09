@@ -74,11 +74,13 @@ func (s *Server) handleCleanPlan(w http.ResponseWriter, r *http.Request, _ *sess
 func (s *Server) handleClean(w http.ResponseWriter, r *http.Request, _ *session) error {
 	project := r.PathValue("p")
 	var req struct {
-		Down           bool   `json:"down"`
-		DeleteBranches bool   `json:"delete_branches"`
-		RescueDetached bool   `json:"rescue_detached"`
-		Images         bool   `json:"images"`
-		Confirm        string `json:"confirm"`
+		Down           bool `json:"down"`
+		DeleteBranches bool `json:"delete_branches"`
+		RescueDetached bool `json:"rescue_detached"`
+		Images         bool `json:"images"`
+		// Paths limits it to these worktrees; empty means everything closable.
+		Paths   []string `json:"paths"`
+		Confirm string   `json:"confirm"`
 	}
 	if err := decode(r, &req); err != nil {
 		return err
@@ -92,7 +94,7 @@ func (s *Server) handleClean(w http.ResponseWriter, r *http.Request, _ *session)
 		e.Confirm = &Confirm{Expected: p.Name, Prompt: "Type the project name to close these worktrees"}
 		return e
 	}
-	report, err := s.eng.Clean(r.Context(), p.Name, engine.CleanOptions{Down: req.Down, DeleteBranches: req.DeleteBranches, Images: req.Images, Apply: true})
+	report, err := s.eng.Clean(r.Context(), p.Name, engine.CleanOptions{Down: req.Down, DeleteBranches: req.DeleteBranches, Images: req.Images, Only: req.Paths, Apply: true})
 	if err != nil {
 		return fromEngine(err, &ResourceRef{Kind: "project", Project: p.Name})
 	}

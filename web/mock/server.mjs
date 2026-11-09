@@ -363,10 +363,13 @@ async function lifecycleRoutes(req, res, proj, seg) {
     if (m === "POST" && b.confirm !== proj.name) return send(res, 409, { error: { code: "confirmation_required", level: 3, message: "parking needs the project name", confirm: { expected: proj.name } } }), true;
     const save = m === "POST" ? !!b.save_changes : ["1", "true"].includes(url.searchParams.get("save_changes"));
     const picked = m === "POST" ? b.paths ?? [] : only;
-    const entries = proj.wts.filter((w) => !w.main).map((w) => lifeView(proj, w)).filter((v) => v.state === "inactive" && (!picked.length || picked.includes(v.path))).map((v) => {
+    const incl = m === "POST" ? !!b.include_ignored : ["1", "true"].includes(url.searchParams.get("include_ignored"));
+    const entries = proj.wts.filter((w) => !w.main).map((w) => lifeView(proj, w)).filter((v) => (v.state === "inactive" && !(picked ?? []).length) || (picked ?? []).includes(v.path)).map((v) => {
       const safe = v.changes === 0 && v.unpushed === 0 && !!v.upstream && !v.upstream_gone;
-      const reason = v.changes > 0 && !save ? `${v.changes} uncommitted file(s); add --save-changes to keep them in a work-in-progress commit` : undefined;
-      return { path: v.path, branch: v.branch, idle_days: v.idle_days, changes: v.changes, unpushed: v.unpushed, upstream_gone: v.upstream_gone, safe, branch_deletable: safe, size_bytes: v.size_bytes, reason, parked: false };
+      // Every second stale worktree has a folder Git ignores that cannot be rebuilt.
+      const ignored_names = /^stale-\d+$/.test(v.branch) && Number(v.branch.slice(6)) % 2 === 0 ? ["certs/"] : [];
+      const reason = v.changes > 0 && !save ? `${v.changes} uncommitted file(s); add --save-changes to keep them in a work-in-progress commit` : ignored_names.length > 0 && !incl ? "has files Git ignores that cannot be rebuilt and parking deletes (certs/); add --include-ignored" : undefined;
+      return { path: v.path, branch: v.branch, idle_days: v.idle_days, changes: v.changes, unpushed: v.unpushed, upstream_gone: v.upstream_gone, ignored: ignored_names.length, ignored_names, safe, branch_deletable: safe, size_bytes: v.size_bytes, reason, reason_code: reason ? (ignored_names.length > 0 && !incl ? "ignored" : "changes") : undefined, saved: !reason && v.changes > 0 && m === "POST", parked: false };
     });
     if (m === "POST") {
       for (const e of entries) {
