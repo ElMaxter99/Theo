@@ -349,7 +349,7 @@ async function lifecycleRoutes(req, res, proj, seg) {
     const only = m === "GET" ? url.searchParams.getAll("path") : null;
     const b = m === "POST" ? ((await readJson(req)) ?? {}) : {};
     if (m === "POST" && b.confirm !== proj.name) return send(res, 409, { error: { code: "confirmation_required", level: 3, message: "parking needs the project name", confirm: { expected: proj.name } } }), true;
-    const save = m === "POST" ? !!b.save_changes : url.searchParams.get("save_changes") === "true";
+    const save = m === "POST" ? !!b.save_changes : ["1", "true"].includes(url.searchParams.get("save_changes"));
     const picked = m === "POST" ? b.paths ?? [] : only;
     const entries = proj.wts.filter((w) => !w.main).map((w) => lifeView(proj, w)).filter((v) => v.state === "inactive" && (!picked.length || picked.includes(v.path))).map((v) => {
       const safe = v.changes === 0 && v.unpushed === 0 && !!v.upstream && !v.upstream_gone;

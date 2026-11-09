@@ -431,3 +431,14 @@ func (Git) CommitAll(ctx context.Context, dir, msg string) error {
 	_, err := execx.RunChange(ctx, dir, "git", "-c", "commit.gpgsign=false", "commit", "--no-verify", "-q", "-m", msg)
 	return err
 }
+
+// SwitchNewBranch creates branch name at the current commit of the worktree at
+// dir and checks it out (`git switch -c`), keeping every file as it is. It is
+// how a detached HEAD gets a branch that holds its commits.
+func (Git) SwitchNewBranch(ctx context.Context, dir, name string) error {
+	if err := checkRef("branch", name); err != nil {
+		return err
+	}
+	_, err := execx.RunChange(ctx, dir, "git", "switch", "-c", name)
+	return err
+}

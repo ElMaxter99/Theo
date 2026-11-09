@@ -209,7 +209,7 @@ Compose names are not used by the renamed instances. Refused with 409 `busy` whi
 - `GET /projects/{p}/park-inactive?save_changes=&include_ignored=&delete_branches=&size=&path=`: what parking the
   inactive worktrees would do (`entries[]` with `reason` when one stays, `safe`, `blocked`, `branch_deletable`;
   `summary` with the counts and, with `size=true`, the space). `path` (repeatable) limits it to those worktrees.
-  `POST` the same with `{save_changes?, include_ignored?, max_changes?, delete_branches?, paths?, confirm}` (the
+  `POST` the same with `{save_changes?, include_ignored?, rescue_detached?, max_changes?, delete_branches?, paths?, confirm}` (the
   project name; otherwise 409 `confirmation_required`) parks them. Volumes are kept; `save_changes` first commits the
   uncommitted files in a local work-in-progress commit; `delete_branches` also deletes the local branch, but only of
   a worktree whose commits are all on its remote (checked again right before), never the remote branch.

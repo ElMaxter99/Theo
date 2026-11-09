@@ -590,3 +590,72 @@ func TestParkInactiveSelectionSummaryAndBranchDeletion(t *testing.T) {
 		}
 	}
 }
+
+func TestParkInactiveIgnoredFoldersAndDetachedHead(t *testing.T) {
+	for _, kv := range [][2]string{{"GIT_AUTHOR_NAME", "Theo Test"}, {"GIT_AUTHOR_EMAIL", "t@example.invalid"}, {"GIT_COMMITTER_NAME", "Theo Test"}, {"GIT_COMMITTER_EMAIL", "t@example.invalid"}} {
+		t.Setenv(kv[0], kv[1])
+	}
+	e, _, main, paths := lifecycleFixture(t)
+	ctx := context.Background()
+	testutil.WriteFile(t, main, ".gitignore", "node_modules/\nlogs/\ncerts/\n")
+	testutil.Git(t, main, "add", ".gitignore")
+	testutil.Git(t, main, "commit", "-q", "-m", "ignore")
+	testutil.Git(t, paths["work"], "merge", "-q", "main")
+	testutil.Git(t, paths["fresh"], "merge", "-q", "main")
+	testutil.WriteFile(t, paths["fresh"], "f.txt", "f\n")
+	testutil.Git(t, paths["fresh"], "add", "f.txt")
+	testutil.Git(t, paths["fresh"], "commit", "-q", "-m", "fresh work")
+	testutil.WriteFile(t, paths["work"], "node_modules/x/index.js", "x\n")
+	testutil.WriteFile(t, paths["work"], "logs/a.log", "log\n")
+	testutil.WriteFile(t, paths["fresh"], "certs/key.pem", "KEY\n")
+	// A worktree whose HEAD is detached, with a commit that is on no branch.
+	testutil.Git(t, paths["dirty"], "checkout", "-q", "--detach")
+	testutil.WriteFile(t, paths["dirty"], "d.txt", "d\n")
+	testutil.Git(t, paths["dirty"], "add", "d.txt")
+	testutil.Git(t, paths["dirty"], "commit", "-q", "-m", "only here")
+	e.now = func() time.Time { return time.Now().Add(10 * 24 * time.Hour) }
+
+	// Rebuildable folders (node_modules, logs) do not stop a park; certs/ does; a detached HEAD stays without the option.
+	dry, err := e.ParkInactive(ctx, "app", ParkInactiveOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	by := map[string]ParkInactiveEntry{}
+	for _, en := range dry.Entries {
+		k := en.Branch
+		if k == "" {
+			k = filepath.Base(en.Path)
+		}
+		by[k] = en
+	}
+	if by["work"].Reason != "" {
+		t.Errorf("work: %+v", by["work"])
+	}
+	if f := by["fresh"]; f.ReasonCode != "ignored" || len(f.IgnoredNames) != 1 {
+		t.Errorf("fresh: %+v", f)
+	}
+	d := by[filepath.Base(paths["dirty"])]
+	if d.ReasonCode != "no-branch" || d.Blocked {
+		t.Errorf("detached without the option: %+v", d)
+	}
+
+	r, err := e.ParkInactive(ctx, "app", ParkInactiveOptions{RescueDetached: true, SaveChanges: true, Apply: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, en := range r.Entries {
+		if filepath.Base(en.Path) == filepath.Base(paths["dirty"]) && (!en.Parked || en.RescueBranch == "") {
+			t.Errorf("detached not parked: %+v", en)
+		}
+	}
+	if _, err := os.Stat(paths["dirty"]); !os.IsNotExist(err) {
+		t.Error("the detached worktree is still there")
+	}
+	rescue := "theo-rescue/" + filepath.Base(paths["dirty"])
+	if !(git.Git{}).IsLocalBranch(ctx, main, rescue) {
+		t.Errorf("rescue branch %s missing", rescue)
+	}
+	if _, err := os.Stat(paths["fresh"]); err != nil {
+		t.Errorf("fresh (certs/) was removed: %v", err)
+	}
+}
