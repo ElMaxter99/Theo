@@ -72,7 +72,7 @@ Versions are `vX.Y.Z` (digits only); release candidates are `vX.Y.Z-rc.N`. Nobod
 
 1. **Open the release.** Create the branch `release/X.Y.Z` (for example `release/0.6.0`) and open a pull request to `main`, with the changes listed below.
 2. **Every push to `release/X.Y.Z` is a release candidate.** It tests Theo, builds every system and publishes the pre-release `vX.Y.Z-rc.1`, then `-rc.2` for the next push. A pre-release has every archive and `checksums.txt`, no Scoop or Homebrew files, and is never "latest". Try its binaries.
-3. **Merge the pull request.** The merge commit is tagged `vX.Y.Z` and the same workflow publishes the release: the archives plus the Scoop and Homebrew files, as a draft that is published once every file is attached. `CHANGELOG.md` must have a `## vX.Y.Z` section (the run fails otherwise); it is the release's notes.
+3. **Merge the pull request.** The merge commit is tagged `vX.Y.Z` and the same workflow publishes the release: the archives plus the Scoop and Homebrew files, as a draft that is published once every file is attached. `CHANGELOG.md` must have a `## vX.Y.Z` section (the run fails otherwise); it is the release's notes. If `CHANGELOG.es.md` has the same section, the notes continue with it under *Español* (the release rules check requires it once that file exists: write each release's notes in both languages, in the same pull request).
 
 Before anything is published, the Release workflow unpacks the CLI archive on Linux, macOS and Windows and checks that `theo --version` prints the tag, and it signs a build provenance attestation for every archive (`gh attestation verify <archive> --repo ElMaxter99/Theo` checks one).
 
