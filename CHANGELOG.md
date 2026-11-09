@@ -5,7 +5,7 @@ Notable changes per release. Each release on GitHub also lists every merged pull
 ## Unreleased
 
 ### New
-- **GitHub Copilot:** `theo agent install copilot` writes Theo's hooks to `.github/hooks/theo.json` (or `~/.copilot/hooks` with `--scope user`), so `theo worktrees` shows whether Copilot works, waits or is done, and the session learns where it runs. `theo agent install claude` is the same as `theo mcp install --hooks`. Written from GitHub's documentation and tested on sample payloads only; not run against Copilot yet. See [agents](docs/cli/agents.md).
+- **GitHub Copilot:** `theo agent install copilot` writes Theo's hooks to `.github/hooks/theo.json` (or `~/.copilot/hooks` with `--scope user`), so `theo worktrees` shows whether Copilot works, waits or is done, and the session learns where it runs. `theo agent install claude` is the same as `theo mcp install --hooks`. Theo uses the agents you already have and never installs them: `theo agent install` without a name registers the ones it finds and says where to get the others, and with a name it refuses a missing agent unless you pass `--force`. Written from GitHub's documentation and tested on sample payloads only; not run against Copilot yet. See [agents](docs/cli/agents.md).
 
 ### Changed
 - **The web interface is built with preact 11 and TypeScript 7** (development dependencies of `web/`; the interface looks and behaves the same). The password field of the variable form is now two literal inputs, which preact 11's types require.

@@ -61,11 +61,20 @@ return a path or say why not, failures are written to `theo log`.
 ## GitHub Copilot hooks: `theo agent install copilot`
 
 ```sh
+theo agent install                          # the agents found on this machine
 theo agent install copilot                  # .github/hooks/theo.json (the team's)
 theo agent install copilot --scope user     # ~/.copilot/hooks/theo.json ($COPILOT_HOME/hooks if set)
 theo agent install copilot --print          # only show the file
 theo agent install claude                   # the same as theo mcp install --hooks
 ```
+
+Theo uses the agents you already have and never installs them. Without a name,
+`theo agent install` registers its hooks with each agent it finds (the `claude`
+or `copilot` command on PATH, a `~/.claude` or `~/.copilot` folder, or the
+Copilot extension of VS Code) and tells you where to get the others. With a
+name and no such agent, it stops and says so; `--force` writes the hooks anyway
+(for a teammate's machine or Copilot's cloud agent, which read the repository's file).
+`--print` never needs the agent.
 
 Theo writes its own file, `theo.json`, in Copilot's hooks folder, and never
 touches your other hook files; it replaces `theo.json` only if it is Theo's.
