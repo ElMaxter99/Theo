@@ -2,15 +2,19 @@
 
 Notable changes per release. Each release on GitHub also lists every merged pull request.
 
-## Unreleased
+## v0.7.0
+
+Claude Code and GitHub Copilot in the agent workflow, and a desktop notice when an agent needs you.
 
 ### New
 - **Desktop notification when an agent waits for you or finishes** (`theo config set notify.agent waiting|all`, off by default). Only `theo-desktop` shows it, with `notify-send`, `osascript` or PowerShell, for agents with hooks; it groups three or more at once and never includes your prompt or paths. You can also set it in Settings > AI agents; "not while the window is in front" is not done yet. Tested on Linux with a stub; not run on macOS or Windows. See [agents](docs/cli/agents.md).
 - **GitHub Copilot:** `theo agent install copilot` writes Theo's hooks to `.github/hooks/theo.json` (or `~/.copilot/hooks` with `--scope user`), so `theo worktrees` shows whether Copilot works, waits or is done, and the session learns where it runs. `theo agent install claude` is the same as `theo mcp install --hooks`. Theo uses the agents you already have and never installs them: `theo agent install` without a name registers the ones it finds and says where to get the others, and with a name it refuses a missing agent unless you pass `--force`. Written from GitHub's documentation and tested on sample payloads only; not run against Copilot yet. See [agents](docs/cli/agents.md).
-
 - **Removing inactive worktrees in bulk shows its progress.** The Cleanup window no longer leaves the button disabled until everything ends: it closes the confirmation and opens a window with "N of M", the worktree being handled, and each one's outcome (removed or kept, with the reason) and a final result. The work runs in the server as an operation (`POST /projects/{p}/park-inactive` now answers `202`; poll `GET /projects/{p}/park-inactive/{op}`), so closing the window does not stop it. `theo worktree park-inactive` is unchanged.
 
 - **Cleanup is a four-step flow with one state per worktree.** Problems > Cleanup now goes Review, Confirm, Removing, Result. Each worktree is Ready, Waiting for your OK, Blocked or Kept, and four counters add up to the total and filter the list. Worktrees are grouped by what you decide (for example "folders Git ignores that cannot be regenerated": one choice for all of them, naming `certs/` or `.claude/`), the columns say what is saved automatically and what is deleted for good, "View files" opens a row, and every blocked row says how to unblock it. The confirmation lists what is removed, saved first, deleted for good and kept; the result says what happened to each worktree, with "Try again" and a link to pick it up again. Merged worktrees with uncommitted files can now be removed too (the files are saved in a local commit first). `POST /projects/{p}/clean` accepts `paths` to close only some, and `POST /projects/{p}/park-inactive` accepts a merged worktree named in `paths`. Folder removal always goes through park (the branch stays and can be resumed); the old "delete images" option of the web page is only available as `theo worktree clean --images`.
+
+### Fixed
+- **Cleanup, inactive worktrees:** the interface asked for the plan with `?save_changes=1` and the server only read `true`, so the options had no effect and every worktree with changes stayed unpickable. The server reads both. Rebuildable ignored folders (`node_modules`, `logs`, `dist`...) no longer stop a park, a detached HEAD can be kept in a `theo-rescue/<folder>` branch (`--rescue-detached`), the reasons are shown in the interface's language, and saving changes and rescuing start on in the interface.
 
 ### Changed
 - **The web interface is built with preact 11 and TypeScript 7** (development dependencies of `web/`; the interface looks and behaves the same). The password field of the variable form is now two literal inputs, which preact 11's types require.
@@ -47,7 +51,6 @@ First release since v0.5.0: it carries the v0.5.0 follow-ups merged on `main` (#
 - **`theo worktree park-inactive`** (and *Park all the inactive* in the Cleanup view) parks every inactive worktree at once; `--save-changes` keeps uncommitted files in a local WIP commit on the branch, and nothing is parked without `--confirm`. `worktree clean` also lists merged worktrees that have uncommitted files, and the inactive ones show whether their remote branch is gone.
 
 ### Fixed
-- **Cleanup, inactive worktrees:** the interface asked for the plan with `?save_changes=1` and the server only read `true`, so the options had no effect and every worktree with changes stayed unpickable. The server reads both. Rebuildable ignored folders (`node_modules`, `logs`, `dist`...) no longer stop a park, a detached HEAD can be kept in a `theo-rescue/<folder>` branch (`--rescue-detached`), the reasons are shown in the interface's language, and saving changes and rescuing start on in the interface.
 - **Windows:** matching worktrees with Theo's records compared every pair of paths and resolved symbolic links each time (about 70,000 file lookups for 52 worktrees); each path is now resolved once, so `theo worktrees` no longer loses seconds there.
 - **Windows PowerShell 5.1:** the console showed `ÔåÆ` instead of `→` (and similar for `·`, `…`, `▶`...) because it reads Theo's UTF-8 with the old OEM code page. On Windows Theo now writes plain ASCII (`->`, `-`, `...`) to the console. `--json` output is left as it is. `THEO_ASCII=1` does the same on any system and `THEO_ASCII=0` turns it off.
 - **Windows:** `theo worktrees` and `theo worktree clean` run up to 16 Git and Docker processes at once (twice the processors, at least 8; it was always 8), so a listing of 50 worktrees needs fewer waves of `git status`.

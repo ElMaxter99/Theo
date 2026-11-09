@@ -97,22 +97,25 @@ Más en el [quickstart](docs/cli/quickstart.md) (en inglés). Para probarlo todo
 
 ## Novedades
 
-### v0.6: fiabilidad
+### v0.7: Claude Code, Copilot y avisos
 
-- `theo doctor` anota lo que limita los puertos libres por rama (`COMPOSE_FILE`, `container_name` fijo, `${VAR}` en `ports:`), ver [puertos](docs/cli/ports.md#limits).
-- Estado del agente por proceso también en macOS y Windows (es una estimación; los hooks siguen siendo la fuente exacta), ver [agentes](docs/cli/agents.md).
-- Los worktrees de ramas usan puertos libres del host por defecto, y Limpieza permite elegir worktrees inactivos y quitarlos.
+```sh
+theo agent install              # registra los agentes que ya tienes (Claude Code, GitHub Copilot)
+theo agent install copilot      # hooks de Copilot: .github/hooks/theo.json, o --scope user
+theo config set notify.agent waiting   # aviso de escritorio cuando un agente te necesita (apagado por defecto)
+```
+
+Theo trabaja con Claude Code y GitHub Copilot, y solo si ya los tienes: nunca los instala y te dice dónde conseguir el que falte. Sus hooks avisan a Theo de si cada agente trabaja, espera o ha terminado. En `theo-desktop`, un aviso nombra el proyecto, la rama y el agente cuando uno te espera (`all` añade cuando termina); nunca incluye tu prompt ni rutas. También se ajusta en Ajustes › Agentes de IA. Los hooks de Copilot y los avisos en Windows y macOS solo se probaron con muestras. Ver [agents](docs/cli/agents.md) (en inglés).
 
 ### v0.5: Theo en el flujo de los agentes
 
 ```sh
 theo mcp install --hooks        # Claude Code crea y elimina worktrees a través de Theo
-theo agent install copilot      # GitHub Copilot: estado del agente y contexto de sesión
 eval "$(theo env)"              # THEO_PORT_WEB, THEO_URL... de este worktree
 theo worktree setup my-api feature/x   # ejecuta los comandos after_create de .theo.json
 ```
 
-Un [`.theo.json`](docs/cli/agents.md) versionado indica qué archivos copia un worktree nuevo (también lee el `.worktreeinclude` de Claude Code) y qué comandos ejecutar en él, tras aprobarlos una vez. Los hooks avisan a Theo de si cada agente trabaja, te espera o ha terminado. Más comandos admiten `--json` y `theo doctor` comprueba más cosas. El menú «Abrir en…» y la insignia del agente en la interfaz siguen en diseño. Ver [agents](docs/cli/agents.md) (en inglés).
+Un [`.theo.json`](docs/cli/agents.md) versionado indica qué archivos copia un worktree nuevo (también lee el `.worktreeinclude` de Claude Code) y qué comandos ejecutar en él, tras aprobarlos una vez. Los hooks avisan a Theo de si cada agente trabaja, te espera o ha terminado. Más comandos admiten `--json` y `theo doctor` comprueba más cosas. Ver [agents](docs/cli/agents.md) (en inglés).
 
 ### v0.4: trabajo olvidado
 
@@ -131,6 +134,7 @@ Detecta las ramas fusionadas incluso tras un squash o un rebase en GitHub. Las r
 
 ### Versiones anteriores
 
+- **v0.6:** `theo doctor` anota lo que limita los puertos libres por rama, estado del agente por proceso en macOS y Windows, los worktrees de ramas usan puertos libres por defecto y Limpieza elige los inactivos.
 - **v0.3:** HTTPS local para los dominios locales (`theo proxy --https`, `theo proxy trust`), notificaciones de progreso en MCP y `wait_for`, y un aviso cuando una aplicación guarda su dirección antigua en sus datos (WordPress, Ghost, Nextcloud...).
 - **v0.2:** la interfaz rediseñada con paleta de comandos, el servidor MCP, el proxy local, la detección del motor de contenedores (Docker Desktop, Colima, OrbStack, Podman...), la interfaz en español, `theo open` y `theo stop --all`.
 
