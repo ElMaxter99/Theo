@@ -12,7 +12,7 @@ Theo gives every Git worktree its own Docker Compose environment, so you, or sev
 
 [![CI](https://github.com/ElMaxter99/Theo/actions/workflows/ci.yml/badge.svg)](https://github.com/ElMaxter99/Theo/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/ElMaxter99/Theo?sort=semver&color=0f766e)](https://github.com/ElMaxter99/Theo/releases/latest)
-[![Go](https://img.shields.io/badge/go-1.24%2B-00ADD8?logo=go&logoColor=white)](go.mod)
+[![Go](https://img.shields.io/badge/go-1.26%2B-00ADD8?logo=go&logoColor=white)](go.mod)
 [![Platforms](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-5b2a4e)](#platform-notes)
 [![MCP](https://img.shields.io/badge/AI%20agents-MCP-7c3aed)](docs/cli/mcp.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -69,7 +69,7 @@ Theo drives the `git` and `docker compose` you already have. It writes its own g
 | **Release binaries** | Download the archive for your system from the [releases page](https://github.com/ElMaxter99/Theo/releases) (`tar.gz` for Linux and macOS, `zip` for Windows, amd64 and arm64), check it against `checksums.txt`, and put `theo` in your `PATH`. |
 | **Scoop** (Windows) | `scoop install https://github.com/ElMaxter99/Theo/releases/latest/download/theo.json` |
 | **Homebrew** (macOS, Linux) | Each release attaches `theo.rb`, a formula for a tap of your own; no public tap is published yet. |
-| **Go** 1.24+ | `go install github.com/ElMaxter99/Theo/cmd/theo@latest` |
+| **Go** 1.26+ | `go install github.com/ElMaxter99/Theo/cmd/theo@latest` |
 | **From source** | `git clone https://github.com/ElMaxter99/Theo && cd Theo && go build ./cmd/theo` (or `scripts/build.sh`, `scripts/build.ps1`) |
 
 You also need **Git** and **Docker with the Compose plugin** in your `PATH`. Reading a project's services runs `docker compose config`, which does not need the daemon; starting and inspecting containers does. Run `theo doctor` to check everything at once.
