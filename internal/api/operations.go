@@ -119,11 +119,21 @@ func (op *Operation) stateActive() bool {
 
 // append adds an event to the ring and wakes the streams that wait for it.
 func (op *Operation) append(name string, data any) {
+	op.mu.Lock()
+	wake := op.appendLocked(name, data)
+	op.mu.Unlock()
+	if wake != nil {
+		close(wake)
+	}
+}
+
+// appendLocked adds an event with op.mu held and returns the channel the
+// caller must close after releasing the lock (nil if nothing was added).
+func (op *Operation) appendLocked(name string, data any) chan struct{} {
 	raw, err := json.Marshal(data)
 	if err != nil {
-		return
+		return nil
 	}
-	op.mu.Lock()
 	op.nextID++
 	op.events = append(op.events, opEvent{ID: op.nextID, Name: name, Data: raw})
 	op.ringBytes += len(raw)
@@ -140,8 +150,27 @@ func (op *Operation) append(name string, data any) {
 	op.firstID = op.events[0].ID
 	old := op.wake
 	op.wake = make(chan struct{})
+	return old
+}
+
+// complete records the outcome. The final state and its two events appear
+// together: a stream that sees the operation over must already find "result"
+// and "state" in the ring, or it would end without them.
+func (op *Operation) complete(res *opResult, state string) {
+	op.mu.Lock()
+	op.finishedAt = time.Now().UTC()
+	op.result = res
+	op.state = state
+	wakes := []chan struct{}{
+		op.appendLocked("result", res),
+		op.appendLocked("state", map[string]any{"state": state, "at": op.finishedAt}),
+	}
 	op.mu.Unlock()
-	close(old)
+	for _, w := range wakes {
+		if w != nil {
+			close(w)
+		}
+	}
 }
 
 func (op *Operation) setState(state string) {
@@ -444,13 +473,7 @@ func (o *operations) finish(op *Operation, summary string, err error, wasCancell
 			res.Summary = op.Kind + " failed"
 		}
 	}
-	op.mu.Lock()
-	op.finishedAt = time.Now().UTC()
-	op.result = res
-	op.state = state
-	op.mu.Unlock()
-	op.append("result", res)
-	op.append("state", map[string]any{"state": state, "at": time.Now().UTC()})
+	op.complete(res, state)
 	o.mu.Lock()
 	if o.active[op.key] == op {
 		delete(o.active, op.key)
