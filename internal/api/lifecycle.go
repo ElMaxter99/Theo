@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -74,6 +75,7 @@ func (s *Server) handleClean(w http.ResponseWriter, r *http.Request, _ *session)
 	var req struct {
 		Down           bool   `json:"down"`
 		DeleteBranches bool   `json:"delete_branches"`
+		RescueDetached bool   `json:"rescue_detached"`
 		Images         bool   `json:"images"`
 		Confirm        string `json:"confirm"`
 	}
@@ -192,9 +194,11 @@ func (s *Server) handleParkInactivePlan(w http.ResponseWriter, r *http.Request, 
 		return projectNotFound(project)
 	}
 	q := r.URL.Query()
+	maxChanges, _ := strconv.Atoi(q.Get("max_changes"))
 	report, err := s.eng.ParkInactive(r.Context(), project, engine.ParkInactiveOptions{
-		SaveChanges: q.Get("save_changes") == "true", IncludeIgnored: q.Get("include_ignored") == "true",
-		DeleteBranches: q.Get("delete_branches") == "true", Size: q.Get("size") == "true", Only: q["path"],
+		SaveChanges: queryBool(q.Get("save_changes")), IncludeIgnored: queryBool(q.Get("include_ignored")),
+		RescueDetached: queryBool(q.Get("rescue_detached")), MaxChanges: maxChanges,
+		DeleteBranches: queryBool(q.Get("delete_branches")), Size: queryBool(q.Get("size")), Only: q["path"],
 	})
 	if err != nil {
 		return fromEngine(err, &ResourceRef{Kind: "project", Project: project})
@@ -211,6 +215,7 @@ func (s *Server) handleParkInactive(w http.ResponseWriter, r *http.Request, _ *s
 		IncludeIgnored bool `json:"include_ignored"`
 		MaxChanges     int  `json:"max_changes"`
 		DeleteBranches bool `json:"delete_branches"`
+		RescueDetached bool `json:"rescue_detached"`
 		// Paths limits it to these worktrees; empty means every inactive one.
 		Paths   []string `json:"paths"`
 		Confirm string   `json:"confirm"`
@@ -229,7 +234,7 @@ func (s *Server) handleParkInactive(w http.ResponseWriter, r *http.Request, _ *s
 	}
 	report, err := s.eng.ParkInactive(r.Context(), p.Name, engine.ParkInactiveOptions{
 		SaveChanges: req.SaveChanges, IncludeIgnored: req.IncludeIgnored, MaxChanges: req.MaxChanges,
-		DeleteBranches: req.DeleteBranches, Only: req.Paths, Apply: true,
+		DeleteBranches: req.DeleteBranches, RescueDetached: req.RescueDetached, Only: req.Paths, Apply: true,
 	})
 	if err != nil {
 		return fromEngine(err, &ResourceRef{Kind: "project", Project: p.Name})
@@ -238,3 +243,7 @@ func (s *Server) handleParkInactive(w http.ResponseWriter, r *http.Request, _ *s
 	s.hub.publish("state.changed", map[string]string{"project": p.Name})
 	return writeJSON(w, http.StatusOK, report)
 }
+
+// queryBool reads a flag of a query string the way the web client writes it
+// ("1") or spelled out ("true").
+func queryBool(v string) bool { return v == "1" || v == "true" }

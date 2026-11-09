@@ -14,6 +14,8 @@ import { CopyCommand, theoCmd } from "./CopyCommand.tsx";
 import { ErrorBanner, Loading } from "./ui.tsx";
 
 type Filter = "all" | "safe" | "changes" | "unpushed" | "gone" | "blocked";
+// Most uncommitted files saved in one WIP commit (the server default is 50).
+const MAX_SAVED = 1000;
 const FILTERS: Filter[] = ["all", "safe", "changes", "unpushed", "gone", "blocked"];
 
 const matches = (e: ParkInactiveEntry, f: Filter): boolean => {
@@ -29,14 +31,17 @@ const matches = (e: ParkInactiveEntry, f: Filter): boolean => {
 
 export function InactivePicker({ project, onChanged, onKeep }: { project: string; onChanged: () => void; onKeep: (path: string) => void }) {
   const c = t.cleanup;
-  const [saveChanges, setSaveChanges] = useState(false);
+  // Saving changes in a local WIP commit and keeping a detached HEAD in a branch lose nothing, so they start on;
+  // deleting ignored files that cannot be rebuilt (.env, certs...) does not, so it starts off.
+  const [saveChanges, setSaveChanges] = useState(true);
+  const [rescue, setRescue] = useState(true);
   const [withIgnored, setWithIgnored] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [mode, setMode] = useState<"park" | "delete" | null>(null);
   const plan = useResource<ParkInactiveReport>(
-    () => api.get<ParkInactiveReport>(`${projectPath(project)}/park-inactive${qs({ save_changes: saveChanges, include_ignored: withIgnored, size: true })}`),
-    [project, saveChanges, withIgnored],
+    () => api.get<ParkInactiveReport>(`${projectPath(project)}/park-inactive${qs({ save_changes: saveChanges, include_ignored: withIgnored, rescue_detached: rescue, max_changes: saveChanges ? MAX_SAVED : undefined, size: true })}`),
+    [project, saveChanges, withIgnored, rescue],
     { project },
   );
   const entries = plan.data?.entries ?? [];
@@ -63,7 +68,20 @@ export function InactivePicker({ project, onChanged, onKeep }: { project: string
   const setMany = (list: ParkInactiveEntry[], on: boolean) => setPicked((cur) => { const n = new Set(cur); for (const e of list) { if (on) n.add(e.path); else n.delete(e.path); } return n; });
   const flag = (f: Filter) => t.cleanup[`pickChip${f[0]!.toUpperCase()}${f.slice(1)}` as "pickChipAll"];
   const name = (e: ParkInactiveEntry) => e.branch ?? e.path;
-  const cmd = theoCmd("worktree", "park-inactive", project, saveChanges && "--save-changes", withIgnored && "--include-ignored",
+  const why = (e: ParkInactiveEntry): string => {
+    switch (e.reason_code) {
+      case "changes": return c.pickReasonChanges(e.changes);
+      case "too-many-changes": return c.pickReasonTooMany(e.changes);
+      case "ignored": return c.pickReasonIgnored((e.ignored_names ?? []).join(", "));
+      case "no-branch": return c.pickReasonNoBranch;
+      case "clone": return c.pickReasonClone;
+      case "locked": return c.pickReasonLocked;
+      case "agent": return c.pickReasonAgent;
+      case "not-inactive": return c.pickReasonNotInactive;
+      default: return e.reason ?? "";
+    }
+  };
+  const cmd = theoCmd("worktree", "park-inactive", project, saveChanges && "--save-changes", saveChanges && "--max-changes", saveChanges && String(MAX_SAVED), withIgnored && "--include-ignored", rescue && "--rescue-detached",
     mode === "delete" && "--delete-branches", ...chosen.flatMap((e) => ["--only", name(e)]), "--confirm", project);
 
   if (plan.loading && !plan.data) return <Loading />;
@@ -80,6 +98,7 @@ export function InactivePicker({ project, onChanged, onKeep }: { project: string
       <p class="small muted">{filter === "safe" ? c.pickHintSafe : filter === "blocked" ? c.pickHintBlocked : filter === "gone" ? c.pickHintGone : c.pickHintAll(summary?.parkable ?? 0, sizeText(summary?.size_bytes))}</p>
       <fieldset class="stack-sm">
         <label class="row"><input type="checkbox" checked={saveChanges} onChange={(e) => setSaveChanges((e.currentTarget as HTMLInputElement).checked)} /> {c.parkAllSave}</label>
+        <label class="row"><input type="checkbox" checked={rescue} onChange={(e) => setRescue((e.currentTarget as HTMLInputElement).checked)} /> {c.pickRescue}</label>
         <label class="row"><input type="checkbox" checked={withIgnored} onChange={(e) => setWithIgnored((e.currentTarget as HTMLInputElement).checked)} /> {c.parkAllIgnored}</label>
       </fieldset>
       <div class="row">
@@ -94,6 +113,7 @@ export function InactivePicker({ project, onChanged, onKeep }: { project: string
           <CopyCommand command={cmd} />
         </div>
       ) : null}
+      {shownPickable.length === 0 && shown.length > 0 ? <p class="small">{c.pickNonePickable}</p> : null}
       {shown.length === 0 ? <p class="empty">{c.pickEmpty}</p> : (
         <div class="table-wrap" tabIndex={0} role="region" aria-label={c.inactiveTitle(shown.length)}>
           <table class="data rows">
@@ -114,7 +134,7 @@ export function InactivePicker({ project, onChanged, onKeep }: { project: string
               {shown.map((e) => (
                 <tr key={e.path} aria-selected={picked.has(e.path)}>
                   <td class="pick"><input type="checkbox" disabled={!pickable(e)} checked={picked.has(e.path)} aria-label={c.pickSelect(name(e))} onChange={() => toggle(e.path)} /></td>
-                  <th scope="row">{name(e)}{e.reason ? <div class="small muted">{e.reason}</div> : null}</th>
+                  <th scope="row">{name(e)}{e.reason ? <div class="small muted">{why(e)}</div> : e.rescue_branch ? <div class="small muted">{c.pickRescueInfo(e.rescue_branch)}</div> : null}</th>
                   <td class="num">{c.pickDays(e.idle_days)}</td>
                   <td class="num">{e.changes > 0 ? e.changes : <span class="muted">—</span>}</td>
                   <td class="num">{e.unpushed > 0 ? e.unpushed : <span class="muted">—</span>}</td>
@@ -139,7 +159,7 @@ export function InactivePicker({ project, onChanged, onKeep }: { project: string
           onClose={() => setMode(null)}
           onConfirm={async () => {
             const out = await api.post<ParkInactiveReport>(`${projectPath(project)}/park-inactive`, {
-              save_changes: saveChanges, include_ignored: withIgnored, delete_branches: mode === "delete",
+              save_changes: saveChanges, include_ignored: withIgnored, rescue_detached: rescue, max_changes: saveChanges ? MAX_SAVED : undefined, delete_branches: mode === "delete",
               paths: chosen.map((e) => e.path), confirm: project,
             });
             const done = out.entries.filter((e) => e.parked).length;

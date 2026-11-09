@@ -612,6 +612,9 @@ export interface ParkInactiveEntry {
   unpushed: number;
   upstream_gone?: boolean;
   ignored?: number;
+  ignored_names?: string[];
+  rescue_branch?: string;
+  reason_code?: string;
   safe?: boolean;
   branch_deletable?: boolean;
   size_bytes?: number;

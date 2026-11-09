@@ -34,14 +34,17 @@ Forgotten work (see docs/cli/worktrees.md):
                                                remove the folder, keep the branch. Refuses
                                                uncommitted changes; --confirm when ignored files
                                                (.env, node_modules...) would be lost
-  worktree park-inactive <project> [--only <w>]... [--save-changes] [--include-ignored] [--delete-branches] [--max-changes <n>] [--confirm <project>] [--json]
+  worktree park-inactive <project> [--only <w>]... [--save-changes] [--include-ignored] [--rescue-detached] [--delete-branches] [--max-changes <n>] [--confirm <project>] [--json]
                                                Park every inactive worktree at once (or only the --only ones). Without
                                                --confirm it only lists what would be parked and
                                                what stays, with why. --save-changes keeps the
                                                uncommitted files in a local work-in-progress
                                                commit on the branch (never pushed); --include-ignored
-                                               also parks the ones with .env or node_modules,
-                                               which are deleted. --delete-branches also deletes the
+                                               also parks the ones with ignored files that cannot
+                                               be rebuilt (.env, certs...), which are deleted;
+                                               node_modules, logs, dist... never stop it.
+                                               --rescue-detached keeps a detached HEAD in a
+                                               theo-rescue/<folder> branch before parking it. --delete-branches also deletes the
                                                local branch, only when all its commits are on its
                                                remote. Volumes stay; "worktree resume" brings
                                                parked ones back
@@ -701,6 +704,7 @@ func runWorktreeParkInactive(ctx context.Context, e *engine.Engine, args []strin
 	ignored := fs.Bool("include-ignored", false, "also park worktrees with ignored files (.env, node_modules...), which are deleted")
 	maxChanges := fs.Int("max-changes", engine.DefaultParkMaxChanges, "most uncommitted files to save per worktree")
 	delBranches := fs.Bool("delete-branches", false, "also delete the local branch of each parked worktree, only when all its commits are on its remote")
+	rescue := fs.Bool("rescue-detached", false, "park a worktree with a detached HEAD after creating a theo-rescue/<folder> branch at its commit")
 	var only stringList
 	fs.Var(&only, "only", "park only this worktree (branch or path); can be repeated")
 	confirm := fs.String("confirm", "", "the project name, to park them")
@@ -720,7 +724,7 @@ func runWorktreeParkInactive(ctx context.Context, e *engine.Engine, args []strin
 		return fmt.Errorf("--confirm must be the project name, %q; nothing was parked", p.Name)
 	}
 	apply := *confirm != ""
-	r, err := e.ParkInactive(ctx, p.Name, engine.ParkInactiveOptions{SaveChanges: *save, IncludeIgnored: *ignored, MaxChanges: *maxChanges, DeleteBranches: *delBranches, Only: only, Apply: apply})
+	r, err := e.ParkInactive(ctx, p.Name, engine.ParkInactiveOptions{SaveChanges: *save, IncludeIgnored: *ignored, MaxChanges: *maxChanges, DeleteBranches: *delBranches, RescueDetached: *rescue, Only: only, Apply: apply})
 	if err != nil {
 		return err
 	}
@@ -784,6 +788,9 @@ func runWorktreeParkInactive(ctx context.Context, e *engine.Engine, args []strin
 		}
 		if *delBranches {
 			cmd += " --delete-branches"
+		}
+		if *rescue {
+			cmd += " --rescue-detached"
 		}
 		for _, o := range only {
 			cmd += " --only " + o
