@@ -60,7 +60,7 @@ jobs:
       prerelease: ${{ steps.v.outputs.prerelease }}
       target: ${{ steps.v.outputs.target }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           ref: ${{ inputs.tag || github.sha }}
@@ -134,11 +134,11 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           ref: ${{ inputs.tag || github.sha }}
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - run: go vet ./...
@@ -153,11 +153,11 @@ jobs:
         goos: [linux, darwin, windows]
         goarch: [amd64, arm64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           ref: ${{ inputs.tag || github.sha }}
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: Build and package
@@ -183,7 +183,7 @@ jobs:
           else
             tar -czf "$name.tar.gz" "$name"
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: theo_${{ matrix.goos }}_${{ matrix.goarch }}
           path: |
@@ -212,11 +212,11 @@ jobs:
       GOARCH: ${{ matrix.goarch }}
       TAG: ${{ needs.prepare.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           ref: ${{ inputs.tag || github.sha }}
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: Install WebKitGTK
@@ -239,7 +239,7 @@ jobs:
       - name: Package
         shell: bash
         run: scripts/package-desktop.sh "$GOOS" "$GOARCH" "$TAG" theo-desktop-bin
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: theo_desktop_${{ matrix.goos }}_${{ matrix.goarch }}
           path: |
@@ -253,11 +253,11 @@ jobs:
     needs: [prepare, build, desktop]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           ref: ${{ inputs.tag || github.sha }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: assets
           merge-multiple: true
@@ -274,7 +274,7 @@ jobs:
           test "$(wc -l < checksums.txt)" -eq 10
           bash ../scripts/package-manifests.sh "$TAG" checksums.txt manifests
           python3 -m json.tool manifests/theo.json > /dev/null
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-dry-run
           path: assets
@@ -287,11 +287,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           ref: ${{ inputs.tag || github.sha }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: assets
           merge-multiple: true
