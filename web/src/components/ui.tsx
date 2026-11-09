@@ -1,4 +1,5 @@
 // Small presentational building blocks.
+import { Mark } from "./Mark.tsx";
 import type { ComponentChildren } from "preact";
 import { Icon } from "./Icon.tsx";
 import type { IconName } from "./Icon.tsx";
@@ -49,10 +50,12 @@ export function ErrorBanner({ error, title }: { error: ApiError | { message: str
   );
 }
 
-export function Loading({ label = t.app.loading }: { label?: string }) {
+/** Inline loading line with Theo's animated symbol. `hero` is the larger, centred version for whole pages. */
+export function Loading({ label = t.app.loading, hero = false }: { label?: string; hero?: boolean }) {
   return (
-    <p class="muted">
-      <Icon name="busy" spin /> {label}
+    <p class={hero ? "loading loading-hero" : "loading muted"} role="status">
+      <Mark size={hero ? 64 : 20} />
+      <span>{label}</span>
     </p>
   );
 }
@@ -109,5 +112,14 @@ export function ExternalLink({ href, children, label }: { href: string; children
       {children} <Icon name="external" size={13} />
       <span class="sr-only"> {label ? `${label} ` : ""}{t.ports.newTab}</span>
     </a>
+  );
+}
+
+/** Placeholder rows while a list loads: the page keeps its shape and shows that something is on its way. */
+export function SkeletonRows({ n = 4, label = t.app.loading }: { n?: number; label?: string }) {
+  return (
+    <div class="skeleton-rows" role="status" aria-label={label}>
+      {Array.from({ length: n }, (_, i) => <div key={i} class="sk" style={{ width: `${92 - (i % 3) * 14}%` }} />)}
+    </div>
   );
 }
