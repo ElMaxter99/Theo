@@ -42,6 +42,9 @@ type hookInput struct {
 	Name         string `json:"name"`          // WorktreeCreate
 	WorktreePath string `json:"worktree_path"` // WorktreeRemove
 	Source       string `json:"source"`        // SessionStart
+	// GitHub Copilot writes camelCase fields and no event name; its hooks
+	// pass --agent copilot and --state instead.
+	SessionIDCopilot string `json:"sessionId"`
 }
 
 // readHookInput reads the event from stdin unless it is a terminal.
@@ -58,6 +61,9 @@ func readHookInput() hookInput {
 		return in
 	}
 	_ = json.Unmarshal(data, &in) // anything else is not for Theo
+	if in.SessionID == "" {
+		in.SessionID = in.SessionIDCopilot
+	}
 	return in
 }
 
@@ -82,6 +88,8 @@ func runHook(e *engine.Engine, args []string, stdout, stderr io.Writer) error {
 	name := fs.String("name", "", "worktree-create: name of the worktree")
 	path := fs.String("path", "", "worktree-remove: path of the worktree")
 	state := fs.String("state", "", "agent-state: working, waiting, done or clear (default: from the event)")
+	agent := fs.String("agent", "claude", "which agent calls the hook: claude or copilot")
+	skipRepeat := fs.Bool("skip-repeat", false, "agent-state: do nothing when the state would be working again")
 	pos, err := parse(fs, args[1:])
 	if err != nil {
 		return err
@@ -93,6 +101,11 @@ func runHook(e *engine.Engine, args []string, stdout, stderr io.Writer) error {
 	case "worktree-create", "worktree-remove", "session-start", "agent-state":
 	default:
 		return usageErrorf("unknown hook %q", sub)
+	}
+	switch *agent {
+	case "claude", "copilot":
+	default:
+		return usageErrorf("--agent must be claude or copilot")
 	}
 
 	in := readHookInput()
@@ -118,9 +131,9 @@ func runHook(e *engine.Engine, args []string, stdout, stderr io.Writer) error {
 	case "worktree-remove":
 		herr = hookWorktreeRemove(ctx, e, in, stderr)
 	case "session-start":
-		herr = hookSessionStart(ctx, e, in, stdout)
+		herr = hookSessionStart(ctx, e, in, *agent, stdout)
 	case "agent-state":
-		herr = hookAgentState(ctx, e, in, *state)
+		herr = hookAgentState(ctx, e, in, *state, *agent, *skipRepeat)
 	}
 	if herr != nil {
 		e.Diag("hook %s (%s): %v", sub, in.Cwd, herr)
@@ -208,7 +221,7 @@ func hookWorktreeRemove(ctx context.Context, e *engine.Engine, in hookInput, std
 	return err
 }
 
-func hookAgentState(ctx context.Context, e *engine.Engine, in hookInput, override string) error {
+func hookAgentState(ctx context.Context, e *engine.Engine, in hookInput, override, agent string, skipRepeat bool) error {
 	state, known := agentStateOf[in.Event]
 	switch override {
 	case "":
@@ -225,16 +238,16 @@ func hookAgentState(ctx context.Context, e *engine.Engine, in hookInput, overrid
 		return nil
 	}
 	// PostToolUse fires after every tool call: do nothing when it changes nothing.
-	if in.Event == "PostToolUse" {
+	if in.Event == "PostToolUse" || (skipRepeat && state == agents.Working) {
 		store := agents.Store{Dir: e.DataDir()}
 		if cur, ok := store.Get(wt.Path); ok && cur.State == agents.Working {
 			return nil
 		}
 	}
-	return e.SetAgentState(wt.Path, state, "claude", in.SessionID)
+	return e.SetAgentState(wt.Path, state, agent, in.SessionID)
 }
 
-func hookSessionStart(ctx context.Context, e *engine.Engine, in hookInput, stdout io.Writer) error {
+func hookSessionStart(ctx context.Context, e *engine.Engine, in hookInput, agent string, stdout io.Writer) error {
 	project, wt, ok := projectForDir(ctx, e, in.Cwd)
 	if !ok {
 		return nil
@@ -247,7 +260,8 @@ func hookSessionStart(ctx context.Context, e *engine.Engine, in hookInput, stdou
 	vars, warning := worktreeEnv(ctx, e, inst)
 
 	// The variables reach the session's commands through CLAUDE_ENV_FILE.
-	if file := os.Getenv("CLAUDE_ENV_FILE"); file != "" {
+	// Copilot has no such file; it only reads the context.
+	if file := os.Getenv("CLAUDE_ENV_FILE"); file != "" && agent == "claude" {
 		if f, err := os.OpenFile(file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
 			for _, v := range vars {
 				fmt.Fprintf(f, "export %s=%s\n", v.Name, shQuote(v.Value))
@@ -256,7 +270,17 @@ func hookSessionStart(ctx context.Context, e *engine.Engine, in hookInput, stdou
 		}
 	}
 
-	// What the session reads as context.
+	// What the session reads as context. Copilot reads it from a JSON field.
+	real := stdout
+	var ctxText strings.Builder
+	if agent == "copilot" {
+		stdout = &ctxText
+		defer func() {
+			enc := json.NewEncoder(real)
+			enc.SetEscapeHTML(false)
+			_ = enc.Encode(map[string]string{"additionalContext": strings.TrimRight(ctxText.String(), "\n")})
+		}()
+	}
 	fmt.Fprintf(stdout, "Theo manages this worktree: project %s, worktree %s (compose project %s).\n", inst.Project, firstNonEmpty(inst.Branch, inst.Workspace), inst.Compose)
 	for _, v := range vars {
 		if strings.HasPrefix(v.Name, "THEO_URL") || strings.HasPrefix(v.Name, "THEO_PORT") {
@@ -266,8 +290,12 @@ func hookSessionStart(ctx context.Context, e *engine.Engine, in hookInput, stdou
 	if warning != "" {
 		fmt.Fprintf(stdout, "  (%s)\n", warning)
 	}
-	fmt.Fprintf(stdout, "Start it with `theo up %s -w %s`; see it with `theo ps %s -w %s`. These variables are exported in your shell (theo env prints them again).\n",
-		inst.Project, worktreeArg(inst), inst.Project, worktreeArg(inst))
+	exported := " These variables are exported in your shell (theo env prints them again)."
+	if agent == "copilot" {
+		exported = " `theo env` prints the variables."
+	}
+	fmt.Fprintf(stdout, "Start it with `theo up %s -w %s`; see it with `theo ps %s -w %s`.%s\n",
+		inst.Project, worktreeArg(inst), inst.Project, worktreeArg(inst), exported)
 	return nil
 }
 

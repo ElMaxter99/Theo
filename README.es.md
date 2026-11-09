@@ -107,6 +107,7 @@ Más en el [quickstart](docs/cli/quickstart.md) (en inglés). Para probarlo todo
 
 ```sh
 theo mcp install --hooks        # Claude Code crea y elimina worktrees a través de Theo
+theo agent install copilot      # GitHub Copilot: estado del agente y contexto de sesión
 eval "$(theo env)"              # THEO_PORT_WEB, THEO_URL... de este worktree
 theo worktree setup my-api feature/x   # ejecuta los comandos after_create de .theo.json
 ```
@@ -145,7 +146,7 @@ Todo está en el [changelog](CHANGELOG.md) (en inglés).
 | Proyectos | `project add\|set\|list\|remove` | [project](docs/cli/project.md) |
 | Archivos de Compose | qué archivos y archivos env se usan | [compose-files](docs/cli/compose-files.md) |
 | Worktrees | `worktrees`, `branches`, `worktree add\|remove`, `up`, `down`, `restart`, `stop`, `ps`, `logs`, `open` | [worktrees](docs/cli/worktrees.md) |
-| Agentes | `hook`, `env`, `mcp install --hooks`, `worktree setup`, `.theo.json` | [agents](docs/cli/agents.md) |
+| Agentes | `hook`, `env`, `agent install`, `mcp install --hooks`, `worktree setup`, `.theo.json` | [agents](docs/cli/agents.md) |
 | Trabajo olvidado | `worktree clean\|park\|resume\|keep\|base` | [worktrees](docs/cli/worktrees.md#forgotten-work-states-clean-park-resume-keep) |
 | Puertos | `ports`, `up --auto-ports` | [ports](docs/cli/ports.md) |
 | Dominios locales | `proxy`, `proxy routes`, `proxy --https`, `proxy trust` | [proxy](docs/cli/proxy.md) |
