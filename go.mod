@@ -1,5 +1,5 @@
 module github.com/ElMaxter99/Theo
 
-go 1.24
+go 1.26
 
 require github.com/webview/webview_go v0.0.0-20240831120633-6173450d4dd6

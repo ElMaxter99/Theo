@@ -18,7 +18,7 @@ git commit -s -m "Explain why the change is needed"
 
 ## Build and test
 
-You need Go 1.24 or later. Git and Docker (with the Compose plugin) are needed for the tests that use them; those tests skip themselves when a tool or a Docker daemon is missing.
+You need Go 1.26 or later. Git and Docker (with the Compose plugin) are needed for the tests that use them; those tests skip themselves when a tool or a Docker daemon is missing.
 
 ```sh
 go build ./cmd/theo
