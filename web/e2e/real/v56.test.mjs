@@ -164,7 +164,9 @@ test("settings: diagnostics from the real doctor, Compose minimum, report text",
   await page.locator("table tbody tr", { hasText: /compose/i }).first().waitFor();
   const text = await page.locator("main").textContent();
   assert.match(text, /Everything Theo needs works|does not work/);
-  assert.match(text, /Theo needs 2\.24\.4 or later/);
+  // The "Theo needs 2.24.4 or later" hint only shows when Compose is older; with a recent Compose the row is just OK.
+  assert.match(text, /docker compose plugin/i);
+  assert.match(text, /Docker Compose \d|Theo needs 2\.24\.4 or later/);
   assert.deepEqual(seriousOnly(await axeViolations(page)), []);
   await shot(page, "64-real-settings");
   await page.getByRole("button", { name: "Copy information for a report" }).click();

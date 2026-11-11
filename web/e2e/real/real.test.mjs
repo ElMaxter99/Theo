@@ -114,8 +114,11 @@ test("start from the interface: containers exist, state Running, link works, log
   // Leaving the view ends the docker compose logs process (the backend tests this too; here we check it from the UI side).
   await page.getByRole("tab", { name: "Summary" }).click();
   await page.waitForTimeout(1500);
-  const logsProcs = execFileSync("sh", ["-c", `pgrep -fa "[c]ompose.*${prefix}.*logs" | grep -v pgrep || true`], { encoding: "utf8" }).trim();
-  assert.equal(logsProcs, "", "no orphan `docker compose logs` process: " + logsProcs);
+  // pgrep exists on Linux/macOS only; on Windows this orphan check is left to the backend tests.
+  if (process.platform !== "win32") {
+    const logsProcs = execFileSync("sh", ["-c", `pgrep -fa "[c]ompose.*${prefix}.*logs" | grep -v pgrep || true`], { encoding: "utf8" }).trim();
+    assert.equal(logsProcs, "", "no orphan `docker compose logs` process: " + logsProcs);
+  }
   assert.deepEqual(page.problems, []);
   await page.ctx.close();
 });
