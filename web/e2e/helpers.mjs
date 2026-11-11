@@ -1,5 +1,5 @@
-// Shared helpers for the Playwright tests. Playwright itself comes preinstalled in the environment
-// (require('playwright') from any directory); it is not a dependency of this package.
+// Shared helpers for the Playwright tests. Playwright is a devDependency (`npm ci`); the browser is installed once
+// with `npx playwright install chromium` (already preinstalled in CI and in the cloud environment).
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { readFileSync, mkdirSync } from "node:fs";
