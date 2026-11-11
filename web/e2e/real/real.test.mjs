@@ -60,6 +60,20 @@ const apiSession = async () => {
 };
 const row = (page, name) => page.locator("tbody tr", { has: page.getByRole("link", { name, exact: true }) });
 
+// The row menu is re-rendered by the page's periodic refresh, which can detach it between opening it and
+// clicking an item; open it again until the click lands.
+async function pickMenuItem(page, buttonName, itemName) {
+  for (let attempt = 0; ; attempt++) {
+    await page.getByRole("button", { name: buttonName }).click();
+    try {
+      await page.getByRole("menuitem", { name: itemName }).click({ timeout: 3000 });
+      return;
+    } catch (e) {
+      if (attempt >= 5) throw e;
+    }
+  }
+}
+
 test("welcome screen on an empty registry, then add a project with the folder picker", { skip }, async () => {
   const page = await openApp(browser, adapter);
   await page.locator(".welcome img.mascot").waitFor();
@@ -173,8 +187,7 @@ test("remove: a worktree with containers is refused; after Stop, one with a chan
   const second = ov.worktrees.find((w) => w.branch === "feat-two");
   // a) with containers
   const page = await openApp(browser, adapter, { route: `#/p/${project}`, wait: "table.data" });
-  await page.getByRole("button", { name: "More actions for feat-two" }).click();
-  await page.getByRole("menuitem", { name: /Remove worktree/ }).click();
+  await pickMenuItem(page, "More actions for feat-two", /Remove worktree/);
   await page.getByRole("button", { name: "Remove worktree" }).click();
   await page.locator("dialog[open] >> text=This instance still has containers").waitFor();
   await shot(page, "36-real-remove-has-containers");
@@ -182,8 +195,7 @@ test("remove: a worktree with containers is refused; after Stop, one with a chan
   await row(page, "feat-two").locator(".badge:has-text('No containers')").waitFor({ timeout: 60000 });
   // b) uncommitted file
   writeFileSync(path.join(second.path, "notes.txt"), "work in progress\n");
-  await page.getByRole("button", { name: "More actions for feat-two" }).click();
-  await page.getByRole("menuitem", { name: /Remove worktree/ }).click();
+  await pickMenuItem(page, "More actions for feat-two", /Remove worktree/);
   await page.getByRole("button", { name: "Remove worktree" }).click();
   const dlg = page.locator("dialog[open]");
   await dlg.locator("text=notes.txt").waitFor();
@@ -234,8 +246,7 @@ test("purge: after Stop, data is deleted only with the exact Compose project nam
   const ov = (await call("GET", `/projects/${project}/overview`)).body;
   const main = ov.worktrees.find((w) => w.main);
   const page = await openApp(browser, adapter, { route: `#/p/${project}`, wait: "table.data" });
-  await page.getByRole("button", { name: "More actions for main" }).click();
-  await page.getByRole("menuitem", { name: "Stop and remove containers" }).click();
+  await pickMenuItem(page, "More actions for main", "Stop and remove containers");
   await row(page, "main").locator(".badge:has-text('No containers')").waitFor({ timeout: 60000 });
   // Only the volumes of main: the second instance's volume is kept after its worktree was removed, by design.
   const vols = () => docker("volume", "ls", "-q", "--filter", `name=${prefix}app_`).split("\n").filter(Boolean);
