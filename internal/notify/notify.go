@@ -120,7 +120,10 @@ type Deps struct {
 	Send     func(Message) error            // shows one notification
 	Interval time.Duration                  // between looks; default 3 s
 	Spanish  bool
-	OnError  func(error)
+	// Skip says the person is already looking at Theo's window, so nothing is
+	// shown now. Optional. What changed meanwhile counts as seen.
+	Skip    func() bool
+	OnError func(error)
 }
 
 // Watch looks at the agents until ctx ends and sends what is new.
@@ -134,7 +137,11 @@ func Watch(ctx context.Context, d Deps) {
 	for {
 		mode := d.Mode()
 		if mode == "waiting" || mode == "all" {
-			for _, m := range t.Next(mode, d.States(), d.Label) {
+			msgs := t.Next(mode, d.States(), d.Label)
+			if d.Skip != nil && d.Skip() {
+				msgs = nil
+			}
+			for _, m := range msgs {
 				if err := d.Send(m); err != nil && d.OnError != nil {
 					d.OnError(err)
 				}

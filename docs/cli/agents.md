@@ -114,7 +114,7 @@ PowerShell on Windows. Rules, from design V-15:
 - It has no buttons: find the worktree in Theo's window (the badge and the *Waiting for you* card).
 
 You can change it in Settings > AI agents (Notifications) or with `theo config`.
-Not done yet: "do not notify while Theo's window is in front" (the checkbox is shown disabled).
+To stay quiet while you are looking at Theo, tick "Don't notify while the window is in front" in the same card, or run `theo config set notify.skip-focused on` (default off). The window tells the app when it is in front; what changes meanwhile is not announced later. Tested with a stub; not run on macOS or Windows yet.
 
 ## `theo env`
 

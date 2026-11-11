@@ -3,6 +3,7 @@ package cli
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ElMaxter99/Theo/internal/registry"
 	"github.com/ElMaxter99/Theo/internal/testutil"
@@ -48,6 +49,21 @@ func states(t *testing.T, project string) map[string]string {
 		}
 	}
 	return m
+}
+
+// statesWhen polls the containers of project until ok accepts them (at most
+// 10 s) and returns the last look. Docker can report a container as running
+// for a moment after `compose stop` returned, so a single look is a flaky check.
+func statesWhen(t *testing.T, project string, ok func(map[string]string) bool) map[string]string {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		m := states(t, project)
+		if ok(m) || time.Now().After(deadline) {
+			return m
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
 }
 
 func stateOf(m map[string]string, service string) string {
@@ -105,7 +121,7 @@ func TestServicesRecreateAndExec(t *testing.T) {
 	} else {
 		checkOutput(t, "stop", stdout, "Stopped cache")
 	}
-	m = states(t, project)
+	m = statesWhen(t, project, func(m map[string]string) bool { return stateOf(m, "cache") == "exited" })
 	if stateOf(m, "cache") != "exited" || stateOf(m, "api") != "running" || stateOf(m, "db") != "running" || stateOf(m, "tools") != "running" {
 		t.Fatalf("after stop cache: %v", m)
 	}
@@ -115,7 +131,7 @@ func TestServicesRecreateAndExec(t *testing.T) {
 	if _, stderr, code := run("start", "t5ctl", "cache"); code != ExitOK {
 		t.Fatalf("start cache: %s", stderr)
 	}
-	if m = states(t, project); stateOf(m, "cache") != "running" {
+	if m = statesWhen(t, project, func(m map[string]string) bool { return stateOf(m, "cache") == "running" }); stateOf(m, "cache") != "running" {
 		t.Errorf("after start cache: %v", m)
 	}
 

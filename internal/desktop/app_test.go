@@ -53,7 +53,10 @@ func TestShimCarriesTheOriginAndTheBinding(t *testing.T) {
 	if !strings.Contains(js, `"`+app+`"`) || !strings.Contains(js, "window."+BindName+"(") {
 		t.Fatalf("shim lacks the origin or the binding:\n%s", js)
 	}
-	if strings.Contains(js, "__ORIGIN__") || strings.Contains(js, "__BIND__") {
+	if !strings.Contains(js, "window."+FocusBindName) {
+		t.Fatal("shim does not report the window focus")
+	}
+	if strings.Contains(js, "__ORIGIN__") || strings.Contains(js, "__BIND__") || strings.Contains(js, "__FOCUS__") {
 		t.Fatal("placeholders left in the shim")
 	}
 	// An origin is data, never code: a hostile value stays a JS string.

@@ -1268,7 +1268,7 @@ export const es: Catalog = {
     notifyAll: "También cuando termine",
     notifyHint: "Solo avisan los agentes que informan por hooks; los estados estimados nunca avisan. Funciona mientras la ventana de Theo o `theo ui` estén abiertos.",
     notifySaved: "Ajuste de avisos guardado.",
-    notifyForeground: "No avisar con la ventana al frente (pendiente)",
+    notifyForeground: "No avisar con la ventana al frente",
   },
 };
 
