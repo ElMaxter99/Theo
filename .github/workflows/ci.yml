@@ -151,14 +151,16 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: docker version && docker compose version
       - run: cd web && npm ci && npx playwright install --with-deps chromium
-      - name: scripts/evidence.sh
-        run: scripts/evidence.sh
-      - name: Evidence (report and screenshots)
+      - run: cd web && npm run build
+      - name: Real e2e (real theo serve, Docker)
+        working-directory: web
+        run: npm run test:e2e:real
+      - name: Screenshots of the flows
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: e2e-evidence
-          path: evidence/
+          path: web/e2e/screenshots/
           if-no-files-found: ignore
 
   desktop:

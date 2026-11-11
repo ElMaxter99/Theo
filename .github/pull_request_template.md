@@ -6,7 +6,7 @@ Commands you ran and on which system. Say what you could not test (for example W
 
 ## Evidence
 
-Paste `evidence/report.md` from `scripts/evidence.sh` and link the screenshots of the changed flow. A PR without it is not ready.
+List the commands and results, and link the screenshots of the changed flow. A PR without it is not ready.
 
 ## Checklist
 

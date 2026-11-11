@@ -57,9 +57,8 @@ fails when it is out of date.
 
 ## Evidence for a pull request
 
-`scripts/evidence.sh` runs every check above (including the real e2e) and writes `evidence/report.md`
-and the screenshots; CI runs it too and uploads the `e2e-evidence` artifact. See CLAUDE.md for the rule
-that a change is not handed over until it exits 0.
+CI runs the real web e2e against Docker and uploads the screenshots as the `e2e-evidence` artifact.
+See CLAUDE.md for the rule that a change is not handed over until the checks pass.
 
 ## Smoke battery
 
