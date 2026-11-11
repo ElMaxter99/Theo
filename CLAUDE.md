@@ -16,5 +16,9 @@ Before marking a pull request ready, run the real flow and attach the evidence:
 5. Say plainly what could not be checked here: native desktop notifications, window focus, the
    desktop app (`theo-desktop`), Windows and macOS. Those need a real desktop machine.
 
+Run the checks in parallel: once a change to `web/` or the server compiles, start the `e2e-verifier`
+agent (`.claude/agents/e2e-verifier.md`) in the background and keep developing; read its report before
+handing the PR over. It runs the real e2e and describes the screenshots of the flow that changed.
+
 If a change adds a feature, add or extend a real e2e test in `web/e2e/real/` for it.
 Language, sign-off and release rules are in CONTRIBUTING.md.
