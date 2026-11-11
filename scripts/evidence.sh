@@ -18,7 +18,8 @@ rows=(); fail=0
 step() { # name, dir, command...
   local name=$1 dir=$2; shift 2
   local log="$out/logs/$(echo "$name" | tr -c 'A-Za-z0-9' '-').log"
-  if (cd "$dir" && "$@") >"$log" 2>&1; then rows+=("| $name | pass |"); else rows+=("| $name | **FAIL** (see logs/) |"); fail=1; fi
+  if (cd "$dir" && "$@") >"$log" 2>&1; then rows+=("| $name | pass |"); else rows+=("| $name | **FAIL** (see logs/) |"); fail=1
+    echo "::group::$name failed (last lines)"; grep -E "^(not ok|--- FAIL|FAIL)|error:" "$log" | head -20; tail -25 "$log"; echo "::endgroup::"; fi
 }
 
 step "gofmt"            . bash -c 'test -z "$(gofmt -l .)"'
