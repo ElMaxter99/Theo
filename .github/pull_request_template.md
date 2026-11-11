@@ -4,6 +4,10 @@
 
 Commands you ran and on which system. Say what you could not test (for example Windows or macOS).
 
+## Evidence
+
+List the commands and results, and link the screenshots of the changed flow. A PR without it is not ready.
+
 ## Checklist
 
 - [ ] Commits are signed off (`git commit -s`, see CONTRIBUTING.md)

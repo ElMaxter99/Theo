@@ -133,6 +133,36 @@ jobs:
         working-directory: .
         run: test -z "$(git status --porcelain -- internal/ui/dist)"
 
+  e2e-real:
+    name: Web e2e against the real server (Docker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: docker version && docker compose version
+      - run: cd web && npm ci && npx playwright install chromium
+      - run: cd web && npm run build
+      - name: Real e2e (real theo serve, Docker)
+        working-directory: web
+        run: npm run test:e2e:real
+      - name: Screenshots of the flows
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-evidence
+          path: web/e2e/screenshots/
+          if-no-files-found: ignore
+
   desktop:
     # The desktop app is a separate binary behind the "desktop" build tag; the
     # jobs above never build it. Linux also runs the tests that need a display

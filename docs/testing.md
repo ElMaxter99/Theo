@@ -55,6 +55,11 @@ THEO_BIN=/path/to/theo npm run test:e2e:real   # against the real theo serve (Do
 After changing `web/`, run `npm run build` and commit `internal/ui/dist`; CI
 fails when it is out of date.
 
+## Evidence for a pull request
+
+CI runs the real web e2e against Docker and uploads the screenshots as the `e2e-evidence` artifact.
+See CLAUDE.md for the rule that a change is not handed over until the checks pass.
+
 ## Smoke battery
 
 `scripts/smoke.sh` (bash: Linux, macOS, Git Bash) and `scripts/smoke.ps1`
