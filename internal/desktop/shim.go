@@ -9,6 +9,10 @@ import (
 // address in the system browser.
 const BindName = "theoOpenExternal"
 
+// FocusBindName is the name of the Go function the page calls to say whether
+// the window is in front ("1") or not ("0").
+const FocusBindName = "theoWindowFocus"
+
 const shimTemplate = `(function () {
   if (window.__theoDesktop) return;
   window.__theoDesktop = true;
@@ -45,6 +49,16 @@ const shimTemplate = `(function () {
     var f = e.target, a = f && f.action ? abs(f.action) : null;
     if (a && !same(a)) { e.preventDefault(); e.stopPropagation(); }
   }, true);
+  // Tell Go whether the window is in front, so notices can wait for it to go behind.
+  function focus() {
+    try {
+      var f = window.__FOCUS__;
+      if (f) { var p = f(document.hasFocus() && document.visibilityState === "visible" ? "1" : "0"); if (p && p.catch) p.catch(function () {}); }
+    } catch (e) {}
+  }
+  ["focus", "blur"].forEach(function (n) { window.addEventListener(n, focus); });
+  document.addEventListener("visibilitychange", focus);
+  document.addEventListener("DOMContentLoaded", focus);
   // A file dropped on the window would otherwise be loaded in it.
   ["dragover", "drop"].forEach(function (n) {
     window.addEventListener(n, function (e) { e.preventDefault(); }, true);
@@ -59,6 +73,6 @@ const shimTemplate = `(function () {
 // to whatever the page sends.
 func Shim(appOrigin string) string {
 	o, _ := json.Marshal(appOrigin)
-	r := strings.NewReplacer("__ORIGIN__", string(o), "__BIND__", BindName)
+	r := strings.NewReplacer("__ORIGIN__", string(o), "__BIND__", BindName, "__FOCUS__", FocusBindName)
 	return r.Replace(shimTemplate)
 }

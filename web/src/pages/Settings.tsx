@@ -245,9 +245,9 @@ function Agents() {
 /** The switch of desktop notices for agents (board V-15): the `notify.agent` preference. */
 function NotifyCard() {
   const a = t.agents;
-  const res = useResource<{ mode: string }>(() => api.get<{ mode: string }>("/notify"), []);
-  const save = useAction(async (mode: string) => {
-    await api.post<{ mode: string }>("/notify", { mode });
+  const res = useResource<{ mode: string; skip_focused?: boolean }>(() => api.get<{ mode: string; skip_focused?: boolean }>("/notify"), []);
+  const save = useAction(async (change: { mode?: string; skip_focused?: boolean }) => {
+    await api.post<{ mode: string }>("/notify", change);
     announce(a.notifySaved);
     res.reload();
   });
@@ -265,12 +265,13 @@ function NotifyCard() {
           {options.map(([value, label]) => (
             <div class="check" key={value}>
               <input id={`notify-${value}`} type="radio" name="notify-mode" value={value} checked={mode === value} disabled={save.busy}
-                onChange={() => { void save.run(value); }} />
+                onChange={() => { void save.run({ mode: value }); }} />
               <label for={`notify-${value}`}>{label}</label>
             </div>
           ))}
           <div class="check">
-            <input id="notify-fg" type="checkbox" disabled />
+            <input id="notify-fg" type="checkbox" checked={res.data.skip_focused === true} disabled={save.busy}
+              onChange={(e) => { void save.run({ skip_focused: (e.currentTarget as HTMLInputElement).checked }); }} />
             <label for="notify-fg">{a.notifyForeground}</label>
           </div>
         </fieldset>
