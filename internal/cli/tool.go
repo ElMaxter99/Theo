@@ -30,7 +30,7 @@ func init() {
   tool list [--json]                           Theo's tools (self-contained features with their own scope)
   tool capture serve <project> [worktree] [--yes] [--check] [--json]
                                                Start the application a worktree's run section describes
-                                               (kind script): install, start, wait until it answers, print
+                                               (kind script or static): install, build/start, wait until it answers, print
                                                its URL and keep it until Ctrl-C. Its commands run code from
                                                the repository, so Theo asks the first time and whenever they
                                                change (--yes approves). --check starts it, reports and stops
@@ -135,7 +135,7 @@ func runCapture(e *engine.Engine, args []string, stdout, stderr io.Writer) error
 		fmt.Fprintf(stdout, "  because: %s\n", e)
 	}
 	for _, n := range d.Notes {
-		fmt.Fprintf(stdout, "  note: %s\n", n)
+		fmt.Fprintf(stdout, "  note: %s\n", strings.ReplaceAll(n, "\n", "\n        "))
 	}
 	name := registeredName(e, root)
 	switch {
@@ -279,13 +279,13 @@ func runCaptureServe(e *engine.Engine, args []string, stdout, stderr io.Writer) 
 		}
 		approve = true
 	}
-	proc, err := e.StartScript(ctx, plan, approve, out, stderr)
+	proc, err := e.StartRun(ctx, plan, approve, out, stderr)
 	if err != nil {
-		return err
+		return errors.New(strings.ReplaceAll(err.Error(), path, tildePath(path)))
 	}
 	defer proc.Stop()
 	if *asJSON {
-		if err := writeJSON(stdout, map[string]any{"url": proc.URL(), "port": proc.Port, "path": path, "kept": !*check}); err != nil {
+		if err := writeJSON(stdout, map[string]any{"url": proc.URL(), "port": proc.ListenPort(), "path": path, "kept": !*check}); err != nil {
 			return err
 		}
 	} else if *check {

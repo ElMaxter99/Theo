@@ -43,21 +43,65 @@ deployment by itself:
   (default `/` and 200 or 304) within `timeout_s` (default 90).
 - A mistake in the section is an error, not ignored: `theo doctor` reports it.
 
+### Kind `static`: an application that only generates files
+
+Some applications (an AngularJS one, for example) have no server: a script
+builds a folder and a web server is expected to serve it under a path such as
+`/portal`. Theo is that server:
+
+```json
+{
+  "version": 1,
+  "run": {
+    "kind": "static",
+    "install": ["npm ci"],
+    "build": ["npm run build"],
+    "dir": "dist",
+    "base": "/portal",
+    "spa": true,
+    "proxy": { "/portal/api": "http://localhost:4000" },
+    "ready": { "path": "/portal/" }
+  }
+}
+```
+
+- `build` (commands) and `dir` (the folder the build leaves, inside the
+  worktree) are required with `base` (a path starting with `/`; `/` for the
+  root). There is no `start`. Kind `static` is also assumed when `dir` or `build`
+  is set without `start`.
+- Theo serves `dir` under `base` on a free port of its own, so two branches run
+  at once and both answer on `/portal/`. `GET /` redirects to `base/`, anything
+  outside `base` is 404.
+- `spa: true` answers a path without a file and without an extension (an HTML5
+  route) with `index.html`.
+- `proxy` sends the paths under a prefix to a server that already exists (the
+  API), keeping the path.
+- `env` is given to the build commands.
+- If the built `index.html` has an absolute `<base href="https://...">`, Theo
+  warns: the app would load its files from that address, not from Theo.
+- Cookies are shared between ports of the same host, so two instances open in
+  one browser can overwrite each other's; the `<branch>.<project>.localhost`
+  addresses of the proxy will fix that later.
+- `build` commands run code from the repository: they are approved like
+  `install` and `start`.
+
 ## `theo tool capture detect`
 
 Looks at the folder (the current one by default) and proposes a `run` section,
 with fixed rules and no AI: a Compose file, then a `package.json` script (`dev`,
 `start` or `serve`; Vite, SvelteKit, Next and Angular get the port as a flag; the
-package manager comes from the lock file), then a Makefile target. It says its
+package manager comes from the lock file), then a Makefile target. An AngularJS 1.x project (`angular` dependency and a
+`build` script) gets a `static` section; `base` comes from the `<base href>` of
+its `index.html` (`src/`, `app/` or the root). It says its
 confidence (`high`, `medium`, `low`) and why. Without `--write` nothing changes;
 with it the section is added to `.theo.json` (other keys are kept, an existing
 `run` section is never replaced).
 
 ## `theo tool capture serve`
 
-Starts the application a worktree's `run` section describes (kind `script`):
-runs `install`, then `start` on a free port, waits until `ready` answers, prints
-the URL and keeps it until Ctrl-C, which stops the whole process tree.
+Starts the application a worktree's `run` section describes (kind `script` or `static`):
+runs `install`, then `start` on a free port (or `build`, and serves the folder
+itself), waits until `ready` answers, prints the URL and keeps it until Ctrl-C, which stops the whole process tree.
 
 - The commands run code from the repository, so Theo asks the first time and
   whenever the commands or `env` change (`--yes` approves without asking; without

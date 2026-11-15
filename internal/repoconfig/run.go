@@ -43,8 +43,7 @@ type RunSpec struct {
 	Service string   `json:"service,omitempty"`
 	Port    *RunPort `json:"port,omitempty"`
 	// Env is extra environment for the start command. Values may use ${PORT}.
-	Env   map[string]string `json:"env,omitempty"`
-	Ready *RunReady         `json:"ready,omitempty"`
+	Env map[string]string `json:"env,omitempty"`
 
 	// The next fields are for kind "static": an application that only
 	// generates a folder of files. Theo runs Install and Build in the
@@ -60,6 +59,9 @@ type RunSpec struct {
 	// Proxy sends paths under a prefix to a server that already exists (the
 	// API), keeping the path: "/portal/api" to "http://localhost:4000".
 	Proxy map[string]string `json:"proxy,omitempty"`
+
+	// Ready says when the application counts as up (every kind).
+	Ready *RunReady `json:"ready,omitempty"`
 }
 
 // RunPort says how the port reaches the application.
