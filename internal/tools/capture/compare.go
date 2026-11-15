@@ -402,10 +402,14 @@ func compareState(c *Comparison, a, b *Set, aid, bid, state, vp string, opt Comp
 	r.Class = classify(d.Percent, d.Changed)
 	if r.Class != ClassSame && opt.OutDir != "" {
 		name := "diff/" + safeName(bid) + "--" + safeName(state) + "--" + safeName(vp) + ".png"
-		if err := os.MkdirAll(filepath.Join(opt.OutDir, "diff"), 0o755); err != nil {
+		out, err := Within(opt.OutDir, name)
+		if err != nil {
 			return nil, err
 		}
-		f, err := os.Create(filepath.Join(opt.OutDir, filepath.FromSlash(name)))
+		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+			return nil, err
+		}
+		f, err := os.Create(out)
 		if err != nil {
 			return nil, err
 		}

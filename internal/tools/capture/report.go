@@ -28,7 +28,7 @@ func ReportFolder(root string, date time.Time, labels ...string) string {
 		}
 	}
 	if !filepath.IsLocal(name) {
-		name = "_"
+		return filepath.Join(root, filepath.FromSlash(ReportsDir), "_")
 	}
 	return filepath.Join(root, filepath.FromSlash(ReportsDir), name)
 }
@@ -87,14 +87,21 @@ func WriteComparisonReport(dir string, a, b *Set, c *Comparison, lang string, r 
 			continue
 		}
 		base := strings.TrimSuffix(filepath.Base(CompositionFile(s.Screen, s.State, s.Viewport)), ".png")
-		src := filepath.Join(dir, "composiciones", "src", base+".html")
+		src, err := Within(dir, "composiciones/src/"+base+".html")
+		if err != nil {
+			return files, err
+		}
 		if err := os.WriteFile(src, []byte(BuildCompositionHTML(c, s, lang)), 0o644); err != nil {
 			return files, err
 		}
 		if r == nil {
 			continue
 		}
-		if err := r.Screenshot(src, filepath.Join(dir, filepath.FromSlash(CompositionFile(s.Screen, s.State, s.Viewport)))); err != nil {
+		out, err := Within(dir, CompositionFile(s.Screen, s.State, s.Viewport))
+		if err != nil {
+			return files, err
+		}
+		if err := r.Screenshot(src, out); err != nil {
 			return files, fmt.Errorf("composition of %s#%s %s: %w", s.Screen, s.State, s.Viewport, err)
 		}
 	}
