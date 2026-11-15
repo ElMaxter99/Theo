@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync/atomic"
@@ -167,13 +168,30 @@ func StreamInteractive(ctx context.Context, dir string, stdin io.Reader, stdout,
 	return err
 }
 
+// StreamChangeEnv is StreamChange with extra environment variables ("KEY=value"
+// entries added to the current environment).
+func StreamChangeEnv(ctx context.Context, dir string, env []string, stdout, stderr io.Writer, name string, args ...string) error {
+	if explaining() {
+		note(dir, name, args, true)
+		return nil
+	}
+	return streamEnv(ctx, dir, env, nil, stdout, stderr, name, args...)
+}
+
 func stream(ctx context.Context, dir string, stdin io.Reader, stdout, stderr io.Writer, name string, args ...string) error {
+	return streamEnv(ctx, dir, nil, stdin, stdout, stderr, name, args...)
+}
+
+func streamEnv(ctx context.Context, dir string, env []string, stdin io.Reader, stdout, stderr io.Writer, name string, args ...string) error {
 	path, err := lookPath(name)
 	if err != nil {
 		return err
 	}
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Dir = dir
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	prepare(cmd)
 	streamKillTree(cmd)
 	cmd.Stdin = stdin

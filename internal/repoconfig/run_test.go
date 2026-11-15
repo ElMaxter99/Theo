@@ -79,3 +79,40 @@ func TestRunFingerprintChangesWithWhatRuns(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadStaticSection(t *testing.T) {
+	l, err := Load(writeConfig(t, `{"run":{"kind":"static","install":["npm ci"],"build":["npm run build"],"dir":"dist","base":"/portal/","spa":true,"proxy":{"/portal/api":"http://localhost:4000"}}}`))
+	if err != nil || l.Run == nil {
+		t.Fatalf("%+v %v", l.Run, err)
+	}
+	r := l.Run
+	if r.Kind != RunStatic || r.Base != "/portal" || r.Dir != "dist" || !r.SPA || r.ReadyPath() != "/portal/" {
+		t.Errorf("normalised static section: %+v ready %s", r, r.ReadyPath())
+	}
+	if got := r.Commands(); len(got) != 2 || got[1] != "npm run build" {
+		t.Errorf("the build is a command that needs approval: %v", got)
+	}
+	// The kind may be left out when the section has a dir and no start.
+	if l, err := Load(writeConfig(t, `{"run":{"dir":"dist","base":"/"}}`)); err != nil || l.Run.Kind != RunStatic || l.Run.ReadyPath() != "/" {
+		t.Errorf("implicit static: %+v %v", l.Run, err)
+	}
+}
+
+func TestLoadStaticErrors(t *testing.T) {
+	cases := map[string]string{
+		`{"run":{"kind":"static","base":"/portal"}}`:                                    `needs "build" or "dir"`,
+		`{"run":{"kind":"static","dir":"dist"}}`:                                        `"base" starting with /`,
+		`{"run":{"kind":"static","build":["x"],"base":"/p"}}`:                           `needs "dir"`,
+		`{"run":{"kind":"static","dir":"dist","base":"/p","start":"x"}}`:                `has no "start"`,
+		`{"run":{"kind":"static","dir":"../x","base":"/p"}}`:                            "inside the worktree",
+		`{"run":{"kind":"static","dir":"dist","base":"/p","build":[" "]}}`:              "empty command",
+		`{"run":{"kind":"static","dir":"dist","base":"/p","proxy":{"api":"http://a"}}}`: "must start with /",
+		`{"run":{"kind":"static","dir":"dist","base":"/p","proxy":{"/api":"ftp://a"}}}`: "http:// or https://",
+		`{"run":{"kind":"script","start":"x","dir":"dist"}}`:                            `belong to kind "static"`,
+	}
+	for body, want := range cases {
+		if _, err := Load(writeConfig(t, body)); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: want an error containing %q, got %v", body, want, err)
+		}
+	}
+}
