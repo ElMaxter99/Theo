@@ -97,15 +97,15 @@ Más en el [quickstart](docs/cli/quickstart.md) (en inglés). Para probarlo todo
 
 ## Novedades
 
-### v0.8: herramientas, y la primera: `capture`
+### v0.9: capturas antes y después
 
 ```sh
-theo tool capture detect                    # ¿cómo arranca este proyecto? (Compose, un script o una build de AngularJS)
-theo tool capture serve portal develop      # instala, compila y sirve la rama bajo /portal
-theo tool capture serve portal rebranding   # una segunda rama a la vez, también en /portal
+theo tool capture setup                          # una vez: Node, Playwright y Chromium
+theo tool capture run-pair portal develop rebranding --open   # captura las dos ramas, compara y escribe los informes
+theo tool capture report portal develop rebranding --summary   # vuelve a mostrar el resumen
 ```
 
-`theo tool list` muestra las herramientas de Theo. `capture` lee la sección `run` de `.theo.json` (o propone una con `detect`) y levanta la aplicación en un puerto libre. Una app que solo genera ficheros, como una de AngularJS bajo `/portal`, usa el tipo `static`: Theo sirve él mismo la carpeta compilada, así que dos ramas responden en `/portal/` una junto a otra. Los comandos del repositorio solo se ejecutan tras tu aprobación. Probado en Linux con worktrees reales; Windows y macOS solo por el CI. Mira [tools](docs/cli/tools.md).
+Lista las pantallas, estados y flujos en `.theo/capturas/pantallas.json` (`theo tool capture init` lo propone). Theo captura cada rama dos veces para encontrar lo inestable, con el reloj congelado y sin animaciones, empareja las pantallas y clasifica cada una como igual, cambio menor, cambiada, nueva, eliminada, movida, inestable o no capturada. Obtienes un informe corporativo (escritorio y móvil lado a lado, HTML y PDF), composiciones antes/después con la diferencia marcada y un resumen en Markdown. La nueva vista Herramientas de la interfaz web hace lo mismo con dos ramas y un botón, y `theo doctor` comprueba el motor. Probado en Linux con un navegador real; Windows y macOS solo por el CI. Mira [tools](docs/cli/tools.md).
 
 ### v0.5: Theo en el flujo de los agentes
 
@@ -134,6 +134,7 @@ Detecta las ramas fusionadas incluso tras un squash o un rebase en GitHub. Las r
 
 ### Versiones anteriores
 
+- **v0.8:** el marco de herramientas (`theo tool list`) y la primera, `capture`, que averigua cómo arranca un proyecto y sirve varias ramas a la vez, incluso una app AngularJS bajo `/portal` (tipo `static`).
 - **v0.7:** hooks de Claude Code y Copilot, avisos de escritorio cuando un agente te espera (apagados por defecto, y no con la ventana de Theo delante), interfaz clara por defecto y Limpieza en cuatro pasos.
 - **v0.6:** `theo doctor` anota lo que limita los puertos libres por rama, estado del agente por proceso en macOS y Windows, los worktrees de ramas usan puertos libres por defecto y Limpieza elige los inactivos.
 - **v0.3:** HTTPS local para los dominios locales (`theo proxy --https`, `theo proxy trust`), notificaciones de progreso en MCP y `wait_for`, y un aviso cuando una aplicación guarda su dirección antigua en sus datos (WordPress, Ghost, Nextcloud...).

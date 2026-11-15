@@ -2,7 +2,9 @@
 
 Notable changes per release. Each release on GitHub also lists every merged pull request.
 
-## Unreleased
+## v0.9.0
+
+The capture tool now takes screenshots: it compares two branches of a project screen by screen and writes the reports, from the command line and from a new Tools page.
 
 ### New
 - **Before and after screenshots (0.9).** `theo tool capture` now captures, compares and reports. `.theo/capturas/pantallas.json` lists the screens, states and flows (`validate`, `init`); `setup` installs the engine (Node, Playwright, Chromium) once; `run` captures a deployment twice to find what is unstable, with a frozen clock, no motion and mock data; `run-pair` starts two branches, captures, compares and writes the reports; `compare`, `sets` and `report` work from saved sets. The comparison pairs screens by id, route or shared source file, classes each as same, minor, changed, new, removed, moved, unstable or not captured, compares the flows and lists what it could not cover. Three reports: corporate (desktop and mobile side by side, HTML and PDF), before/after compositions with the difference marked, and a Markdown summary with the share of pixels changed. They are written in Theo's language (new preference `language`: `en`, `es` or `system`).

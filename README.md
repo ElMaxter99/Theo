@@ -95,15 +95,15 @@ More in the [quickstart](docs/cli/quickstart.md). To try everything on a small a
 
 ## What's new
 
-### v0.8: tools, and the first one: `capture`
+### v0.9: before and after screenshots
 
 ```sh
-theo tool capture detect                    # how does this project start? (Compose, a script, or an AngularJS build)
-theo tool capture serve portal develop      # install, build and serve the branch under /portal
-theo tool capture serve portal rebranding   # a second branch at the same time, also on /portal
+theo tool capture setup                          # once: Node, Playwright and Chromium
+theo tool capture run-pair portal develop rebranding --open   # capture both branches, compare, write the reports
+theo tool capture report portal develop rebranding --summary   # print the summary again
 ```
 
-`theo tool list` shows Theo's tools. `capture` reads the `run` section of `.theo.json` (or proposes one with `detect`) and brings the application up on a free port. An app that only builds files, like an AngularJS one served under `/portal`, uses kind `static`: Theo serves the built folder itself, so two branches answer on `/portal/` side by side. Commands from the repository run only after you approve them. Tested on Linux with real worktrees; Windows and macOS only through CI. See [tools](docs/cli/tools.md).
+List the screens, states and flows in `.theo/capturas/pantallas.json` (`theo tool capture init` proposes it). Theo captures each branch twice to find what is unstable, with a frozen clock and no motion, pairs the screens, and classes each as same, minor, changed, new, removed, moved, unstable or not captured. You get a corporate report (desktop and mobile side by side, HTML and PDF), before/after compositions with the difference marked, and a Markdown summary. The new Tools page in the web interface does the same with two branches and a button, and `theo doctor` checks the engine. Tested on Linux with a real browser; Windows and macOS only through CI. See [tools](docs/cli/tools.md).
 
 ### v0.5: Theo in the agents' workflow
 
@@ -132,6 +132,7 @@ Merged is detected even after a squash or rebase on GitHub. Remote branches and 
 
 ### Earlier releases
 
+- **v0.8:** the tools framework (`theo tool list`) and the first tool, `capture`, which works out how a project starts and serves several branches at once, even an AngularJS app under `/portal` (kind `static`).
 - **v0.7:** Claude Code and Copilot hooks, desktop notices when an agent waits for you (off by default, and not while Theo's window is in front), a light interface by default, and Cleanup as a four-step flow.
 - **v0.6:** `theo doctor` notes what limits free ports per branch, agent state by process on macOS and Windows, branch worktrees use free host ports by default, and Cleanup picks inactive worktrees.
 - **v0.3:** local HTTPS for the local domains (`theo proxy --https`, `theo proxy trust`), MCP progress notifications and `wait_for`, and a warning when an app keeps its old address in its data (WordPress, Ghost, Nextcloud...).
