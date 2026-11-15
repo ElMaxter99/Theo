@@ -2,6 +2,19 @@
 
 Cambios destacados de cada versión, en español. Las notas de cada release en GitHub llevan esta sección después de la inglesa, con el título *Español*. Es la misma lista que [CHANGELOG.md](CHANGELOG.md), que es la de referencia: cada `## vX.Y.Z` de allí tiene aquí su sección. Las versiones anteriores a la primera de este archivo solo tienen notas en inglés.
 
+## v0.7.3
+
+Versión de corrección: una opción para no avisar mientras la ventana de Theo está delante, y pruebas más estables.
+
+### Nuevo
+- **No avisar con la ventana al frente.** La app de escritorio sabe cuándo su ventana está delante y, si lo pides, no muestra entonces el aviso de un agente (Ajustes > Agentes de IA, o `theo config set notify.skip-focused on`; apagado por defecto, así que nada cambia si no lo activas). Lo que cambia mientras miras no se anuncia después. `POST /notify` acepta `skip_focused` junto a `mode`. Probado con un sustituto; sin ejecutar aún en macOS ni Windows.
+
+### Corregido
+- **`TestServicesRecreateAndExec` ya no falla de vez en cuando.** Docker podía listar un contenedor como en marcha justo después de `compose stop`; la prueba ahora espera al estado real. Sin cambios en Theo.
+
+### Cambiado
+- **Las pruebas e2e contra el servidor real funcionan en Windows** (`theo.exe`, `netstat`; Playwright pasa a ser dependencia de desarrollo de `web/`) y el CI las ejecuta. Se regeneran las capturas de `web/e2e/screenshots`. Sin cambios en Theo.
+
 ## v0.7.2
 
 Versión de corrección: interfaz clara por defecto, y capturas y README que la muestran.

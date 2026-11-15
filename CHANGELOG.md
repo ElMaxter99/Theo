@@ -2,6 +2,19 @@
 
 Notable changes per release. Each release on GitHub also lists every merged pull request.
 
+## v0.7.3
+
+Patch release: an option to stay quiet while Theo's window is in front, and steadier tests.
+
+### New
+- **Don't notify while the window is in front.** The desktop app knows when its window is in front and, if you ask for it, shows no agent notice then (Settings > AI agents, or `theo config set notify.skip-focused on`; off by default, so nothing changes unless you turn it on). What changes while you are looking is not announced later. `POST /notify` accepts `skip_focused` next to `mode`. Tested with a stub; not run on macOS or Windows yet.
+
+### Fixed
+- **`TestServicesRecreateAndExec` no longer fails now and then.** Docker could still list a container as running right after `compose stop`; the test now waits for the real state. No change to Theo itself.
+
+### Changed
+- **The real-server end-to-end tests run on Windows** (`theo.exe`, `netstat`; Playwright is now a development dependency of `web/`), and CI runs them. Screenshots in `web/e2e/screenshots` are regenerated. No change to Theo itself.
+
 ## v0.7.2
 
 Patch release: a light interface by default, and screenshots and READMEs that show it.

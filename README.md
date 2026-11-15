@@ -97,12 +97,13 @@ More in the [quickstart](docs/cli/quickstart.md). To try everything on a small a
 
 ### v0.7: Claude Code, Copilot and notices
 
-**v0.7.2** opens the interface in a light cream theme by default (dark is warm charcoal, still one click away in Settings > Theme). **v0.7.1** redesigns Problems > Cleanup as four steps (Review, Confirm, Removing, Result): each worktree is Ready, Waiting for your OK, Blocked or Kept, and every blocked one says how to unblock it. See the [changelog](CHANGELOG.md).
+**v0.7.3** adds an option to stay quiet while Theo's window is in front (`theo config set notify.skip-focused on`). **v0.7.2** opens the interface in a light cream theme by default (dark is warm charcoal, still one click away in Settings > Theme). **v0.7.1** redesigns Problems > Cleanup as four steps (Review, Confirm, Removing, Result): each worktree is Ready, Waiting for your OK, Blocked or Kept, and every blocked one says how to unblock it. See the [changelog](CHANGELOG.md).
 
 ```sh
 theo agent install              # registers the agents you already have (Claude Code, GitHub Copilot)
 theo agent install copilot      # Copilot hooks: .github/hooks/theo.json, or --scope user
 theo config set notify.agent waiting   # desktop notice when an agent needs you (off by default)
+theo config set notify.skip-focused on # ...and not while Theo's window is in front
 ```
 
 Theo works with Claude Code and GitHub Copilot, and only if you already have them: it never installs them and tells you where to get a missing one. Their hooks tell Theo whether each agent works, waits or is done. In `theo-desktop`, a notice names the project, the branch and the agent when one waits for you (`all` adds when it finishes); it never includes your prompt or paths. You can also set it in Settings > AI agents. Copilot's hooks and the notices on Windows and macOS were tested on samples only. See [agents](docs/cli/agents.md).
