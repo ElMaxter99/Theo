@@ -1276,7 +1276,7 @@ const en = {
     notifyAll: "Also when it finishes",
     notifyHint: "Only agents that report through hooks notify; estimated states never do. It works while Theo's window or `theo ui` is open.",
     notifySaved: "Notification setting saved.",
-    notifyForeground: "Don't notify while the window is in front (pending)",
+    notifyForeground: "Don't notify while the window is in front",
   },
 };
 

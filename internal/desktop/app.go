@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/ElMaxter99/Theo/internal/agents"
@@ -192,6 +193,12 @@ func Run(ctx context.Context, o Options) error {
 		return err
 	}
 
+	// Whether the window is in front, reported by the page, for the notices.
+	var inFront atomic.Bool
+	if err := w.Bind(FocusBindName, func(raw string) { inFront.Store(raw == "1") }); err != nil {
+		return err
+	}
+
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(sig)
@@ -211,7 +218,7 @@ func Run(ctx context.Context, o Options) error {
 	// person set notify.agent).
 	ctxN, stopN := context.WithCancel(ctx)
 	defer stopN()
-	go watchAgents(ctxN, o)
+	go watchAgents(ctxN, o, inFront.Load)
 
 	w.Navigate(be.URL)
 	w.Run()
@@ -219,7 +226,7 @@ func Run(ctx context.Context, o Options) error {
 }
 
 // watchAgents runs the notifications of agents until ctx ends.
-func watchAgents(ctx context.Context, o Options) {
+func watchAgents(ctx context.Context, o Options, inFront func() bool) {
 	send := o.Notify
 	if send == nil {
 		send = notify.Send
@@ -231,6 +238,8 @@ func watchAgents(ctx context.Context, o Options) {
 		States: func() map[string]agents.State { return agents.Store{Dir: o.DataDir}.All() },
 		Label:  func(path string) string { return worktreeLabel(ctx, o.Engine, path) },
 		Send:   send,
+		// Not while the person looks at the window, if they asked for that.
+		Skip: func() bool { return inFront() && o.Engine.Prefs().Get("notify.skip-focused") == "on" },
 		// Spanish when the system says so; the interface has its own language setting.
 		Spanish: strings.HasPrefix(lang, "es"),
 		OnError: func(err error) {

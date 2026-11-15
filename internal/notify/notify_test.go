@@ -116,3 +116,53 @@ func TestWindowsToastEscapes(t *testing.T) {
 		}
 	}
 }
+
+// While the window is in front nothing is shown, and what changed meanwhile
+// is not announced later when the window goes behind.
+func TestWatchSkipsWhileInFront(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	var mu sync.Mutex
+	states := map[string]agents.State{}
+	front := true
+	sent := make(chan Message, 4)
+	done := make(chan struct{})
+	go func() {
+		Watch(ctx, Deps{
+			Mode:     func() string { return "waiting" },
+			States:   func() map[string]agents.State { mu.Lock(); defer mu.Unlock(); return states },
+			Label:    label,
+			Send:     func(m Message) error { sent <- m; return nil },
+			Skip:     func() bool { mu.Lock(); defer mu.Unlock(); return front },
+			Interval: 5 * time.Millisecond,
+		})
+		close(done)
+	}()
+	time.Sleep(30 * time.Millisecond)
+	mu.Lock()
+	states = map[string]agents.State{"a": st(agents.Waiting, t0)}
+	mu.Unlock()
+	select {
+	case m := <-sent:
+		t.Fatalf("notified with the window in front: %+v", m)
+	case <-time.After(100 * time.Millisecond):
+	}
+	mu.Lock()
+	front = false
+	mu.Unlock()
+	select {
+	case m := <-sent:
+		t.Fatalf("announced something already seen: %+v", m)
+	case <-time.After(100 * time.Millisecond):
+	}
+	// A new change with the window behind does notify.
+	mu.Lock()
+	states = map[string]agents.State{"b": st(agents.Waiting, t0.Add(time.Minute))}
+	mu.Unlock()
+	select {
+	case <-sent:
+	case <-time.After(2 * time.Second):
+		t.Error("nothing was sent with the window behind")
+	}
+	cancel()
+	<-done
+}
