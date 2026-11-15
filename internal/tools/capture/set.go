@@ -77,12 +77,11 @@ func ShotFile(screen, state, viewport string) string {
 // base: a manifest, an inventory or a branch name is data from a repository and
 // must not choose a file elsewhere on the disk.
 func Within(base, rel string) (string, error) {
-	full := filepath.Join(base, filepath.FromSlash(rel))
-	r, err := filepath.Rel(base, full)
-	if err != nil || r == ".." || strings.HasPrefix(r, ".."+string(filepath.Separator)) || filepath.IsAbs(r) {
+	local := filepath.FromSlash(rel)
+	if !filepath.IsLocal(local) {
 		return "", fmt.Errorf("%q is outside %s", rel, base)
 	}
-	return full, nil
+	return filepath.Join(base, local), nil
 }
 
 // Path is the file of a screenshot of the set, which cannot leave the set's folder.
@@ -221,7 +220,10 @@ func (s *Set) Image(file string) (image.Image, error) {
 func SetFolder(label, commit string) string {
 	name := safeName(label)
 	if commit != "" {
-		name += "-" + commit
+		name += "-" + safeName(commit)
+	}
+	if !filepath.IsLocal(name) {
+		return "_"
 	}
 	return name
 }

@@ -27,6 +27,9 @@ func ReportFolder(root string, date time.Time, labels ...string) string {
 			name += "-vs-" + safeName(l)
 		}
 	}
+	if !filepath.IsLocal(name) {
+		name = "_"
+	}
 	return filepath.Join(root, filepath.FromSlash(ReportsDir), name)
 }
 
