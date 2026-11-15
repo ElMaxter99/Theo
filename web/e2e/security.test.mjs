@@ -91,7 +91,9 @@ test("the served shell carries the strict CSP and security headers", async () =>
   assert.equal(r.headers["content-security-policy"], "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
   assert.equal(r.headers["x-content-type-options"], "nosniff");
   assert.equal(r.headers["referrer-policy"], "no-referrer");
-  assert.ok(!/<script>[^<]/.test(r.body));
+  // No inline script: every <script> start tag must load a file with src, so there is no body to match.
+  const scripts = r.body.match(/<script\b[^>]*>/gi) ?? [];
+  assert.ok(scripts.every((t) => /\ssrc\s*=/i.test(t)), "the shell has an inline script");
 });
 
 test("a page on another origin cannot read the API (no CORS, SameSite=Strict cookie)", async () => {
