@@ -2,7 +2,9 @@
 
 Cambios destacados de cada versión, en español. Las notas de cada release en GitHub llevan esta sección después de la inglesa, con el título *Español*. Es la misma lista que [CHANGELOG.md](CHANGELOG.md), que es la de referencia: cada `## vX.Y.Z` de allí tiene aquí su sección. Las versiones anteriores a la primera de este archivo solo tienen notas en inglés.
 
-## Unreleased
+## v0.9.0
+
+La herramienta de capturas ya hace capturas: compara dos ramas de un proyecto pantalla a pantalla y escribe los informes, desde la línea de comandos y desde una nueva vista Herramientas.
 
 ### Nuevo
 - **Capturas antes/después (0.9).** `theo tool capture` ahora captura, compara e informa. `.theo/capturas/pantallas.json` lista las pantallas, estados y flujos (`validate`, `init`); `setup` instala el motor (Node, Playwright, Chromium) una vez; `run` captura un despliegue dos veces para encontrar lo inestable, con el reloj congelado, sin animaciones y con datos simulados; `run-pair` levanta dos ramas, captura, compara y escribe los informes; `compare`, `sets` y `report` trabajan con conjuntos guardados. La comparación empareja pantallas por id, ruta o archivo de origen compartido, clasifica cada una como igual, cambio menor, cambiada, nueva, eliminada, movida, inestable o no capturada, compara los flujos y lista lo que no pudo cubrir. Tres informes: corporativo (escritorio y móvil lado a lado, HTML y PDF), composiciones antes/después con la diferencia marcada y un resumen en Markdown con el porcentaje de píxeles cambiados. Se escriben en el idioma de Theo (nueva preferencia `language`: `en`, `es` o `system`).
