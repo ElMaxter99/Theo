@@ -32,6 +32,9 @@ type Project struct {
 	// the person approved for this project. Commands run code from the
 	// repository, so a changed list asks again.
 	SetupTrusted string `json:"setup_trusted,omitempty"`
+	// RunTrusted is the same for the install and start commands of the run
+	// section of .theo.json (see repoconfig.RunFingerprint).
+	RunTrusted string `json:"run_trusted,omitempty"`
 	// Workspaces are the workspaces Theo records beyond what Git lists: the
 	// independent clones it created, and the owner labels of any workspace.
 	Workspaces []Workspace `json:"workspaces,omitempty"`

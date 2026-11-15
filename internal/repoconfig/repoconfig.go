@@ -37,6 +37,9 @@ type Config struct {
 	// (install dependencies, generate code). They run code from the
 	// repository, so Theo asks before running them the first time.
 	AfterCreate []string `json:"after_create,omitempty"`
+	// Run says how the application is started and where it answers, so a
+	// tool (such as the screen capture) can bring up a deployment by itself.
+	Run *RunSpec `json:"run,omitempty"`
 }
 
 // Loaded is what a repository declares, with where it came from.
@@ -49,7 +52,7 @@ type Loaded struct {
 }
 
 // Empty reports whether the repository declares nothing.
-func (l Loaded) Empty() bool { return len(l.Copy) == 0 && len(l.AfterCreate) == 0 }
+func (l Loaded) Empty() bool { return len(l.Copy) == 0 && len(l.AfterCreate) == 0 && l.Run == nil }
 
 // Load reads .theo.json and .worktreeinclude from root. Missing files are
 // not an error. A .theo.json that is not valid JSON is: silently ignoring a
@@ -82,6 +85,12 @@ func Load(root string) (Loaded, error) {
 		out.Sources = append(out.Sources, FileName)
 		add(&out.Copy, trimAll(c.Copy)...)
 		out.AfterCreate = trimAll(c.AfterCreate)
+		if c.Run != nil {
+			if err := c.Run.Validate(); err != nil {
+				return out, fmt.Errorf("%s: run: %w", FileName, err)
+			}
+			out.Run = c.Run.normalized()
+		}
 	case !errors.Is(err, fs.ErrNotExist):
 		return out, fmt.Errorf("%s: %w", FileName, err)
 	}
