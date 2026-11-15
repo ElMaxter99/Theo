@@ -99,12 +99,13 @@ Más en el [quickstart](docs/cli/quickstart.md) (en inglés). Para probarlo todo
 
 ### v0.7: Claude Code, Copilot y avisos
 
-**v0.7.2** abre la interfaz en un tema claro crema por defecto (el oscuro es carbón cálido y sigue a un clic en Ajustes › Tema). **v0.7.1** rediseña Problemas > Limpieza en cuatro pasos (Revisar, Confirmar, Quitando, Resultado): cada worktree está Listo, Espera tu OK, Bloqueado o Conservado, y cada bloqueado dice cómo desbloquearlo. Mira el [registro de cambios](CHANGELOG.es.md).
+**v0.7.3** añade una opción para no avisar mientras la ventana de Theo está delante (`theo config set notify.skip-focused on`). **v0.7.2** abre la interfaz en un tema claro crema por defecto (el oscuro es carbón cálido y sigue a un clic en Ajustes › Tema). **v0.7.1** rediseña Problemas > Limpieza en cuatro pasos (Revisar, Confirmar, Quitando, Resultado): cada worktree está Listo, Espera tu OK, Bloqueado o Conservado, y cada bloqueado dice cómo desbloquearlo. Mira el [registro de cambios](CHANGELOG.es.md).
 
 ```sh
 theo agent install              # registra los agentes que ya tienes (Claude Code, GitHub Copilot)
 theo agent install copilot      # hooks de Copilot: .github/hooks/theo.json, o --scope user
 theo config set notify.agent waiting   # aviso de escritorio cuando un agente te necesita (apagado por defecto)
+theo config set notify.skip-focused on # ...y no mientras la ventana de Theo está delante
 ```
 
 Theo trabaja con Claude Code y GitHub Copilot, y solo si ya los tienes: nunca los instala y te dice dónde conseguir el que falte. Sus hooks avisan a Theo de si cada agente trabaja, espera o ha terminado. En `theo-desktop`, un aviso nombra el proyecto, la rama y el agente cuando uno te espera (`all` añade cuando termina); nunca incluye tu prompt ni rutas. También se ajusta en Ajustes › Agentes de IA. Los hooks de Copilot y los avisos en Windows y macOS solo se probaron con muestras. Ver [agents](docs/cli/agents.md) (en inglés).
