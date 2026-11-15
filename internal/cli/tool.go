@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -9,8 +10,10 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/ElMaxter99/Theo/internal/engine"
 	"github.com/ElMaxter99/Theo/internal/repoconfig"
@@ -22,6 +25,12 @@ func init() {
 	registerCommand("tool", runTool)
 	registerHelp(55, `
   tool list [--json]                           Theo's tools (self-contained features with their own scope)
+  tool capture serve <project> [worktree] [--yes] [--check] [--json]
+                                               Start the application a worktree's run section describes
+                                               (kind script): install, start, wait until it answers, print
+                                               its URL and keep it until Ctrl-C. Its commands run code from
+                                               the repository, so Theo asks the first time and whenever they
+                                               change (--yes approves). --check starts it, reports and stops
   tool capture detect [path] [--write] [--json]
                                                Work out how a project starts and propose the "run" section
                                                of .theo.json (Compose, a package.json script or a Makefile
@@ -30,11 +39,11 @@ func init() {
 `)
 	registerCompletion(cmdSpec{name: "tool", subs: []cmdSpec{
 		{name: "list"},
-		{name: "capture", subs: []cmdSpec{{name: "detect", flags: []flagSpec{{names: []string{"--write"}}, {names: []string{"--json"}}}}}},
+		{name: "capture", subs: []cmdSpec{{name: "detect", flags: []flagSpec{{names: []string{"--write"}}, {names: []string{"--json"}}}}, {name: "serve", flags: []flagSpec{{names: []string{"--yes"}}, {names: []string{"--check"}}, {names: []string{"--json"}}}}}},
 	}})
 }
 
-func runTool(_ *engine.Engine, args []string, stdout, stderr io.Writer) error {
+func runTool(e *engine.Engine, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return usageErrorf("tool needs a subcommand: list or <tool> <command> (see `theo tool list`)")
 	}
@@ -64,14 +73,17 @@ func runTool(_ *engine.Engine, args []string, stdout, stderr io.Writer) error {
 		return usageErrorf("unknown tool %q (see `theo tool list`)", args[0])
 	}
 	if args[0] == capture.ID {
-		return runCapture(args[1:], stdout, stderr)
+		return runCapture(e, args[1:], stdout, stderr)
 	}
 	return usageErrorf("tool %q has no commands yet", args[0])
 }
 
-func runCapture(args []string, stdout, stderr io.Writer) error {
+func runCapture(e *engine.Engine, args []string, stdout, stderr io.Writer) error {
+	if len(args) > 0 && args[0] == "serve" {
+		return runCaptureServe(e, args[1:], stdout, stderr)
+	}
 	if len(args) == 0 || args[0] != "detect" {
-		return usageErrorf("tool capture works today with: detect (the rest is planned; see `theo tool list`)")
+		return usageErrorf("tool capture works today with: detect, serve (the rest is planned; see `theo tool list`)")
 	}
 	fl := flag.NewFlagSet("tool capture detect", flag.ContinueOnError)
 	asJSON := fl.Bool("json", false, "print JSON")
@@ -159,4 +171,68 @@ func writeRunSection(root string, d capture.Detection) (bool, error) {
 		return false, err
 	}
 	return true, os.WriteFile(path, append(out, '\n'), 0o644)
+}
+
+func runCaptureServe(e *engine.Engine, args []string, stdout, stderr io.Writer) error {
+	fl := flag.NewFlagSet("tool capture serve", flag.ContinueOnError)
+	yes := fl.Bool("yes", false, "approve the commands without asking, and remember it")
+	check := fl.Bool("check", false, "start the application, report, and stop")
+	asJSON := fl.Bool("json", false, "print JSON")
+	pos, err := parse(fl, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) < 1 || len(pos) > 2 {
+		return usageErrorf("tool capture serve needs a project and, optionally, a worktree")
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	selector := ""
+	if len(pos) == 2 {
+		selector = pos[1]
+	}
+	path, err := e.WorkspacePath(ctx, pos[0], selector)
+	if err != nil {
+		return err
+	}
+	plan, err := e.PlanRun(pos[0], path)
+	if err != nil {
+		return err
+	}
+	if plan.Spec == nil {
+		return fmt.Errorf("%s in %s has no run section: try `theo tool capture detect %s --write`", repoconfig.FileName, path, path)
+	}
+	out := stdout
+	if *asJSON {
+		out = stderr
+	}
+	approve := *yes
+	if !plan.Trusted && !approve && len(plan.Commands) > 0 {
+		if !interactive() || !confirmSetup(out, plan.Commands) {
+			return fmt.Errorf("%w: pass --yes to approve them, after reading them in %s", engine.ErrRunNotApproved, repoconfig.FileName)
+		}
+		approve = true
+	}
+	proc, err := e.StartScript(ctx, plan, approve, out, stderr)
+	if err != nil {
+		return err
+	}
+	defer proc.Stop()
+	if *asJSON {
+		if err := writeJSON(stdout, map[string]any{"url": proc.URL(), "port": proc.Port, "path": path, "kept": !*check}); err != nil {
+			return err
+		}
+	} else {
+		fmt.Fprintf(stdout, "Ready at %s\n", proc.URL())
+	}
+	if *check {
+		return nil
+	}
+	fmt.Fprintln(stderr, "theo: Ctrl-C stops it")
+	select {
+	case <-ctx.Done():
+	case <-proc.Done():
+		return fmt.Errorf("the application stopped: %v", proc.Err())
+	}
+	return nil
 }

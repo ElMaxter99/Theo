@@ -8,6 +8,7 @@ exists so far.
 ```sh
 theo tool list [--json]                         # the tools, what works today and what is planned
 theo tool capture detect [path] [--write] [--json]
+theo tool capture serve <project> [worktree] [--yes] [--check] [--json]
 ```
 
 ## The `run` section of `.theo.json`
@@ -52,10 +53,20 @@ confidence (`high`, `medium`, `low`) and why. Without `--write` nothing changes;
 with it the section is added to `.theo.json` (other keys are kept, an existing
 `run` section is never replaced).
 
+## `theo tool capture serve`
+
+Starts the application a worktree's `run` section describes (kind `script`):
+runs `install`, then `start` on a free port, waits until `ready` answers, prints
+the URL and keeps it until Ctrl-C, which stops the whole process tree.
+
+- The commands run code from the repository, so Theo asks the first time and
+  whenever the commands or `env` change (`--yes` approves without asking; without
+  a terminal it refuses and says so). The approval is remembered per project.
+- `--check` starts it, reports the URL and stops: use it to test a run section
+  (for example one written by `detect --write`) before relying on it.
+- A `compose` section is started with `theo up`, not with this command.
+
 ## Not built yet
 
-Starting a `script` application from `theo up`, approval of its commands, the
-capture engine, the comparison, the reports and the AI generation are the next
-steps of the plan. `internal/runner` already starts a command on a free port,
-waits for it to answer and stops the whole process tree, but nothing calls it
-from the CLI yet.
+The capture engine, the comparison, the reports and the AI generation are the
+next steps of the plan. `theo up` does not start `script` applications yet.
