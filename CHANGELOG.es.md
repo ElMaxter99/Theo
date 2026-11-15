@@ -2,6 +2,14 @@
 
 Cambios destacados de cada versión, en español. Las notas de cada release en GitHub llevan esta sección después de la inglesa, con el título *Español*. Es la misma lista que [CHANGELOG.md](CHANGELOG.md), que es la de referencia: cada `## vX.Y.Z` de allí tiene aquí su sección. Las versiones anteriores a la primera de este archivo solo tienen notas en inglés.
 
+## v0.8.0
+
+La primera herramienta de Theo: `capture` averigua cómo se arranca un proyecto y levanta varias ramas a la vez, incluso una aplicación AngularJS que solo genera ficheros y tiene que vivir bajo `/portal`. Es la base de las capturas antes/después de las próximas versiones.
+
+### Nuevo
+- **Marco de herramientas (0.8).** `theo tool list` muestra las herramientas de Theo. La primera, `capture` (de momento sin capturas de pantalla: llegan en la siguiente versión), tiene `detect` (propone cómo arranca un proyecto: Compose, un script de `package.json` o un objetivo de Makefile) y `serve` (arranca lo que describe la sección `run` de `.theo.json`). La sección `run` se aprueba como `after_create`.
+- **Tipo `static` en la sección `run`.** Para una aplicación que solo genera una carpeta (AngularJS bajo `/portal`): `build`, `dir`, `base`, `spa` y `proxy`. `serve` instala, compila y sirve la carpeta él mismo bajo `base`, en un puerto libre por worktree, así que dos ramas responden en `/portal/` a la vez. Avisa si la compilación deja un `<base href>` absoluto y, cuando falla una instalación o una compilación, muestra las últimas líneas que imprimió. `detect` reconoce AngularJS 1.x y propone la sección.
+
 ## v0.7.3
 
 Versión de corrección: una opción para no avisar mientras la ventana de Theo está delante, y pruebas más estables.

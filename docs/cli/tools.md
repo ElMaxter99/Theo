@@ -1,4 +1,4 @@
-# Tools (0.8, in progress)
+# Tools (0.8)
 
 Theo's **tools** are self-contained features with their own scope. The first is
 the screen capture ("before and after"), planned in

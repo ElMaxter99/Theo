@@ -95,18 +95,15 @@ More in the [quickstart](docs/cli/quickstart.md). To try everything on a small a
 
 ## What's new
 
-### v0.7: Claude Code, Copilot and notices
-
-**v0.7.3** adds an option to stay quiet while Theo's window is in front (`theo config set notify.skip-focused on`). **v0.7.2** opens the interface in a light cream theme by default (dark is warm charcoal, still one click away in Settings > Theme). **v0.7.1** redesigns Problems > Cleanup as four steps (Review, Confirm, Removing, Result): each worktree is Ready, Waiting for your OK, Blocked or Kept, and every blocked one says how to unblock it. See the [changelog](CHANGELOG.md).
+### v0.8: tools, and the first one: `capture`
 
 ```sh
-theo agent install              # registers the agents you already have (Claude Code, GitHub Copilot)
-theo agent install copilot      # Copilot hooks: .github/hooks/theo.json, or --scope user
-theo config set notify.agent waiting   # desktop notice when an agent needs you (off by default)
-theo config set notify.skip-focused on # ...and not while Theo's window is in front
+theo tool capture detect                    # how does this project start? (Compose, a script, or an AngularJS build)
+theo tool capture serve portal develop      # install, build and serve the branch under /portal
+theo tool capture serve portal rebranding   # a second branch at the same time, also on /portal
 ```
 
-Theo works with Claude Code and GitHub Copilot, and only if you already have them: it never installs them and tells you where to get a missing one. Their hooks tell Theo whether each agent works, waits or is done. In `theo-desktop`, a notice names the project, the branch and the agent when one waits for you (`all` adds when it finishes); it never includes your prompt or paths. You can also set it in Settings > AI agents. Copilot's hooks and the notices on Windows and macOS were tested on samples only. See [agents](docs/cli/agents.md).
+`theo tool list` shows Theo's tools. `capture` reads the `run` section of `.theo.json` (or proposes one with `detect`) and brings the application up on a free port. An app that only builds files, like an AngularJS one served under `/portal`, uses kind `static`: Theo serves the built folder itself, so two branches answer on `/portal/` side by side. Commands from the repository run only after you approve them. Tested on Linux with real worktrees; Windows and macOS only through CI. See [tools](docs/cli/tools.md).
 
 ### v0.5: Theo in the agents' workflow
 
@@ -135,6 +132,7 @@ Merged is detected even after a squash or rebase on GitHub. Remote branches and 
 
 ### Earlier releases
 
+- **v0.7:** Claude Code and Copilot hooks, desktop notices when an agent waits for you (off by default, and not while Theo's window is in front), a light interface by default, and Cleanup as a four-step flow.
 - **v0.6:** `theo doctor` notes what limits free ports per branch, agent state by process on macOS and Windows, branch worktrees use free host ports by default, and Cleanup picks inactive worktrees.
 - **v0.3:** local HTTPS for the local domains (`theo proxy --https`, `theo proxy trust`), MCP progress notifications and `wait_for`, and a warning when an app keeps its old address in its data (WordPress, Ghost, Nextcloud...).
 - **v0.2:** the redesigned interface with a command palette, the MCP server, the local proxy, container engine detection (Docker Desktop, Colima, OrbStack, Podman...), the Spanish interface, `theo open`, and `theo stop --all`.
@@ -151,7 +149,7 @@ Run `theo help` for the full list and `theo help <command>` for one. Every comma
 | Projects | `project add\|set\|list\|remove` | [project](docs/cli/project.md) |
 | Compose files | which files and env files are used | [compose-files](docs/cli/compose-files.md) |
 | Worktrees | `worktrees`, `branches`, `worktree add\|remove`, `up`, `down`, `restart`, `stop`, `ps`, `logs`, `open` | [worktrees](docs/cli/worktrees.md) |
-| Tools (in progress) | `tool list`, `tool capture detect` | [tools](docs/cli/tools.md) |
+| Tools | `tool list`, `tool capture detect\|serve` | [tools](docs/cli/tools.md) |
 | Agents | `hook`, `env`, `agent install`, `mcp install --hooks`, `worktree setup`, `.theo.json` | [agents](docs/cli/agents.md) |
 | Forgotten work | `worktree clean\|park\|resume\|keep\|base` | [worktrees](docs/cli/worktrees.md#forgotten-work-states-clean-park-resume-keep) |
 | Host ports | `ports`, `up --auto-ports` | [ports](docs/cli/ports.md) |

@@ -2,10 +2,12 @@
 
 Notable changes per release. Each release on GitHub also lists every merged pull request.
 
-## Unreleased
+## v0.8.0
+
+The first Theo tool: `capture` can work out how a project starts and bring up several branches of it at once, even an AngularJS app that only builds files and has to live under `/portal`. This is the groundwork for the before/after captures of the next releases.
 
 ### New
-- **Tools framework (0.8).** `theo tool list` shows Theo's tools. The first, `capture`, has `detect` (proposes how a project starts: Compose, a `package.json` script or a Makefile target) and `serve` (starts what the `run` section of `.theo.json` describes). The `run` section is approved like `after_create`.
+- **Tools framework (0.8).** `theo tool list` shows Theo's tools. The first, `capture` (so far without screenshots: those come in the next release), has `detect` (proposes how a project starts: Compose, a `package.json` script or a Makefile target) and `serve` (starts what the `run` section of `.theo.json` describes). The `run` section is approved like `after_create`.
 - **Kind `static` in the `run` section.** For an application that only builds a folder (AngularJS under `/portal`): `build`, `dir`, `base`, `spa` and `proxy`. `serve` installs, builds and serves the folder itself under `base` on a free port per worktree, so two branches answer on `/portal/` at once. It warns about an absolute `<base href>` in the build and reports the last lines a failed install or build printed. `detect` recognises AngularJS 1.x and proposes the section.
 
 ## v0.7.3
