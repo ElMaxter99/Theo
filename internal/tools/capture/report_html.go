@@ -143,7 +143,12 @@ type Brand struct {
 	Pie   string `json:"pie,omitempty"`
 }
 
-func dataURI(path string) string {
+// dataURI reads the file rel of base (which cannot leave it) as a data: URI; "" when it cannot be read.
+func dataURI(base, rel string) string {
+	path, err := Within(base, rel)
+	if err != nil {
+		return ""
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return ""
@@ -178,7 +183,7 @@ func BuildCorporate(s *Set, lang string, brand Brand, root string) string {
 	name := firstNonEmpty(brand.Name, s.App)
 	fmt.Fprintf(&b, `<section class="page cover">`)
 	if brand.Logo != "" {
-		if uri := dataURI(filepath.Join(root, filepath.FromSlash(brand.Logo))); uri != "" {
+		if uri := dataURI(root, brand.Logo); uri != "" {
 			fmt.Fprintf(&b, `<img class="logo" src="%s" alt="">`, uri)
 		}
 	}
@@ -213,7 +218,7 @@ func BuildCorporate(s *Set, lang string, brand Brand, root string) string {
 					cap = Tr(lang, "corp.mobile")
 				}
 				fmt.Fprintf(&b, `<figure><figcaption>%s %d × %d</figcaption><img class="shot" style="width:%dpx" src="%s" alt="%s %s"></figure>`,
-					esc(cap), vp.Width, vp.Height, shotWidth(vp), dataURI(filepath.Join(s.Dir, filepath.FromSlash(sh.File))), esc(sc.ID), esc(cap))
+					esc(cap), vp.Width, vp.Height, shotWidth(vp), dataURI(s.Dir, sh.File), esc(sc.ID), esc(cap))
 			}
 			b.WriteString("</div>")
 		}

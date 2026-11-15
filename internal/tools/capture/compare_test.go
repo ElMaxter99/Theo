@@ -209,3 +209,28 @@ func TestSmallChangeOnLargePageIsMinorNotSame(t *testing.T) {
 		t.Errorf("%+v %+v", c.Screens[0], c.Counts)
 	}
 }
+
+func TestFilesFromDataCannotLeaveTheirFolder(t *testing.T) {
+	base := t.TempDir()
+	for _, rel := range []string{"../x.png", "a/../../x.png", ".."} {
+		if _, err := Within(base, rel); err == nil {
+			t.Errorf("%q was accepted", rel)
+		}
+	}
+	if p, err := Within(base, "shots/a.png"); err != nil || !strings.HasPrefix(p, base) {
+		t.Errorf("%q %v", p, err)
+	}
+	outside := filepath.Join(filepath.Dir(base), "secret.txt")
+	os.WriteFile(outside, []byte("secret"), 0o644)
+	defer os.Remove(outside)
+	if got := dataURI(base, "../secret.txt"); got != "" {
+		t.Errorf("a logo outside the project was read: %q", got)
+	}
+	set := &Set{Dir: base}
+	if _, err := set.Image("../secret.txt"); err == nil || !strings.Contains(err.Error(), "outside") {
+		t.Errorf("image outside the set: %v", err)
+	}
+	if safeName("..") != "_" || safeName(".hidden") != "hidden" {
+		t.Errorf("%q %q", safeName(".."), safeName(".hidden"))
+	}
+}

@@ -56,7 +56,15 @@ func WriteComparisonReport(dir string, a, b *Set, c *Comparison, lang string, r 
 			if sh.File == "" {
 				continue
 			}
-			if err := copyFile(filepath.Join(side.set.Dir, filepath.FromSlash(sh.File)), filepath.Join(dir, "images", side.name, filepath.FromSlash(sh.File))); err != nil {
+			from, err := side.set.Path(sh.File)
+			if err != nil {
+				return files, err
+			}
+			to, err := Within(filepath.Join(dir, "images", side.name), sh.File)
+			if err != nil {
+				return files, err
+			}
+			if err := copyFile(from, to); err != nil {
 				return files, err
 			}
 		}

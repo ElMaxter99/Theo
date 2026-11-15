@@ -73,7 +73,27 @@ func ShotFile(screen, state, viewport string) string {
 	return "shots/" + safeName(screen) + "--" + safeName(state) + "--" + safeName(viewport) + ".png"
 }
 
+// Within joins base and the slash-separated rel and refuses a result outside
+// base: a manifest, an inventory or a branch name is data from a repository and
+// must not choose a file elsewhere on the disk.
+func Within(base, rel string) (string, error) {
+	full := filepath.Join(base, filepath.FromSlash(rel))
+	r, err := filepath.Rel(base, full)
+	if err != nil || r == ".." || strings.HasPrefix(r, ".."+string(filepath.Separator)) || filepath.IsAbs(r) {
+		return "", fmt.Errorf("%q is outside %s", rel, base)
+	}
+	return full, nil
+}
+
+// Path is the file of a screenshot of the set, which cannot leave the set's folder.
+func (s *Set) Path(file string) (string, error) { return Within(s.Dir, file) }
+
 func safeName(s string) string {
+	// "." and ".." must not be names of a folder.
+	s = strings.TrimLeft(s, ".")
+	if s == "" {
+		return "_"
+	}
 	return strings.Map(func(r rune) rune {
 		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.' {
 			return r
@@ -185,7 +205,11 @@ func FindSet(root, label string) (*Set, error) {
 
 // Image opens a screenshot of the set.
 func (s *Set) Image(file string) (image.Image, error) {
-	f, err := os.Open(filepath.Join(s.Dir, filepath.FromSlash(file)))
+	path, err := s.Path(file)
+	if err != nil {
+		return nil, err
+	}
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
