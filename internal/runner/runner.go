@@ -119,7 +119,7 @@ func Start(ctx context.Context, s Spec) (*Process, error) {
 	if err := proc.waitReady(ctx, s, timeout); err != nil {
 		proc.Stop()
 		if tail := proc.tail.String(); tail != "" {
-			return nil, fmt.Errorf("%w\n\n%s", err, tail)
+			return nil, fmt.Errorf("%w\nlast lines it printed:\n  %s", err, strings.ReplaceAll(tail, "\n", "\n  "))
 		}
 		return nil, err
 	}
@@ -148,7 +148,7 @@ func (p *Process) waitReady(ctx context.Context, s Spec, timeout time.Duration) 
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline.C:
-			return fmt.Errorf("%w: %s gave no accepted answer in %s", ErrNotReady, url, timeout)
+			return fmt.Errorf("%w: %s\ngave no accepted answer in %s", ErrNotReady, url, timeout)
 		case <-tick.C:
 			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 			resp, err := client.Do(req)

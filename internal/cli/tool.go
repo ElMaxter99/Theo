@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -12,6 +13,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"syscall"
 
@@ -123,8 +126,10 @@ func runCapture(e *engine.Engine, args []string, stdout, stderr io.Writer) error
 		fmt.Fprintln(stdout, "No way to start this project was found.")
 	} else {
 		fmt.Fprintf(stdout, "Proposed run section (%s confidence):\n", d.Confidence)
-		b, _ := json.MarshalIndent(map[string]any{"run": d.Run}, "", "  ")
-		fmt.Fprintln(stdout, string(b))
+		fmt.Fprintln(stdout, compactJSON(struct {
+			Version int                 `json:"version"`
+			Run     *repoconfig.RunSpec `json:"run"`
+		}{1, d.Run}))
 	}
 	for _, e := range d.Evidence {
 		fmt.Fprintf(stdout, "  because: %s\n", e)
@@ -132,13 +137,69 @@ func runCapture(e *engine.Engine, args []string, stdout, stderr io.Writer) error
 	for _, n := range d.Notes {
 		fmt.Fprintf(stdout, "  note: %s\n", n)
 	}
+	name := registeredName(e, root)
 	switch {
+	case wrote && d.Run.EffectiveKind() == repoconfig.RunCompose:
+		fmt.Fprintf(stdout, "Written to %s. Compose projects start with `theo up %s`.\n", repoconfig.FileName, name)
 	case wrote:
-		fmt.Fprintf(stdout, "Written to %s. Its commands run code from the repository, so Theo asks before running them.\n", repoconfig.FileName)
-	case d.Run != nil && !*write:
+		fmt.Fprintf(stdout, "Written to %s. Its commands run code from the repository: Theo asks before running them. Try it: theo tool capture serve %s --check\n", repoconfig.FileName, name)
+	case *write && d.Run != nil:
+		fmt.Fprintf(stdout, "Nothing was written: %s already has a run section.\n", repoconfig.FileName)
+	case d.Run != nil:
 		fmt.Fprintln(stdout, "Nothing was written. Add --write to put it in .theo.json.")
 	}
 	return nil
+}
+
+// registeredName is the name of the registered project whose folder is root,
+// or a placeholder when the folder is not registered.
+func registeredName(e *engine.Engine, root string) string {
+	if e == nil {
+		return "<project>"
+	}
+	list, err := e.Projects()
+	if err != nil {
+		return "<project>"
+	}
+	clean := func(p string) string {
+		if r, err := filepath.EvalSymlinks(p); err == nil {
+			p = r
+		}
+		return filepath.Clean(p)
+	}
+	for _, p := range list {
+		if clean(p.Path) == clean(root) {
+			return p.Name
+		}
+	}
+	return "<project>"
+}
+
+var (
+	oneStringArray  = regexp.MustCompile(`\[\s+("[^"\n]*"(?:,\s+"[^"\n]*")*)\s+\]`)
+	oneFieldObject  = regexp.MustCompile(`\{\s+("[^"\n]*": "[^"\n]*")\s+\}`)
+	commaNewlineGap = regexp.MustCompile(`",\s+"`)
+)
+
+// compactJSON indents v and keeps short string lists and one-field objects on
+// one line, the way the design shows .theo.json.
+func compactJSON(v any) string {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return fmt.Sprint(v)
+	}
+	return compactIndented(b)
+}
+
+// compactIndented collapses short string lists and one-field objects of
+// indented JSON, keeping the order of its keys.
+func compactIndented(b []byte) string {
+	out := oneStringArray.ReplaceAllStringFunc(string(b), func(m string) string {
+		inner := oneStringArray.FindStringSubmatch(m)[1]
+		return "[" + commaNewlineGap.ReplaceAllString(inner, `", "`) + "]"
+	})
+	out = oneFieldObject.ReplaceAllString(out, "{ $1 }")
+	return out
 }
 
 // writeRunSection adds the proposal to .theo.json, keeping what the file
@@ -163,14 +224,11 @@ func writeRunSection(root string, d capture.Detection) (bool, error) {
 		return false, err
 	}
 	doc["run"] = run
-	if _, ok := doc["version"]; !ok {
-		doc["version"] = json.RawMessage("1")
-	}
-	out, err := json.MarshalIndent(doc, "", "  ")
+	out, err := orderedConfig(doc)
 	if err != nil {
 		return false, err
 	}
-	return true, os.WriteFile(path, append(out, '\n'), 0o644)
+	return true, os.WriteFile(path, out, 0o644)
 }
 
 func runCaptureServe(e *engine.Engine, args []string, stdout, stderr io.Writer) error {
@@ -200,16 +258,24 @@ func runCaptureServe(e *engine.Engine, args []string, stdout, stderr io.Writer) 
 		return err
 	}
 	if plan.Spec == nil {
-		return fmt.Errorf("%s in %s has no run section: try `theo tool capture detect %s --write`", repoconfig.FileName, path, path)
+		return fmt.Errorf("%s in %s has no run section: try\n`theo tool capture detect %s --write`", repoconfig.FileName, tildePath(path), tildePath(path))
 	}
 	out := stdout
 	if *asJSON {
 		out = stderr
 	}
+	again := "theo tool capture serve " + pos[0]
+	if selector != "" {
+		again += " " + selector
+	}
 	approve := *yes
 	if !plan.Trusted && !approve && len(plan.Commands) > 0 {
-		if !interactive() || !confirmSetup(out, plan.Commands) {
-			return fmt.Errorf("%w: pass --yes to approve them, after reading them in %s", engine.ErrRunNotApproved, repoconfig.FileName)
+		if !interactive() {
+			return fmt.Errorf("%s (run) asks to run %d command(s) that you have not approved:\n  %s\nRead them, then approve with: %s --yes", repoconfig.FileName, len(plan.Commands), strings.Join(plan.Commands, "\n  "), again)
+		}
+		if !confirmRun(out, tildePath(path), plan.Commands) {
+			fmt.Fprintf(out, "Not run. When you want them: %s --yes\n", again)
+			return &exitCodeError{code: ExitError}
 		}
 		approve = true
 	}
@@ -222,17 +288,67 @@ func runCaptureServe(e *engine.Engine, args []string, stdout, stderr io.Writer) 
 		if err := writeJSON(stdout, map[string]any{"url": proc.URL(), "port": proc.Port, "path": path, "kept": !*check}); err != nil {
 			return err
 		}
-	} else {
+	} else if *check {
 		fmt.Fprintf(stdout, "Ready at %s\n", proc.URL())
+	} else {
+		fmt.Fprintf(stdout, "Ready at %s   (Ctrl-C stops it)\n", proc.URL())
 	}
-	if *check {
-		return nil
+	if !*check {
+		select {
+		case <-ctx.Done():
+		case <-proc.Done():
+			return fmt.Errorf("the application stopped: %v", proc.Err())
+		}
 	}
-	fmt.Fprintln(stderr, "theo: Ctrl-C stops it")
-	select {
-	case <-ctx.Done():
-	case <-proc.Done():
-		return fmt.Errorf("the application stopped: %v", proc.Err())
+	proc.Stop()
+	if !*asJSON {
+		fmt.Fprintln(stdout, "Stopped.")
 	}
 	return nil
+}
+
+// confirmRun shows the commands of a run section and asks whether to run them.
+func confirmRun(w io.Writer, dir string, commands []string) bool {
+	fmt.Fprintf(w, "%s (run) asks to run these commands in %s. They run code from the repository:\n", repoconfig.FileName, dir)
+	for _, c := range commands {
+		fmt.Fprintf(w, "  %s\n", c)
+	}
+	fmt.Fprint(w, "Run them (and remember this choice for these exact commands)? [y/N] ")
+	line, _ := bufio.NewReader(stdin).ReadString('\n')
+	answer := strings.ToLower(strings.TrimSpace(line))
+	return answer == "y" || answer == "yes"
+}
+
+// orderedConfig writes .theo.json with "version" first, then the other keys in
+// alphabetical order, one per line, short lists on one line.
+func orderedConfig(doc map[string]json.RawMessage) ([]byte, error) {
+	if _, ok := doc["version"]; !ok {
+		doc["version"] = json.RawMessage("1")
+	}
+	keys := make([]string, 0, len(doc))
+	for k := range doc {
+		if k != "version" {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	keys = append([]string{"version"}, keys...)
+	var b bytes.Buffer
+	b.WriteString("{\n")
+	for i, k := range keys {
+		kb, _ := json.Marshal(k)
+		var ind bytes.Buffer
+		if err := json.Indent(&ind, doc[k], "", "  "); err != nil {
+			return nil, err
+		}
+		vs := compactIndented(ind.Bytes())
+		vs = strings.ReplaceAll(vs, "\n", "\n  ")
+		b.WriteString("  " + string(kb) + ": " + vs)
+		if i < len(keys)-1 {
+			b.WriteString(",")
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("}\n")
+	return b.Bytes(), nil
 }

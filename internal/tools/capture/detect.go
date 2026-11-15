@@ -39,7 +39,7 @@ func Detect(root string) (Detection, error) {
 			d.Run = &repoconfig.RunSpec{Kind: repoconfig.RunCompose}
 			d.Confidence = "high"
 			d.Evidence = append(d.Evidence, f)
-			d.Notes = append(d.Notes, "Theo starts Compose projects with `theo up`; set run.service if the web is not the first service")
+			d.Notes = append(d.Notes, "set run.service if the web is not the first service")
 			break
 		}
 	}
@@ -61,7 +61,7 @@ func Detect(root string) (Detection, error) {
 	if mk := detectMake(root); mk != nil {
 		return *mk, nil
 	}
-	return Detection{Confidence: "none", Notes: []string{"No docker-compose file, package.json start script or Makefile target found; write the run section by hand"}}, nil
+	return Detection{Confidence: "none", Notes: []string{"No docker-compose file, package.json start script or Makefile target found; write the run section by hand (see docs/cli/tools.md)"}}, nil
 }
 
 type packageJSON struct {

@@ -60,7 +60,7 @@ func (e *Engine) StartScript(ctx context.Context, plan RunPlan, approve bool, st
 	case spec == nil:
 		return nil, fmt.Errorf("%s has no run section", repoconfig.FileName)
 	case spec.EffectiveKind() != repoconfig.RunScript:
-		return nil, fmt.Errorf("the run section is kind %q: start it with theo up", spec.EffectiveKind())
+		return nil, fmt.Errorf("the run section is kind %q: start it with `theo up %s`", spec.EffectiveKind(), plan.Project)
 	}
 	if !plan.Trusted && !approve {
 		return nil, ErrRunNotApproved

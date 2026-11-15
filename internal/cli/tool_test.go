@@ -45,6 +45,9 @@ func TestToolListAndDetect(t *testing.T) {
 	}
 	var doc map[string]json.RawMessage
 	b, _ := os.ReadFile(filepath.Join(dir, ".theo.json"))
+	if !strings.HasPrefix(string(b), "{\n  \"version\": 1,\n") || !strings.Contains(string(b), `"install": ["npm install"]`) {
+		t.Errorf("version must come first and short lists stay on one line:\n%s", b)
+	}
 	if err := json.Unmarshal(b, &doc); err != nil || doc["run"] == nil || doc["copy"] == nil {
 		t.Fatalf("--write must add run and keep copy: %s %v", b, err)
 	}
@@ -75,7 +78,7 @@ func TestToolCaptureServeCheck(t *testing.T) {
 	// Without a terminal and without --yes the commands are not run.
 	withStdin(t, "")
 	_, stderr, code := run("tool", "capture", "serve", "app", "--check")
-	if code == ExitOK || !strings.Contains(stderr, "--yes") {
+	if code == ExitOK || !strings.Contains(stderr, "asks to run 1 command(s) that you have not approved") || !strings.Contains(stderr, "theo tool capture serve app --yes") || !strings.Contains(stderr, "TestHelperServe") {
 		t.Fatalf("unapproved commands must not run: %d %q", code, stderr)
 	}
 
@@ -90,6 +93,7 @@ func TestToolCaptureServeCheck(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &got); err != nil || got.Port == 0 || !strings.HasPrefix(got.URL, "http://127.0.0.1:") {
 		t.Fatalf("serve --check --json: %q %v", stdout, err)
 	}
+	// Without --json the check says it stopped the application.
 	// It was stopped: nothing answers any more.
 	if resp, err := http.Get(got.URL); err == nil {
 		resp.Body.Close()
@@ -97,12 +101,12 @@ func TestToolCaptureServeCheck(t *testing.T) {
 	}
 
 	// The approval was remembered, so a second run needs no --yes.
-	if _, stderr, code := run("tool", "capture", "serve", "app", "--check"); code != ExitOK {
-		t.Errorf("approved commands must run without --yes: %s", stderr)
+	if out, stderr, code := run("tool", "capture", "serve", "app", "--check"); code != ExitOK || !strings.Contains(out, "Ready at http://127.0.0.1:") || !strings.HasSuffix(strings.TrimSpace(out), "Stopped.") {
+		t.Errorf("approved commands must run without --yes and end with Stopped.: %q %s", out, stderr)
 	}
 	// A project without a run section says what to do.
 	testutil.WriteFile(t, main, ".theo.json", `{}`)
-	if _, stderr, code := run("tool", "capture", "serve", "app", "--check"); code == ExitOK || !strings.Contains(stderr, "detect") {
+	if _, stderr, code := run("tool", "capture", "serve", "app", "--check"); code == ExitOK || !strings.Contains(stderr, "has no run section: try\n`theo tool capture detect") {
 		t.Errorf("no run section: %d %q", code, stderr)
 	}
 }
