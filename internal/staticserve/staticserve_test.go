@@ -140,3 +140,11 @@ func TestBadConfig(t *testing.T) {
 		t.Error("a proxy target that is not http must be refused")
 	}
 }
+
+func TestBaseCannotBeAnotherHost(t *testing.T) {
+	for _, base := range []string{"//evil.example", `/\evil.example`, "portal"} {
+		if _, err := Handler(Config{Dir: t.TempDir(), Base: base}); err == nil {
+			t.Errorf("base %q was accepted", base)
+		}
+	}
+}

@@ -153,6 +153,9 @@ func (r RunSpec) Validate() error {
 		if strings.TrimSpace(r.Dir) == "" && len(r.Build) == 0 || !strings.HasPrefix(r.Base, "/") {
 			return errors.New(`kind "static" needs "build" or "dir", and "base" starting with /`)
 		}
+		if strings.HasPrefix(r.Base, "//") || strings.Contains(r.Base, `\`) {
+			return fmt.Errorf("base %q must be a path starting with a single /", r.Base)
+		}
 		if strings.TrimSpace(r.Dir) == "" {
 			return errors.New(`kind "static" needs "dir", the folder the build leaves`)
 		}

@@ -36,8 +36,8 @@ type Config struct {
 // Handler builds the handler for cfg.
 func Handler(cfg Config) (http.Handler, error) {
 	base := strings.TrimRight(cfg.Base, "/")
-	if base != "" && !strings.HasPrefix(base, "/") {
-		return nil, fmt.Errorf("base %q must start with /", cfg.Base)
+	if base != "" && (!strings.HasPrefix(base, "/") || strings.HasPrefix(base, "//") || strings.Contains(base, `\`)) {
+		return nil, fmt.Errorf("base %q must be a path starting with a single /", cfg.Base)
 	}
 	type route struct {
 		prefix string
