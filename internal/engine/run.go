@@ -142,8 +142,7 @@ func runSteps(ctx context.Context, plan RunPlan, label string, cmds []string, en
 		fmt.Fprintf(stderr, "theo: run: %s: %s\n", label, cmd)
 		tail := &tailBuffer{max: 20}
 		cctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
-		name, args := shellCommand(cmd)
-		err := execx.StreamChangeEnv(cctx, plan.Path, env, io.MultiWriter(stdout, tail), io.MultiWriter(stderr, tail), name, args...)
+		err := execx.ShellChangeEnv(cctx, plan.Path, env, io.MultiWriter(stdout, tail), io.MultiWriter(stderr, tail), cmd)
 		cancel()
 		if err != nil {
 			why := err.Error()
