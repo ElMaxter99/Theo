@@ -10,10 +10,18 @@ import (
 
 const createNoWindow = 0x08000000
 
-func shellCommand(cmd string) (string, []string) { return "cmd", []string{"/C", cmd} }
-
-func setupTree(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: createNoWindow}
+// buildCommand runs the command line with cmd.exe. The line is passed as it
+// is (CmdLine, with /S so only the outer quotes are removed): Go would escape
+// the quotes of a path such as "C:\Program Files\node\node.exe" with
+// backslashes, which cmd.exe does not understand.
+func buildCommand(command string) *exec.Cmd {
+	cmd := exec.Command("cmd.exe")
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: createNoWindow,
+		CmdLine:       `cmd.exe /S /C "` + command + `"`,
+	}
+	return cmd
 }
 
 // terminate kills the process and everything it started.

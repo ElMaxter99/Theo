@@ -92,8 +92,7 @@ func Start(ctx context.Context, s Spec) (*Process, error) {
 		return strings.NewReplacer("${PORT}", p, "${"+portEnv+"}", p).Replace(v)
 	}
 
-	name, args := shell(expand(s.Command))
-	cmd := exec.Command(name, args...)
+	cmd := buildCommand(expand(s.Command))
 	cmd.Dir = s.Dir
 	cmd.Env = append(os.Environ(), portEnv+"="+p)
 	for k, v := range s.Env {
@@ -105,7 +104,6 @@ func Start(ctx context.Context, s Spec) (*Process, error) {
 		out = io.MultiWriter(proc.tail, s.Log)
 	}
 	cmd.Stdout, cmd.Stderr = out, out
-	setupTree(cmd)
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("runner: could not start %q: %w", s.Command, err)
 	}
@@ -179,11 +177,6 @@ func (p *Process) Stop() {
 		terminate(p.cmd, p.done)
 		<-p.done
 	})
-}
-
-// shell is how a command line runs on this system.
-func shell(cmd string) (string, []string) {
-	return shellCommand(cmd)
 }
 
 // tailWriter keeps the last lines written to it.

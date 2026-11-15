@@ -8,11 +8,13 @@ import (
 	"time"
 )
 
-func shellCommand(cmd string) (string, []string) { return "sh", []string{"-c", cmd} }
-
-// setupTree puts the command in its own process group, so the whole tree can
-// be signalled at once.
-func setupTree(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} }
+// buildCommand runs the command line with sh, in its own process group, so the
+// whole tree can be signalled at once.
+func buildCommand(command string) *exec.Cmd {
+	cmd := exec.Command("sh", "-c", command)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	return cmd
+}
 
 // terminate asks the group to stop and, if it has not after a few seconds,
 // kills it.
