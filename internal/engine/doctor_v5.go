@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/ElMaxter99/Theo/internal/compose"
 	"github.com/ElMaxter99/Theo/internal/repoconfig"
+	"github.com/ElMaxter99/Theo/internal/tools/capture"
 )
 
 // GitFastVersion is the Git that compares every branch with its base in one
@@ -107,5 +109,32 @@ func checkClaudeHooks(env DoctorEnv) (Check, bool) {
 	c.Status = StatusInfo
 	c.Detail = "not installed: Claude Code creates its worktrees without Theo, and Theo cannot tell what the agent does"
 	c.Fix = "theo mcp install --hooks"
+	return c, true
+}
+
+// checkCaptureEngine says whether the capture tool can run. It only appears
+// when a registered project has a .theo/capturas/pantallas.json, so a machine
+// that never captures keeps its short report.
+func checkCaptureEngine(ctx context.Context, env DoctorEnv) (Check, bool) {
+	used := false
+	for _, root := range env.Projects {
+		if _, err := os.Stat(filepath.Join(root, ".theo", "capturas", "pantallas.json")); err == nil {
+			used = true
+			break
+		}
+	}
+	if !used {
+		return Check{}, false
+	}
+	c := Check{ID: "capture-engine", Name: "capture engine"}
+	st, err := capture.NewEngine(env.DataDir).Check(ctx)
+	if err != nil {
+		c.Status = StatusWarn
+		c.Detail = err.Error()
+		c.Fix = "theo tool capture setup"
+		return c, true
+	}
+	c.Status = StatusOK
+	c.Detail = "node " + st.Node + ", chromium " + st.Chromium
 	return c, true
 }

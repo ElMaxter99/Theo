@@ -25,6 +25,7 @@ var Keys = map[string]string{
 	"open.files":          "command `theo open --in files` starts (default: explorer, open or xdg-open)",
 	"notify.agent":        "off, waiting or all: desktop notification when an agent waits for you (waiting) or also when it finishes (all). Only the desktop app shows it, and only for agents with hooks (default off)",
 	"notify.skip-focused": "on or off: with on, the desktop app does not notify while its window is in front (default off)",
+	"language":            "en, es or system: the language of the reports of the capture tool (default system: the language of the computer, English if it is not Spanish)",
 	"update-check":        "on or off: look once a day for a new version of Theo (default off; nothing is sent when off)",
 }
 
@@ -93,6 +94,9 @@ func (s Store) Set(key, value string) error {
 	}
 	if key == "notify.skip-focused" && value != "on" && value != "off" {
 		return errors.New("notify.skip-focused is on or off")
+	}
+	if key == "language" && value != "en" && value != "es" && value != "system" {
+		return errors.New("language is en, es or system")
 	}
 	if key == "notify.agent" && value != "off" && value != "waiting" && value != "all" {
 		return errors.New("notify.agent is off, waiting or all")

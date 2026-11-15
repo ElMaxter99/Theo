@@ -42,7 +42,7 @@ func init() {
 `)
 	registerCompletion(cmdSpec{name: "tool", subs: []cmdSpec{
 		{name: "list"},
-		{name: "capture", subs: []cmdSpec{{name: "detect", flags: []flagSpec{{names: []string{"--write"}}, {names: []string{"--json"}}}}, {name: "serve", flags: []flagSpec{{names: []string{"--yes"}}, {names: []string{"--check"}}, {names: []string{"--json"}}}}}},
+		{name: "capture", subs: []cmdSpec{{name: "detect", flags: []flagSpec{{names: []string{"--write"}}, {names: []string{"--json"}}}}, {name: "serve", flags: []flagSpec{{names: []string{"--yes"}}, {names: []string{"--check"}}, {names: []string{"--json"}}}}, {name: "validate"}, {name: "init"}, {name: "setup"}, {name: "run"}, {name: "run-pair"}, {name: "sets"}, {name: "compare"}, {name: "report"}}},
 	}})
 }
 
@@ -85,8 +85,13 @@ func runCapture(e *engine.Engine, args []string, stdout, stderr io.Writer) error
 	if len(args) > 0 && args[0] == "serve" {
 		return runCaptureServe(e, args[1:], stdout, stderr)
 	}
+	if len(args) > 0 {
+		if handled, err := captureSubcommand(e, args[0], args[1:], stdout, stderr); handled {
+			return err
+		}
+	}
 	if len(args) == 0 || args[0] != "detect" {
-		return usageErrorf("tool capture works today with: detect, serve (the rest is planned; see `theo tool list`)")
+		return usageErrorf("tool capture works with: detect, serve, validate, init, setup, run, run-pair, sets, compare, report")
 	}
 	fl := flag.NewFlagSet("tool capture detect", flag.ContinueOnError)
 	asJSON := fl.Bool("json", false, "print JSON")

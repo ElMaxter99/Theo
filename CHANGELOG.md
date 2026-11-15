@@ -2,6 +2,13 @@
 
 Notable changes per release. Each release on GitHub also lists every merged pull request.
 
+## Unreleased
+
+### New
+- **Before and after screenshots (0.9).** `theo tool capture` now captures, compares and reports. `.theo/capturas/pantallas.json` lists the screens, states and flows (`validate`, `init`); `setup` installs the engine (Node, Playwright, Chromium) once; `run` captures a deployment twice to find what is unstable, with a frozen clock, no motion and mock data; `run-pair` starts two branches, captures, compares and writes the reports; `compare`, `sets` and `report` work from saved sets. The comparison pairs screens by id, route or shared source file, classes each as same, minor, changed, new, removed, moved, unstable or not captured, compares the flows and lists what it could not cover. Three reports: corporate (desktop and mobile side by side, HTML and PDF), before/after compositions with the difference marked, and a Markdown summary with the share of pixels changed. They are written in Theo's language (new preference `language`: `en`, `es` or `system`).
+- **Tools page in the web interface.** Choose two branches, start, follow the progress, open the reports, install the engine, see the saved sets. It uses operations, so it keeps running if the page is closed.
+- **`theo doctor` checks the capture engine** for projects that have an inventory.
+
 ## v0.8.0
 
 The first Theo tool: `capture` can work out how a project starts and bring up several branches of it at once, even an AngularJS app that only builds files and has to live under `/portal`. This is the groundwork for the before/after captures of the next releases.

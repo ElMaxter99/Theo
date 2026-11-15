@@ -151,7 +151,7 @@ Todo está en el [changelog](CHANGELOG.md) (en inglés).
 | Proyectos | `project add\|set\|list\|remove` | [project](docs/cli/project.md) |
 | Archivos de Compose | qué archivos y archivos env se usan | [compose-files](docs/cli/compose-files.md) |
 | Worktrees | `worktrees`, `branches`, `worktree add\|remove`, `up`, `down`, `restart`, `stop`, `ps`, `logs`, `open` | [worktrees](docs/cli/worktrees.md) |
-| Herramientas | `tool list`, `tool capture detect\|serve` | [tools](docs/cli/tools.md) |
+| Herramientas | `tool list`, `tool capture detect\|serve\|validate\|setup\|run\|run-pair\|compare\|report` | [tools](docs/cli/tools.md) |
 | Agentes | `hook`, `env`, `agent install`, `mcp install --hooks`, `worktree setup`, `.theo.json` | [agents](docs/cli/agents.md) |
 | Trabajo olvidado | `worktree clean\|park\|resume\|keep\|base` | [worktrees](docs/cli/worktrees.md#forgotten-work-states-clean-park-resume-keep) |
 | Puertos | `ports`, `up --auto-ports` | [ports](docs/cli/ports.md) |

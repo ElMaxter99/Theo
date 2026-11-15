@@ -132,6 +132,9 @@ func RunDoctor(ctx context.Context, env DoctorEnv) DoctorReport {
 			add(c)
 		}
 	}
+	if c, ok := checkCaptureEngine(ctx, env); ok {
+		add(c)
+	}
 	for _, c := range platformNotes(ctx, env, eng) {
 		add(c)
 	}

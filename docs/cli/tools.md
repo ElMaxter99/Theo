@@ -1,14 +1,23 @@
-# Tools (0.8)
+# Tools (0.9)
 
 Theo's **tools** are self-contained features with their own scope. The first is
 the screen capture ("before and after"), planned in
 `roadmap/plan-herramienta-capturas.md` of Theo-workspace. This page covers what
-exists so far.
+exists so far: starting an application (0.8) and capturing, comparing and
+reporting its screens (0.9).
 
 ```sh
 theo tool list [--json]                         # the tools, what works today and what is planned
 theo tool capture detect [path] [--write] [--json]
 theo tool capture serve <project> [worktree] [--yes] [--check] [--json]
+theo tool capture validate [path] [--json]
+theo tool capture init [path]
+theo tool capture setup [--yes]
+theo tool capture run <project> [worktree] [--label L] [--url U] [--mode M] [--again] [--yes] [--json]
+theo tool capture run-pair <project> <before> <after> [--open] [--pr] [--again] [--yes] [--json]
+theo tool capture sets <project> [--json]
+theo tool capture compare <project> <before> <after> [--open] [--json]
+theo tool capture report <project> <label> [<label>] [--corporate|--summary|--failed] [--json]
 ```
 
 ## The `run` section of `.theo.json`
@@ -110,7 +119,78 @@ itself), waits until `ready` answers, prints the URL and keeps it until Ctrl-C, 
   (for example one written by `detect --write`) before relying on it.
 - A `compose` section is started with `theo up`, not with this command.
 
+## Before and after screenshots (0.9)
+
+### The inventory: `.theo/capturas/pantallas.json`
+
+The file lists what to capture: viewports, screens (`pantallas`), their states
+(`estados`, with the mock data and the actions that reach them) and flows
+(`flujos`, a sequence of `pantalla#estado`). It lives in the repository, so each
+branch says what its own screens are. `theo tool capture validate` checks it
+against the schema (`internal/tools/capture/schema/pantallas.v1.json`) and says
+where it is wrong (`screens[1].states[0].actions[0]`); `init` writes a starting
+file. There is no AI generation yet: it arrives in 0.10.
+
+```json
+{
+  "version": 1, "app": "Portal", "entrada": "panel",
+  "viewports": [{ "id": "desktop", "width": 1280, "height": 720 }, { "id": "movil", "width": 390, "height": 800, "mobile": true }],
+  "pantallas": [
+    { "id": "panel", "titulo": "Panel", "ruta": "/", "origen": ["src/panel.html"], "prioridad": "alta", "estados": [{ "id": "base" }] }
+  ],
+  "flujos": [{ "id": "abrir", "pasos": ["panel#base"] }]
+}
+```
+
+### The capture engine
+
+Capturing needs Node 20 or newer, Playwright and Chromium. `theo tool capture setup`
+installs them once in Theo's data folder (about 320 MB, needs the network);
+nothing is installed in your projects. `theo doctor` checks the engine for
+projects that have an inventory. Set `THEO_CAPTURE_CHROMIUM` to use a Chromium
+you already have.
+
+### Capture, compare, report
+
+- `run` captures one deployment: every state at every viewport, **twice**, to
+  find what is unstable (animations, clocks, data that changes). The clock is
+  frozen, motion is off, and API calls are answered from the inventory's mocks
+  (`--mode real` calls the real API, `--mode grabar` records it); an API call with
+  no mock fails that capture and says so. The result is a *set*:
+  `.theo/capturas/conjuntos/<label>-<commit>/` with `manifest.json` and `shots/`.
+  A set of the same commit is reused unless the tree is dirty or `--again`.
+- `run-pair` starts the two branches (their `run` section, approved like in
+  `serve`), captures both, compares, writes the reports and stops them. `compare`
+  does the same from two saved sets.
+- The comparison pairs screens by id, then by route, then by the source files
+  they share (`origen`), and classes each as `same`, `minor` (up to 1 % of the
+  pixels, or a few hundred pixels), `changed`, `new`, `removed`, `moved`,
+  `unstable` or `not_captured`. It also compares the flows and lists what it
+  could not cover (screens with a changed source file and no capture, API calls
+  with no mock).
+- Reports go to `.theo/capturas/informes/<date>-<before>-vs-<after>/`:
+  `corporativo.html` and `.pdf` (desktop and mobile side by side, a page per
+  screen), `composiciones.html` with `composiciones/*.png` (before, after and
+  difference for each state), `resumen.md` (totals, changed screens and the
+  percentage of pixels, flows, what was not captured; paste it into a pull
+  request with `--pr`) and `comparacion.json` (everything the others are made
+  from). `report --failed` lists what failed and why.
+- The reports are written in Theo's language: the `language` preference
+  (`theo config set language en|es|system`), then `LC_ALL`/`LANG`.
+- `.theo/capturas/.gitignore` keeps the sets and reports out of Git.
+
+### The Tools page
+
+The web interface has a **Tools** page (below Problems). It does what `run-pair`
+does: choose two branches that have a worktree, start, follow the progress (the
+same numbers the command prints), and open the compositions, the corporate report
+and `resumen.md` of each report. It also installs the engine and lists the saved
+sets. Reports made from the page use the interface's language. The API behind it
+is under `/api/v1/projects/{p}/capture` (state, `compare`, `runs/{op}`,
+`reports/{name}/{file}`) and `/api/v1/capture/setup`; the long actions are
+operations.
+
 ## Not built yet
 
-The capture engine, the comparison, the reports and the AI generation are the
-next steps of the plan. `theo up` does not start `script` applications yet.
+The generation of the inventory with AI (0.10). `theo up` does not start
+`script` applications yet.

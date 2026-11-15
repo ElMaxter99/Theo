@@ -11,6 +11,7 @@ import { ProjectActivity } from "./ProjectActivity.tsx";
 import { ProjectSettings } from "./ProjectSettings.tsx";
 import { Problems } from "./Problems.tsx";
 import { Settings } from "./Settings.tsx";
+import { Tools } from "./Tools.tsx";
 import { PageHead } from "../components/ui.tsx";
 import { href } from "../lib/router.ts";
 import { t } from "../strings.ts";
@@ -32,6 +33,7 @@ export function Router({ route, meta, onRefreshMeta }: { route: Route; meta: Met
         default: return <ProjectPanel project={route.project} drawer={!!route.drawer} onRefreshMeta={onRefreshMeta} />;
       }
     case "problems": return <Problems tab={route.tab} project={route.project} />;
+    case "tools": return <Tools project={route.project} />;
     case "settings": return <Settings meta={meta} section={route.section} />;
     case "detail": return <InstanceDetail project={route.project} wt={route.wt} tab={route.tab} />;
     default: return <NotFound />;
