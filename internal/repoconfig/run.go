@@ -3,6 +3,7 @@ package repoconfig
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -11,6 +12,7 @@ import (
 const (
 	RunCompose = "compose" // Docker Compose, which Theo already manages
 	RunScript  = "script"  // one process started in the worktree
+	RunStatic  = "static"  // a build that Theo serves itself, under a base path
 )
 
 // DefaultReadyTimeout is how long Theo waits for the application to answer.
@@ -41,8 +43,25 @@ type RunSpec struct {
 	Service string   `json:"service,omitempty"`
 	Port    *RunPort `json:"port,omitempty"`
 	// Env is extra environment for the start command. Values may use ${PORT}.
-	Env   map[string]string `json:"env,omitempty"`
-	Ready *RunReady         `json:"ready,omitempty"`
+	Env map[string]string `json:"env,omitempty"`
+
+	// The next fields are for kind "static": an application that only
+	// generates a folder of files. Theo runs Install and Build in the
+	// worktree and serves Dir itself, under Base.
+	Build []string `json:"build,omitempty"`
+	// Dir is the folder the build leaves, relative to the worktree.
+	Dir string `json:"dir,omitempty"`
+	// Base is the path the application lives under ("/portal"; "/" for the
+	// root). Every instance keeps it: each is served on its own port.
+	Base string `json:"base,omitempty"`
+	// SPA answers a path without a file with index.html (HTML5 routes).
+	SPA bool `json:"spa,omitempty"`
+	// Proxy sends paths under a prefix to a server that already exists (the
+	// API), keeping the path: "/portal/api" to "http://localhost:4000".
+	Proxy map[string]string `json:"proxy,omitempty"`
+
+	// Ready says when the application counts as up (every kind).
+	Ready *RunReady `json:"ready,omitempty"`
 }
 
 // RunPort says how the port reaches the application.
@@ -70,6 +89,9 @@ func (r RunSpec) EffectiveKind() string {
 	if strings.TrimSpace(r.Start) != "" {
 		return RunScript
 	}
+	if r.Dir != "" || len(r.Build) > 0 {
+		return RunStatic
+	}
 	return RunCompose
 }
 
@@ -91,6 +113,9 @@ func (r RunSpec) ReadyPath() string {
 	if r.Ready != nil && r.Ready.Path != "" {
 		return r.Ready.Path
 	}
+	if r.EffectiveKind() == RunStatic && r.Base != "" && r.Base != "/" {
+		return r.Base + "/"
+	}
 	return "/"
 }
 
@@ -111,15 +136,47 @@ func (r RunSpec) ReadyTimeout() int {
 // Validate checks the section. A mistake is an error, not silently ignored.
 func (r RunSpec) Validate() error {
 	switch r.Kind {
-	case "", RunCompose, RunScript:
+	case "", RunCompose, RunScript, RunStatic:
 	default:
-		return fmt.Errorf("kind %q is not known (use %q or %q)", r.Kind, RunCompose, RunScript)
+		return fmt.Errorf("kind %q is not known (use %q, %q or %q)", r.Kind, RunCompose, RunScript, RunStatic)
 	}
 	if r.EffectiveKind() == RunScript && strings.TrimSpace(r.Start) == "" {
 		return errors.New(`kind "script" needs "start"`)
 	}
 	if r.EffectiveKind() == RunCompose && strings.TrimSpace(r.Start) != "" {
 		return errors.New(`"start" belongs to kind "script"; Compose starts through "theo up"`)
+	}
+	if r.EffectiveKind() == RunStatic {
+		if strings.TrimSpace(r.Start) != "" {
+			return errors.New(`kind "static" has no "start": Theo serves the folder itself`)
+		}
+		if strings.TrimSpace(r.Dir) == "" && len(r.Build) == 0 || !strings.HasPrefix(r.Base, "/") {
+			return errors.New(`kind "static" needs "build" or "dir", and "base" starting with /`)
+		}
+		if strings.HasPrefix(r.Base, "//") || strings.Contains(r.Base, `\`) {
+			return fmt.Errorf("base %q must be a path starting with a single /", r.Base)
+		}
+		if strings.TrimSpace(r.Dir) == "" {
+			return errors.New(`kind "static" needs "dir", the folder the build leaves`)
+		}
+		if filepath.IsAbs(r.Dir) || strings.HasPrefix(filepath.ToSlash(filepath.Clean(r.Dir)), "..") {
+			return fmt.Errorf("dir %q must be a folder inside the worktree", r.Dir)
+		}
+		for _, c := range r.Build {
+			if strings.TrimSpace(c) == "" {
+				return errors.New(`"build" has an empty command`)
+			}
+		}
+		for prefix, target := range r.Proxy {
+			if !strings.HasPrefix(prefix, "/") {
+				return fmt.Errorf("proxy prefix %q must start with /", prefix)
+			}
+			if !strings.HasPrefix(target, "http://") && !strings.HasPrefix(target, "https://") {
+				return fmt.Errorf("proxy target %q must be an http:// or https:// address", target)
+			}
+		}
+	} else if r.Dir != "" || len(r.Build) > 0 || r.Base != "" || r.SPA || len(r.Proxy) > 0 {
+		return errors.New(`"build", "dir", "base", "spa" and "proxy" belong to kind "static"`)
 	}
 	for _, c := range r.Install {
 		if strings.TrimSpace(c) == "" {
@@ -157,6 +214,10 @@ func (r RunSpec) Validate() error {
 
 func (r RunSpec) normalized() *RunSpec {
 	r.Install = trimAll(r.Install)
+	r.Build = trimAll(r.Build)
+	if r.Base != "" && r.Base != "/" {
+		r.Base = strings.TrimRight(r.Base, "/")
+	}
 	r.Start = strings.TrimSpace(r.Start)
 	r.Kind = r.EffectiveKind()
 	return &r
@@ -167,6 +228,7 @@ func (r RunSpec) normalized() *RunSpec {
 func (r RunSpec) Commands() []string {
 	var out []string
 	out = append(out, r.Install...)
+	out = append(out, r.Build...)
 	if r.Start != "" {
 		out = append(out, r.Start)
 	}

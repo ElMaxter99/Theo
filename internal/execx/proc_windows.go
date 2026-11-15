@@ -39,3 +39,15 @@ func prepare(cmd *exec.Cmd) {
 		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: createNoWindow}
 	}
 }
+
+// shellArgs is how a shell line is run.
+func shellArgs(command string) (string, []string) { return "cmd", []string{"/C", command} }
+
+// rawShellLine gives cmd.exe the line as it is (with /S, only the outer quotes
+// are removed), keeping the quotes of paths intact.
+func rawShellLine(cmd *exec.Cmd, command string) {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.CmdLine = `"` + cmd.Path + `" /S /C "` + command + `"`
+}

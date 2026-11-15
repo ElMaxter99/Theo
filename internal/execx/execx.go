@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync/atomic"
@@ -167,14 +168,53 @@ func StreamInteractive(ctx context.Context, dir string, stdin io.Reader, stdout,
 	return err
 }
 
+// StreamChangeEnv is StreamChange with extra environment variables ("KEY=value"
+// entries added to the current environment).
+func StreamChangeEnv(ctx context.Context, dir string, env []string, stdout, stderr io.Writer, name string, args ...string) error {
+	if explaining() {
+		note(dir, name, args, true)
+		return nil
+	}
+	return streamEnv(ctx, dir, env, nil, stdout, stderr, name, args...)
+}
+
+// ShellChangeEnv runs a shell command line (sh -c, or cmd.exe /S /C) in dir with
+// extra environment, streaming its output. On Windows the line is passed to
+// cmd.exe as it is: Go would escape the quotes of a path such as
+// "C:\Program Files\node\node.exe" with backslashes, which cmd.exe does not understand.
+func ShellChangeEnv(ctx context.Context, dir string, env []string, stdout, stderr io.Writer, command string) error {
+	name, args := shellArgs(command)
+	if explaining() {
+		note(dir, name, args, true)
+		return nil
+	}
+	return streamCmd(ctx, dir, env, nil, stdout, stderr, name, args, command)
+}
+
 func stream(ctx context.Context, dir string, stdin io.Reader, stdout, stderr io.Writer, name string, args ...string) error {
+	return streamEnv(ctx, dir, nil, stdin, stdout, stderr, name, args...)
+}
+
+func streamEnv(ctx context.Context, dir string, env []string, stdin io.Reader, stdout, stderr io.Writer, name string, args ...string) error {
+	return streamCmd(ctx, dir, env, stdin, stdout, stderr, name, args, "")
+}
+
+// streamCmd runs name with args; when shellLine is not empty the command is a
+// shell line that rawShellLine passes through unescaped on Windows.
+func streamCmd(ctx context.Context, dir string, env []string, stdin io.Reader, stdout, stderr io.Writer, name string, args []string, shellLine string) error {
 	path, err := lookPath(name)
 	if err != nil {
 		return err
 	}
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Dir = dir
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	prepare(cmd)
+	if shellLine != "" {
+		rawShellLine(cmd, shellLine)
+	}
 	streamKillTree(cmd)
 	cmd.Stdin = stdin
 	cmd.Stdout = stdout

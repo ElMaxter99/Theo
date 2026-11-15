@@ -30,3 +30,9 @@ func streamKillTree(*exec.Cmd) {}
 
 // prepare does nothing outside Windows.
 func prepare(*exec.Cmd) {}
+
+// shellArgs is how a shell line is run.
+func shellArgs(command string) (string, []string) { return "sh", []string{"-c", command} }
+
+// rawShellLine does nothing outside Windows.
+func rawShellLine(*exec.Cmd, string) {}

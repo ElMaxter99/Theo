@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/ElMaxter99/Theo/internal/repoconfig"
@@ -82,6 +83,9 @@ func detectNode(root string) (*Detection, error) {
 	if err := json.Unmarshal(data, &pkg); err != nil {
 		return &Detection{Confidence: "none", Notes: []string{"package.json is not valid JSON: " + err.Error()}}, nil
 	}
+	if d := detectAngularJS(root, pkg); d != nil {
+		return d, nil
+	}
 	script := ""
 	for _, s := range []string{"dev", "start", "serve"} {
 		if _, ok := pkg.Scripts[s]; ok {
@@ -157,4 +161,61 @@ func detectMake(root string) *Detection {
 func exists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
+}
+
+var baseHref = regexp.MustCompile(`(?i)<base\s[^>]*href\s*=\s*["']([^"']+)["']`)
+
+// detectAngularJS recognises an AngularJS (1.x) application whose build only
+// leaves files in a folder, and proposes serving that folder under the base
+// path its index.html declares.
+func detectAngularJS(root string, pkg packageJSON) *Detection {
+	ver, ok := pkg.Dependencies["angular"]
+	if !ok {
+		ver, ok = pkg.DevDependencies["angular"]
+	}
+	if !ok {
+		return nil
+	}
+	if _, ok := pkg.Scripts["build"]; !ok {
+		return nil
+	}
+	install, build := "npm install", "npm run build"
+	switch {
+	case exists(filepath.Join(root, "pnpm-lock.yaml")):
+		install, build = "pnpm install --frozen-lockfile", "pnpm run build"
+	case exists(filepath.Join(root, "yarn.lock")):
+		install, build = "yarn install --frozen-lockfile", "yarn build"
+	case exists(filepath.Join(root, "package-lock.json")):
+		install = "npm ci"
+	}
+	dir := "dist"
+	for _, d := range []string{"dist", "build", "www"} {
+		if exists(filepath.Join(root, d)) {
+			dir = d
+			break
+		}
+	}
+	d := &Detection{Confidence: "medium"}
+	d.Evidence = append(d.Evidence, "package.json: angular "+strings.TrimLeft(ver, "^~=v ")+" (AngularJS), scripts.build")
+	base := "/"
+	for _, f := range []string{"src/index.html", "app/index.html", "index.html", "src/app/index.html"} {
+		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(f)))
+		if err != nil {
+			continue
+		}
+		if m := baseHref.FindSubmatch(data); m != nil {
+			if h := string(m[1]); strings.HasPrefix(h, "/") && len(h) > 1 {
+				base = strings.TrimRight(h, "/")
+				d.Evidence = append(d.Evidence, f+": <base href=\""+string(m[1])+"\">")
+				break
+			}
+		}
+	}
+	spec := &repoconfig.RunSpec{Kind: repoconfig.RunStatic, Install: []string{install}, Build: []string{build}, Dir: dir, Base: base}
+	if base != "/" {
+		spec.Ready = &repoconfig.RunReady{Path: base + "/"}
+	}
+	d.Run = spec
+	d.Notes = append(d.Notes, "Theo builds the app and serves "+dir+"/ itself under "+base+": the project\nneeds no server. Add \"spa\": true if the app uses HTML5 routes (no #)")
+	return d
 }

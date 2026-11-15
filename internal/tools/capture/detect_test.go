@@ -80,3 +80,30 @@ func TestDetectNothingAndPrecedence(t *testing.T) {
 		t.Errorf("broken package.json: %+v %v", d, err)
 	}
 }
+
+func TestDetectAngularJSStatic(t *testing.T) {
+	dir := project(t, map[string]string{
+		"package.json":      `{"scripts":{"build":"gulp build"},"dependencies":{"angular":"^1.8.3"}}`,
+		"package-lock.json": "{}",
+	})
+	if err := os.MkdirAll(filepath.Join(dir, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "src", "index.html"), []byte(`<html><head><base href="/portal/"></head></html>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d, err := Detect(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := d.Run
+	if r == nil || r.Kind != "static" || r.Dir != "dist" || r.Base != "/portal" || r.Install[0] != "npm ci" || r.Build[0] != "npm run build" || r.Ready == nil || r.Ready.Path != "/portal/" {
+		t.Fatalf("%+v", r)
+	}
+	if err := r.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Evidence) != 2 || !strings.Contains(d.Evidence[0], "angular 1.8.3 (AngularJS)") || !strings.Contains(d.Evidence[1], `src/index.html: <base href="/portal/">`) {
+		t.Fatalf("%v", d.Evidence)
+	}
+}

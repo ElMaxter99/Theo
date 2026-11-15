@@ -2,6 +2,12 @@
 
 Notable changes per release. Each release on GitHub also lists every merged pull request.
 
+## Unreleased
+
+### New
+- **Tools framework (0.8).** `theo tool list` shows Theo's tools. The first, `capture`, has `detect` (proposes how a project starts: Compose, a `package.json` script or a Makefile target) and `serve` (starts what the `run` section of `.theo.json` describes). The `run` section is approved like `after_create`.
+- **Kind `static` in the `run` section.** For an application that only builds a folder (AngularJS under `/portal`): `build`, `dir`, `base`, `spa` and `proxy`. `serve` installs, builds and serves the folder itself under `base` on a free port per worktree, so two branches answer on `/portal/` at once. It warns about an absolute `<base href>` in the build and reports the last lines a failed install or build printed. `detect` recognises AngularJS 1.x and proposes the section.
+
 ## v0.7.3
 
 Patch release: an option to stay quiet while Theo's window is in front, and steadier tests.

@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -108,3 +109,105 @@ func TestStartScriptInstallFailureStops(t *testing.T) {
 		t.Error("start must not run after a failed install")
 	}
 }
+
+// TestHelperBuild is not a test: the test binary runs it as the build command
+// of a static run section when HELPER_BUILD is set. HELPER_BUILD=ok leaves
+// dist/ with an index.html (its <base href> is HELPER_BASE), "nodir" leaves
+// nothing, "noindex" leaves an empty dist/ and "fail" prints and fails.
+func TestHelperBuild(t *testing.T) {
+	switch os.Getenv("HELPER_BUILD") {
+	case "":
+		return
+	case "ok":
+		os.MkdirAll("dist", 0o755)
+		os.WriteFile("dist/index.html", []byte(`<html><base href="`+os.Getenv("HELPER_BASE")+`">home</html>`), 0o644)
+		os.WriteFile("dist/app.js", []byte("js"), 0o644)
+	case "noindex":
+		os.MkdirAll("dist", 0o755)
+	case "fail":
+		os.Stderr.WriteString("Error: Cannot find module 'gulp-sass'\n")
+		os.Exit(1)
+	}
+}
+
+func staticConfig(mode, base string) string {
+	cmd := `\"` + strings.ReplaceAll(os.Args[0], `\`, `\\`) + `\" -test.run=TestHelperBuild`
+	return `{"run":{"kind":"static","build":["` + cmd + `"],"dir":"dist","base":"/portal","spa":true,` +
+		`"env":{"HELPER_BUILD":"` + mode + `","HELPER_BASE":"` + base + `"}}}`
+}
+
+func TestStartRunStaticServesTheBuildUnderItsBase(t *testing.T) {
+	e, dir := runProject(t, staticConfig("ok", "/portal/"))
+	plan, err := e.PlanRun("app", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out, errb bytes.Buffer
+	r, err := e.StartRun(context.Background(), plan, true, &out, &errb)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, errb.String())
+	}
+	defer r.Stop()
+	if !strings.HasSuffix(r.URL(), "/portal/") {
+		t.Fatalf("url %q", r.URL())
+	}
+	get := func(p string) int {
+		c := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+		resp, err := c.Get("http://127.0.0.1:" + itoa(r.ListenPort()) + p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if get("/portal/app.js") != 200 || get("/") != 302 || get("/otra-cosa") != 404 || get("/portal/clientes/42") != 200 {
+		t.Fatal("the static server does not answer as designed")
+	}
+	log := errb.String()
+	if !strings.Contains(log, "theo: run: build: ") || !strings.Contains(log, "theo: run: serve: dist/ under /portal\n") {
+		t.Fatalf("log:\n%s", log)
+	}
+	if strings.Contains(log, "warning") {
+		t.Fatalf("a relative base href must not warn:\n%s", log)
+	}
+}
+
+func TestStartRunStaticWarnsAboutAnAbsoluteBaseHref(t *testing.T) {
+	e, dir := runProject(t, staticConfig("ok", "https://pre.example.com/portal/"))
+	plan, _ := e.PlanRun("app", dir)
+	var errb bytes.Buffer
+	r, err := e.StartRun(context.Background(), plan, true, &bytes.Buffer{}, &errb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Stop()
+	if !strings.Contains(errb.String(), `theo: warning: dist/index.html has <base href="https://pre.example.com/portal/">:`) {
+		t.Fatalf("log:\n%s", errb.String())
+	}
+}
+
+func TestStartRunStaticErrors(t *testing.T) {
+	cases := map[string]string{
+		"fail":    "last lines it printed:\n  Error: Cannot find module 'gulp-sass'",
+		"nodir":   "the build did not leave the folder dist/ (run.dir) in ",
+		"noindex": "dist/ has no index.html: the app cannot start under /portal/",
+	}
+	for mode, want := range cases {
+		e, dir := runProject(t, staticConfig(mode, ""))
+		plan, _ := e.PlanRun("app", dir)
+		_, err := e.StartRun(context.Background(), plan, true, &bytes.Buffer{}, &bytes.Buffer{})
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: %v, want %q", mode, err, want)
+		}
+	}
+}
+
+func TestStartRunStaticNeedsApproval(t *testing.T) {
+	e, dir := runProject(t, staticConfig("ok", ""))
+	plan, _ := e.PlanRun("app", dir)
+	if _, err := e.StartRun(context.Background(), plan, false, &bytes.Buffer{}, &bytes.Buffer{}); err != ErrRunNotApproved {
+		t.Fatalf("%v", err)
+	}
+}
+
+func itoa(n int) string { return strconv.Itoa(n) }
