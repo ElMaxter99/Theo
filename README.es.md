@@ -97,18 +97,15 @@ Más en el [quickstart](docs/cli/quickstart.md) (en inglés). Para probarlo todo
 
 ## Novedades
 
-### v0.7: Claude Code, Copilot y avisos
-
-**v0.7.3** añade una opción para no avisar mientras la ventana de Theo está delante (`theo config set notify.skip-focused on`). **v0.7.2** abre la interfaz en un tema claro crema por defecto (el oscuro es carbón cálido y sigue a un clic en Ajustes › Tema). **v0.7.1** rediseña Problemas > Limpieza en cuatro pasos (Revisar, Confirmar, Quitando, Resultado): cada worktree está Listo, Espera tu OK, Bloqueado o Conservado, y cada bloqueado dice cómo desbloquearlo. Mira el [registro de cambios](CHANGELOG.es.md).
+### v0.8: herramientas, y la primera: `capture`
 
 ```sh
-theo agent install              # registra los agentes que ya tienes (Claude Code, GitHub Copilot)
-theo agent install copilot      # hooks de Copilot: .github/hooks/theo.json, o --scope user
-theo config set notify.agent waiting   # aviso de escritorio cuando un agente te necesita (apagado por defecto)
-theo config set notify.skip-focused on # ...y no mientras la ventana de Theo está delante
+theo tool capture detect                    # ¿cómo arranca este proyecto? (Compose, un script o una build de AngularJS)
+theo tool capture serve portal develop      # instala, compila y sirve la rama bajo /portal
+theo tool capture serve portal rebranding   # una segunda rama a la vez, también en /portal
 ```
 
-Theo trabaja con Claude Code y GitHub Copilot, y solo si ya los tienes: nunca los instala y te dice dónde conseguir el que falte. Sus hooks avisan a Theo de si cada agente trabaja, espera o ha terminado. En `theo-desktop`, un aviso nombra el proyecto, la rama y el agente cuando uno te espera (`all` añade cuando termina); nunca incluye tu prompt ni rutas. También se ajusta en Ajustes › Agentes de IA. Los hooks de Copilot y los avisos en Windows y macOS solo se probaron con muestras. Ver [agents](docs/cli/agents.md) (en inglés).
+`theo tool list` muestra las herramientas de Theo. `capture` lee la sección `run` de `.theo.json` (o propone una con `detect`) y levanta la aplicación en un puerto libre. Una app que solo genera ficheros, como una de AngularJS bajo `/portal`, usa el tipo `static`: Theo sirve él mismo la carpeta compilada, así que dos ramas responden en `/portal/` una junto a otra. Los comandos del repositorio solo se ejecutan tras tu aprobación. Probado en Linux con worktrees reales; Windows y macOS solo por el CI. Mira [tools](docs/cli/tools.md).
 
 ### v0.5: Theo en el flujo de los agentes
 
@@ -137,6 +134,7 @@ Detecta las ramas fusionadas incluso tras un squash o un rebase en GitHub. Las r
 
 ### Versiones anteriores
 
+- **v0.7:** hooks de Claude Code y Copilot, avisos de escritorio cuando un agente te espera (apagados por defecto, y no con la ventana de Theo delante), interfaz clara por defecto y Limpieza en cuatro pasos.
 - **v0.6:** `theo doctor` anota lo que limita los puertos libres por rama, estado del agente por proceso en macOS y Windows, los worktrees de ramas usan puertos libres por defecto y Limpieza elige los inactivos.
 - **v0.3:** HTTPS local para los dominios locales (`theo proxy --https`, `theo proxy trust`), notificaciones de progreso en MCP y `wait_for`, y un aviso cuando una aplicación guarda su dirección antigua en sus datos (WordPress, Ghost, Nextcloud...).
 - **v0.2:** la interfaz rediseñada con paleta de comandos, el servidor MCP, el proxy local, la detección del motor de contenedores (Docker Desktop, Colima, OrbStack, Podman...), la interfaz en español, `theo open` y `theo stop --all`.
@@ -153,6 +151,7 @@ Todo está en el [changelog](CHANGELOG.md) (en inglés).
 | Proyectos | `project add\|set\|list\|remove` | [project](docs/cli/project.md) |
 | Archivos de Compose | qué archivos y archivos env se usan | [compose-files](docs/cli/compose-files.md) |
 | Worktrees | `worktrees`, `branches`, `worktree add\|remove`, `up`, `down`, `restart`, `stop`, `ps`, `logs`, `open` | [worktrees](docs/cli/worktrees.md) |
+| Herramientas | `tool list`, `tool capture detect\|serve\|validate\|setup\|run\|run-pair\|compare\|report` | [tools](docs/cli/tools.md) |
 | Agentes | `hook`, `env`, `agent install`, `mcp install --hooks`, `worktree setup`, `.theo.json` | [agents](docs/cli/agents.md) |
 | Trabajo olvidado | `worktree clean\|park\|resume\|keep\|base` | [worktrees](docs/cli/worktrees.md#forgotten-work-states-clean-park-resume-keep) |
 | Puertos | `ports`, `up --auto-ports` | [ports](docs/cli/ports.md) |
