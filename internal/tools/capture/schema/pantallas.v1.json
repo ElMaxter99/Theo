@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ElMaxter99/Theo/schema/pantallas.v1.json",
+  "title": "Theo capture inventory (pantallas.json)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "app", "viewports", "pantallas"],
+  "properties": {
+    "version": { "const": 1 },
+    "app": { "type": "string", "minLength": 1 },
+    "entrada": { "type": "string", "description": "Screen (or screen#state) the application opens on" },
+    "viewports": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "width", "height"],
+        "properties": {
+          "id": { "type": "string" }, "width": { "type": "integer", "minimum": 1 }, "height": { "type": "integer", "minimum": 1 },
+          "mobile": { "type": "boolean" }, "scale": { "type": "number", "minimum": 1 }
+        }
+      }
+    },
+    "mocks": {
+      "type": "object", "additionalProperties": false,
+      "properties": { "modo": { "enum": ["mock", "real", "grabar"] }, "carpeta": { "type": "string" } }
+    },
+    "sesion": { "type": "object", "additionalProperties": false, "properties": { "storage_state": { "type": "string" } } },
+    "pantallas": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "ruta", "estados"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[^#]+$" },
+          "titulo": { "type": "string" },
+          "ruta": { "type": "string", "pattern": "^[/#]" },
+          "origen": { "type": "array", "items": { "type": "string" } },
+          "prioridad": { "enum": ["alta", "media", "baja"] },
+          "estados": {
+            "type": "array", "minItems": 1,
+            "items": {
+              "type": "object", "additionalProperties": false, "required": ["id"],
+              "properties": {
+                "id": { "type": "string" },
+                "datos": { "type": "object" },
+                "acciones": {
+                  "type": "array",
+                  "items": {
+                    "type": "object", "minProperties": 1, "maxProperties": 1,
+                    "propertyNames": { "enum": ["ir", "click", "escribir", "elegir", "esperar", "scroll", "pasar_raton", "tecla"] }
+                  }
+                }
+              }
+            }
+          },
+          "ignorar": { "type": "array", "items": { "type": "object", "required": ["selector"], "properties": { "selector": { "type": "string" } } } }
+        }
+      }
+    },
+    "flujos": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "pasos"],
+        "properties": { "id": { "type": "string" }, "pasos": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^[^#]+#[^#]+$" } } }
+      }
+    }
+  }
+}

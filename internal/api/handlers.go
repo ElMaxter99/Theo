@@ -74,6 +74,7 @@ func (s *Server) routesTable() {
 	s.redesignRoutes()
 	s.reconcileRoutes()
 	s.lifecycleRoutes()
+	s.captureRoutes()
 
 	s.handle("GET", "/operations", authSession, s.handleOperations)
 	s.handle("GET", "/operations/{id}", authSession, s.handleOperation)

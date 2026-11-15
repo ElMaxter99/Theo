@@ -106,6 +106,7 @@ export function Shell({ meta, onRefresh, children }: { meta: Meta | undefined; o
               {healthCount === undefined && health.error ? <span class="sr-only"> {t.reconcile.loadError}</span> : null}
             </a>
           </li>
+          <li><a href={href.tools()} aria-current={route.name === "tools" ? "page" : undefined}><span class="nav-icon" aria-hidden="true">✦</span> {t.nav.tools}</a></li>
           <li><a href={href.settings()} aria-current={route.name === "settings" ? "page" : undefined}><span class="nav-icon" aria-hidden="true">⚙</span> {t.nav.settings}</a></li>
         </ul>
         {meta ? <p class="nav-foot">{t.app.version(meta.theo_version, meta.api_version)}<br />{t.app.footerLocal}<br /><button type="button" class="linklike" onClick={openHelp}>{t.shortcuts.link}</button></p> : null}

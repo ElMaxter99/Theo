@@ -23,6 +23,64 @@ const wtId = (p) => "wt_" + crypto.createHash("sha256").update(p).digest("hex").
 const now = () => new Date().toISOString();
 const base = (p) => p.split("/").filter(Boolean).pop();
 
+
+// ---------------------------------------------------------------- capture tool (0.9)
+// scenario.capture: "ready" (default), "noengine" (Node/Chromium missing) or "noinv" (no pantallas.json).
+const captureRuns = new Map();
+const CAPTURE_REPORTS = () => [
+  { name: "2026-11-15-develop-vs-rebranding", date: "2026-11-15", a: "develop", b: "rebranding", counts: { Changed: 18, Same: 40, New: 3, Removed: 1, Moved: 0, FlowChanged: 2, NotCaptured: 4, Unstable: 0, NeedLook: 0 }, summary: true, gallery: true, corporate: true },
+  { name: "2026-11-12-develop-vs-feature-x", date: "2026-11-12", a: "develop", b: "feature-x", counts: { Changed: 2, Same: 56, New: 0, Removed: 0, Moved: 0, FlowChanged: 0, NotCaptured: 0, Unstable: 0, NeedLook: 0 }, summary: true, gallery: true, corporate: true },
+];
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==", "base64");
+async function captureRoutes(req, res, proj, seg, m) {
+  const mode = scenario.capture ?? "ready";
+  if (seg.length === 3 && m === "GET") {
+    const engine = mode !== "noengine";
+    return send(res, 200, {
+      engine, node: engine ? "v22.4.0" : undefined, chromium: engine ? "136.0.7103.25" : undefined, problem: engine ? undefined : "the capture engine is not installed: run `theo tool capture setup` (Node 20 or newer is needed)",
+      no_inventory: mode === "noinv", inventory: mode === "noinv" ? undefined : { Viewports: 2, Screens: 31, States: 64, Flows: 5, NoOrigin: 2, Entry: "inicio" },
+      sets: mode === "noinv" ? [] : [
+        { label: "develop", commit: "2f9c1ab", date: "2026-11-15T10:02:00Z", mode: "mock", screens: 31, shots: 128, unstable: 0 },
+        { label: "rebranding", commit: "91d0e7c", date: "2026-11-15T10:09:00Z", mode: "mock", screens: 32, shots: 132, unstable: 1 },
+      ],
+      reports: mode === "noinv" ? [] : [...(S.captureReports ?? []), ...CAPTURE_REPORTS()],
+    }), true;
+  }
+  if (seg[3] === "compare" && m === "POST") {
+    const b = (await readJson(req)) ?? {};
+    if (!b.a || !b.b) return err(res, 400, "invalid_request", "a and b are required: the branches or sets to compare"), true;
+    if (!b.approve && !b.use_sets && !scenario.capture_approved) return send(res, 409, { error: { code: "run_not_approved", message: "the commands that start the application have not been approved", original: "npm ci\nnpm run build" } }), true;
+    const id = `op_cap${captureRuns.size + 1}`;
+    captureRuns.set(id, { at: Date.now(), a: b.a, b: b.b, project: proj.name, added: false });
+    return send(res, 202, { id, kind: "capture.compare", project: proj.name, state: "running", cancellable: true }), true;
+  }
+  if (seg[3] === "runs" && seg.length === 5 && m === "GET") {
+    const r = captureRuns.get(seg[4]);
+    if (!r) return err(res, 404, "operation_not_found", `no capture ${seg[4]}`), true;
+    const step = Math.floor((Date.now() - r.at) / 120);
+    const A = Math.min(12, step), B = Math.min(12, Math.max(0, step - 12));
+    const fin = B >= 12;
+    if (fin && !r.added) {
+      r.added = true;
+      (S.captureReports ??= []).unshift({ name: `2026-11-15-${r.a}-vs-${r.b}`, date: "2026-11-15", a: r.a, b: r.b, counts: { Changed: 5, Same: 19, New: 1, Removed: 0, Moved: 0, FlowChanged: 1, NotCaptured: 1, Unstable: 0, NeedLook: 0 }, summary: true, gallery: true, corporate: true });
+    }
+    return send(res, 200, {
+      operation: { id: seg[4], kind: "capture.compare", project: proj.name, state: fin ? "succeeded" : "running", result: fin ? { ok: true, summary: `${r.a} vs ${r.b}: 5 changed, 19 same, 1 new, 0 removed` } : undefined },
+      progress: [{ label: r.a, done: A, total: 12 }, ...(A >= 12 ? [{ label: r.b, done: B, total: 12 }] : [])],
+      lines: [`${r.a}: serve ready`, ...(A >= 12 ? [`${r.b}: serve ready`] : [])],
+    }), true;
+  }
+  if (seg[3] === "reports" && seg.length >= 6 && m === "GET") {
+    const file = seg.slice(5).join("/");
+    const csp = { "Content-Security-Policy": "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'" };
+    if (file.endsWith(".png")) return send(res, 200, PNG, { "Content-Type": "image/png", ...csp }), true;
+    if (file.endsWith(".md")) return send(res, 200, "# Before and after\n", { "Content-Type": "text/markdown; charset=utf-8", ...csp }), true;
+    if (file.endsWith(".html")) return send(res, 200, `<!doctype html><title>${seg[4]}</title><h1>${seg[4]}</h1><img alt="" src="composiciones/a.png">`, { "Content-Type": "text/html; charset=utf-8", ...csp }), true;
+    return err(res, 404, "report_not_found", "no such report file"), true;
+  }
+  return err(res, 404, "not_found", "unknown resource"), true;
+}
+
 // ---------------------------------------------------------------- state
 let S;
 let scenario;
@@ -196,7 +254,7 @@ function containersOf(w) {
 
 // ---------------------------------------------------------------- helpers
 function send(res, status, body, headers = {}) {
-  const isStr = typeof body === "string";
+  const isStr = typeof body === "string" || Buffer.isBuffer(body);
   res.writeHead(status, { "Content-Type": isStr ? "text/plain; charset=utf-8" : "application/json", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": CSP, "Referrer-Policy": "no-referrer", "Cross-Origin-Opener-Policy": "same-origin", ...headers });
   res.end(isStr ? body : JSON.stringify(body));
 }
@@ -345,6 +403,7 @@ async function lifecycleRoutes(req, res, proj, seg) {
       return send(res, 200, plan), true;
     }
   }
+  if (seg[2] === "capture") return captureRoutes(req, res, proj, seg, m);
   if (seg[2] === "park-inactive" && seg.length === 4 && m === "GET") {
     const r = parkRuns.get(seg[3]);
     if (!r) return err(res, 404, "operation_not_found", `no bulk park ${seg[3]}`), true;
@@ -574,6 +633,7 @@ async function api(req, res, url) {
 
   if (seg[0] === "operations") {
     if (seg.length === 1) return send(res, 200, [...S.ops.values()].map(publicOp));
+    if (seg[1] === "op_capsetup" && seg.length === 2) return send(res, 200, { id: "op_capsetup", kind: "capture.setup", state: "succeeded", result: { ok: true, summary: "Capture engine ready" } }), true;
     const o = S.ops.get(seg[1]);
     if (!o) return err(res, 404, "operation_not_found", "operation not found");
     if (seg[2] === "cancel" && m === "POST") { if (o.state === "running") { opState(o, "cancelling"); } return send(res, 202, publicOp(o)); }
@@ -607,6 +667,10 @@ async function api(req, res, url) {
     if (seg[1] === "stop" && m === "POST") { await readJson(req); S.proxy = { ...S.proxy, running: false, managed: false, autostart: false }; emitGlobal("state.changed", {}); return send(res, 200, proxyStatus()); }
   }
   if (await topLevel(req, res, seg, q)) return;
+  if (seg[0] === "capture" && seg[1] === "setup" && m === "POST") {
+    scenario.capture = "ready";
+    return send(res, 202, { id: "op_capsetup", kind: "capture.setup", state: "running" }), true;
+  }
   if (seg[0] !== "projects") return err(res, 404, "not_found", "unknown resource");
   if (seg.length === 1) {
     if (m === "GET") return send(res, 200, S.projects.map(({ wts, ...p }) => p));

@@ -100,19 +100,20 @@ type Server struct {
 		sync.Mutex
 		v int64
 	}
-	cfg      Config
-	eng      *engine.Engine
-	ln       net.Listener
-	port     int
-	srv      *http.Server
-	mux      *http.ServeMux
-	routes   []Route
-	auth     *auth
-	ops      *operations
-	parkRuns parkRuns
-	hub      *hub
-	log      *log.Logger
-	assets   fs.FS
+	cfg         Config
+	eng         *engine.Engine
+	ln          net.Listener
+	port        int
+	srv         *http.Server
+	mux         *http.ServeMux
+	routes      []Route
+	auth        *auth
+	ops         *operations
+	parkRuns    parkRuns
+	captureRuns captureRuns
+	hub         *hub
+	log         *log.Logger
+	assets      fs.FS
 
 	proxy  *proxyManager
 	cache  *overviewCache

@@ -657,3 +657,32 @@ export interface ParkInactiveRun {
   entries: ParkInactiveEntry[];
   report?: ParkInactiveReport;
 }
+
+// Tools page (0.9): the capture tool.
+export interface CaptureReport {
+  name: string;
+  date: string;
+  a?: string;
+  b?: string;
+  counts?: { Changed: number; Same: number; New: number; Removed: number; Moved: number; FlowChanged: number; NotCaptured: number; Unstable: number; NeedLook: number };
+  summary: boolean;
+  gallery: boolean;
+  corporate: boolean;
+}
+export interface CaptureSet { label: string; commit?: string; date: string; mode: string; screens: number; shots: number; unstable: number }
+export interface CaptureState {
+  engine: boolean;
+  node?: string;
+  chromium?: string;
+  problem?: string;
+  inventory?: { Viewports: number; Screens: number; States: number; Flows: number; NoOrigin: number; Entry: string };
+  no_inventory: boolean;
+  inventory_error?: string;
+  sets: CaptureSet[];
+  reports: CaptureReport[];
+}
+export interface CaptureRun {
+  operation: Operation;
+  progress: { label: string; done: number; total: number; state?: string }[];
+  lines: string[];
+}

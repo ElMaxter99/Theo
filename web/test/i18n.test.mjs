@@ -44,7 +44,7 @@ test("every text is non-empty and of the same kind (text or function with the sa
 function argsFor(fn) {
   const src = fn.toString();
   const params = src.slice(src.indexOf("(") + 1, src.indexOf(")")).split(",").map((s) => s.trim().replace(/[?:].*$/, "")).filter(Boolean);
-  return params.map((name) => (/^(n|r|p|a|b|shown|total|minutes)$/.test(name) ? 2 : /^(ok|nu|docker)$/.test(name) ? true : "x"));
+  return params.map((name) => (/^(n|r|p|a|b|shown|total|minutes|done|viewports|screens|states|flows|shots|unstable)$/.test(name) ? 2 : /^(ok|nu|docker)$/.test(name) ? true : "x"));
 }
 
 test("functions with parameters produce non-empty strings in both languages, for 0, 1 and many", () => {
