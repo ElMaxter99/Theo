@@ -2,7 +2,9 @@
 
 Notable changes per release. Each release on GitHub also lists every merged pull request.
 
-## Unreleased
+## v0.10.0
+
+The capture tool can now write its own screen inventory: an AI reads the project and drafts `pantallas.json` and its mocks, pairs the screens the rules could not match between two branches, and proposes how to start a project. It is read-only and you decide what is saved.
 
 ### New
 - **Generate the screen inventory with AI (0.10).** `theo tool ai doctor` finds Claude Code and GitHub Copilot, pings them and shows the provider and model of each role (`ai.roles.coordinator`, `ai.roles.worker`). `theo tool capture generate` explores the project and writes `pantallas.json` and its mocks with parallel workers; every answer is validated and sent back when wrong, a run is saved and resumes with `--resume`, and what cannot be generated is listed. The AI only reads: the result is a draft and `theo tool capture accept` writes it, never overwriting an existing `pantallas.json` unless you choose `--replace` (or `--merge`, which adds only the missing screens). The first time for a project Theo says the code is sent to the provider and asks. `--verify` captures the draft with the application running and sends the failures back to the AI (two rounds).

@@ -95,15 +95,16 @@ More in the [quickstart](docs/cli/quickstart.md). To try everything on a small a
 
 ## What's new
 
-### v0.9: before and after screenshots
+### v0.10: the AI writes the inventory
 
 ```sh
-theo tool capture setup                          # once: Node, Playwright and Chromium
-theo tool capture run-pair portal develop rebranding --open   # capture both branches, compare, write the reports
-theo tool capture report portal develop rebranding --summary   # print the summary again
+theo tool ai doctor                                   # Claude Code / Copilot found? sign in, ping, roles
+theo config set ai.roles.coordinator claude:<model>   # and ai.roles.worker, a cheaper one
+theo tool capture generate portal rebranding          # explore, screens and data in parallel -> a draft
+theo tool capture accept portal rebranding            # write it (never over an existing pantallas.json)
 ```
 
-List the screens, states and flows in `.theo/capturas/pantallas.json` (`theo tool capture init` proposes it). Theo captures each branch twice to find what is unstable, with a frozen clock and no motion, pairs the screens, and classes each as same, minor, changed, new, removed, moved, unstable or not captured. You get a corporate report (desktop and mobile side by side, HTML and PDF), before/after compositions with the difference marked, and a Markdown summary. The new Tools page in the web interface does the same with two branches and a button, and `theo doctor` checks the engine. Tested on Linux with a real browser; Windows and macOS only through CI. See [tools](docs/cli/tools.md).
+The AI only reads the project: the result is a draft you check, and `accept` writes it, never overwriting an existing `pantallas.json` unless you choose `--replace` (or `--merge`, which adds only the missing screens). Answers are validated and sent back when wrong, a run resumes with `--resume`, and `--verify` captures the draft with the app running and sends what fails back. `run-pair` also pairs the screens the rules could not match, marked "by AI" and saved in `emparejamientos.json` (a pair you write by hand wins), and `detect --ai` proposes how to start a project. The first time for a project Theo says the code is sent to the provider you chose. **Not tried yet against the real Claude Code and Copilot command lines**; tested with a stand-in. See [tools](docs/cli/tools.md).
 
 ### v0.5: Theo in the agents' workflow
 
@@ -132,6 +133,7 @@ Merged is detected even after a squash or rebase on GitHub. Remote branches and 
 
 ### Earlier releases
 
+- **v0.9:** before and after screenshots: `theo tool capture run-pair` captures two branches, compares them screen by screen and writes a corporate report, before/after compositions and a Markdown summary; a Tools page in the web interface; `theo doctor` checks the capture engine.
 - **v0.8:** the tools framework (`theo tool list`) and the first tool, `capture`, which works out how a project starts and serves several branches at once, even an AngularJS app under `/portal` (kind `static`).
 - **v0.7:** Claude Code and Copilot hooks, desktop notices when an agent waits for you (off by default, and not while Theo's window is in front), a light interface by default, and Cleanup as a four-step flow.
 - **v0.6:** `theo doctor` notes what limits free ports per branch, agent state by process on macOS and Windows, branch worktrees use free host ports by default, and Cleanup picks inactive worktrees.
