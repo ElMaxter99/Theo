@@ -301,7 +301,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export HOME="$(mktemp -d)"
+          HOME="$(mktemp -d)"
+          export HOME
           sh "dist/theo-installer_${TAG}_linux_amd64.sh"
           for p in theo theo-desktop; do test -x "$HOME/.local/bin/$p"; done
           test -f "$HOME/.local/share/applications/theo-desktop.desktop"
