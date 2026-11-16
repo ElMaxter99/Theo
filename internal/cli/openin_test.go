@@ -12,6 +12,7 @@ import (
 	"github.com/ElMaxter99/Theo/internal/opener"
 	"github.com/ElMaxter99/Theo/internal/registry"
 	"github.com/ElMaxter99/Theo/internal/testutil"
+	"github.com/ElMaxter99/Theo/internal/update"
 )
 
 func fakeTools(t *testing.T, installed ...string) *[]string {
@@ -82,11 +83,14 @@ func TestUpdateNotice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	origFetch, origVersion := fetchLatest, engine.Version
-	t.Cleanup(func() { fetchLatest, engine.Version = origFetch, origVersion })
+	origFetch, origVersion := listReleases, engine.Version
+	t.Cleanup(func() { listReleases, engine.Version = origFetch, origVersion })
 	engine.Version = "0.5.0"
 	calls := 0
-	fetchLatest = func(context.Context) (string, error) { calls++; return "0.5.1", nil }
+	listReleases = func(context.Context) ([]update.Release, error) {
+		calls++
+		return []update.Release{{Tag: "v0.5.1"}, {Tag: "v0.6.0-rc.1", Prerelease: true}}, nil
+	}
 	now := time.Now()
 
 	if got := updateNotice(context.Background(), e, now); got != nil || calls != 0 {
@@ -101,30 +105,28 @@ func TestUpdateNotice(t *testing.T) {
 	}
 	updateNotice(context.Background(), e, now.Add(time.Hour))
 	if calls != 1 {
-		t.Errorf("asked again within a day: %d calls", calls)
+		t.Errorf("asked again within the interval: %d calls", calls)
 	}
-	updateNotice(context.Background(), e, now.Add(25*time.Hour))
+	updateNotice(context.Background(), e, now.Add(7*time.Hour))
 	if calls != 2 {
-		t.Errorf("did not ask after a day: %d calls", calls)
+		t.Errorf("did not ask after the interval: %d calls", calls)
 	}
-	fetchLatest = func(context.Context) (string, error) { return "0.5.0", nil }
+	// Release candidates only with the rc channel.
+	if err := e.Prefs().Set("update-channel", "rc"); err != nil {
+		t.Fatal(err)
+	}
+	got = updateNotice(context.Background(), e, now.Add(14*time.Hour))
+	if len(got) != 3 || !strings.Contains(got[0], "0.6.0-rc.1") || !strings.Contains(got[0], "test version") {
+		t.Errorf("rc notice = %v", got)
+	}
+	_ = e.Prefs().Set("update-channel", "stable")
+	listReleases = func(context.Context) ([]update.Release, error) { return []update.Release{{Tag: "v0.5.0"}}, nil }
 	if got := updateNotice(context.Background(), e, now.Add(60*time.Hour)); got != nil {
 		t.Errorf("same version: %v", got)
 	}
 	engine.Version = "0.0.0-dev"
 	if got := updateNotice(context.Background(), e, now.Add(90*time.Hour)); got != nil {
 		t.Errorf("a dev build never looks: %v", got)
-	}
-}
-
-func TestNewerVersion(t *testing.T) {
-	for _, c := range []struct {
-		a, b string
-		want bool
-	}{{"0.5.1", "0.5.0", true}, {"0.10.0", "0.9.9", true}, {"v1.0.0", "0.9.0", true}, {"0.5.0", "0.5.0", false}, {"0.4.9", "0.5.0", false}} {
-		if got := newerVersion(c.a, c.b); got != c.want {
-			t.Errorf("newerVersion(%s, %s) = %v", c.a, c.b, got)
-		}
 	}
 }
 

@@ -2,94 +2,144 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
 	"io"
-	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/ElMaxter99/Theo/internal/engine"
 	"github.com/ElMaxter99/Theo/internal/execx"
-	"github.com/ElMaxter99/Theo/internal/prefs"
+	"github.com/ElMaxter99/Theo/internal/update"
 )
 
-// latestReleaseURL answers with the newest release of Theo.
-const latestReleaseURL = "https://api.github.com/repos/ElMaxter99/Theo/releases/latest"
+func init() {
+	registerCommand("update", runUpdate)
+	registerHelp(58, `
+  update [--check] [--json]                    Look for a new version of Theo and install it. --check
+                                               only says whether there is one. Release candidates
+                                               (test versions) are offered only with
+                                               theo config set update-channel rc. The new files are
+                                               verified against the release's checksums.txt, and
+                                               nothing is replaced if one does not match
+`)
+	registerCompletion(cmdSpec{name: "update", flags: []flagSpec{{names: []string{"--check"}}, {names: []string{"--json"}}}})
+}
 
-// fetchLatest asks for the newest version. Tests replace it.
-var fetchLatest = func(ctx context.Context) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, latestReleaseURL, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "theo-update-check")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("GitHub answered %s", resp.Status)
-	}
-	var rel struct {
-		Tag string `json:"tag_name"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&rel); err != nil {
-		return "", err
-	}
-	return strings.TrimPrefix(rel.Tag, "v"), nil
+// listReleases asks for the releases. Tests replace it.
+var listReleases update.Lister = update.ListReleases
+
+func checker(e *engine.Engine, desktop bool) update.Checker {
+	return update.Checker{Store: e.Prefs(), Current: engine.Version, Desktop: desktop, List: func(ctx context.Context) ([]update.Release, error) {
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		return listReleases(ctx)
+	}}
 }
 
 // updateNotice returns the lines that say a new version exists, or nil.
 // It does nothing unless the person turned `update-check` on, asks the
-// network at most once a day, and stays silent on any failure.
+// network when the last look is old, and stays silent on any failure.
 func updateNotice(ctx context.Context, e *engine.Engine, now time.Time) []string {
-	store := e.Prefs()
-	if store.Get("update-check") != "on" || execx.Explaining() || strings.Contains(engine.Version, "dev") {
+	if execx.Explaining() {
 		return nil
 	}
-	info := store.UpdateInfo()
-	if info.CheckedAt.IsZero() || now.Sub(info.CheckedAt) >= 24*time.Hour {
-		latest, err := fetchLatest(ctx)
-		info.CheckedAt = now
-		if err == nil && latest != "" {
-			info.Latest = latest
-		}
-		_ = store.SetUpdateInfo(prefs.Update{Latest: info.Latest, CheckedAt: info.CheckedAt})
-	}
-	if info.Latest == "" || !newerVersion(info.Latest, engine.Version) {
+	c := checker(e, false)
+	c.Now = func() time.Time { return now }
+	if !c.Enabled() {
 		return nil
+	}
+	info, _ := c.Check(ctx, false)
+	if !info.Available {
+		return nil
+	}
+	kind := "A new version is available"
+	if info.Prerelease {
+		kind = "A new test version (release candidate) is available"
 	}
 	return []string{
-		fmt.Sprintf("A new version is available: %s (you have %s). Release notes:", info.Latest, strings.TrimPrefix(engine.Version, "v")),
-		"https://github.com/ElMaxter99/Theo/releases/tag/v" + info.Latest,
+		fmt.Sprintf("%s: %s (you have %s). Install it: theo update", kind, info.Latest, info.Current),
+		info.Page,
 		"Turn this notice off: theo config set update-check off",
 	}
 }
 
-// newerVersion reports whether a is a newer release than b (x.y.z; a
-// suffix after "-" is ignored).
-func newerVersion(a, b string) bool {
-	pa, pb := versionParts(a), versionParts(b)
-	for i := range pa {
-		if pa[i] != pb[i] {
-			return pa[i] > pb[i]
+func runUpdate(e *engine.Engine, args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("update", flag.ContinueOnError)
+	checkOnly := fs.Bool("check", false, "only say whether a new version exists")
+	asJSON := fs.Bool("json", false, "print JSON")
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) != 0 {
+		return usageErrorf("update takes no arguments")
+	}
+	ctx := context.Background()
+	c := checker(e, false)
+	if update.ParseVersion(engine.Version).Dev {
+		return errors.New("this is a development build: there is no release to compare it with")
+	}
+	info, err := c.Check(ctx, true)
+	if err != nil {
+		return fmt.Errorf("looking for a new version: %w", err)
+	}
+	say := func(format string, a ...any) {
+		if !*asJSON {
+			fmt.Fprintf(stdout, format+"\n", a...)
 		}
 	}
-	return false
-}
-
-func versionParts(v string) [3]int {
-	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
-	v, _, _ = strings.Cut(v, "-")
-	var out [3]int
-	for i, p := range strings.SplitN(v, ".", 3) {
-		out[i], _ = strconv.Atoi(p)
+	if !info.Available {
+		say("You have the latest version (%s).", info.Current)
+		if *asJSON {
+			return writeJSON(stdout, map[string]any{"current": info.Current, "available": false})
+		}
+		return nil
 	}
-	return out
+	say("You have %s. A new version exists: %s", info.Current, info.Latest)
+	say("Release notes: %s", info.Page)
+	if *checkOnly {
+		if *asJSON {
+			return writeJSON(stdout, info)
+		}
+		say("Install it: theo update")
+		return nil
+	}
+	rels, err := listReleases(ctx)
+	if err != nil {
+		return err
+	}
+	var rel update.Release
+	for _, r := range rels {
+		if r.Tag == info.Tag {
+			rel = r
+		}
+	}
+	if rel.Tag == "" {
+		return fmt.Errorf("release %s is no longer listed", info.Tag)
+	}
+	last := -1
+	res, err := update.Apply(ctx, rel, update.CurrentTarget(), func(done, total int64) {
+		if *asJSON || total <= 0 {
+			return
+		}
+		if pct := int(done * 100 / total); pct/10 != last/10 {
+			last = pct
+			fmt.Fprintf(stderr, "Downloading... %d%%\n", pct)
+		}
+	})
+	switch {
+	case errors.Is(err, update.ErrNotWritable):
+		return fmt.Errorf("%w. Install the new version yourself: %s", err, info.Page)
+	case errors.Is(err, update.ErrUnmanaged):
+		return fmt.Errorf("%w. Download it from %s", err, info.Page)
+	case err != nil:
+		return err
+	}
+	if *asJSON {
+		return writeJSON(stdout, res)
+	}
+	say("Theo is now %s (%s). Restart Theo if it is open.", strings.TrimPrefix(res.Tag, "v"), strings.Join(res.Replaced, ", "))
+	return nil
 }

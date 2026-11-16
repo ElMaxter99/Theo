@@ -19,6 +19,7 @@ import (
 	"github.com/ElMaxter99/Theo/internal/api"
 	"github.com/ElMaxter99/Theo/internal/engine"
 	"github.com/ElMaxter99/Theo/internal/notify"
+	"github.com/ElMaxter99/Theo/internal/update"
 )
 
 // Title is the title of the window.
@@ -63,6 +64,15 @@ type Options struct {
 	Stderr io.Writer
 	// Notify shows a desktop notification; nil uses notify.Send.
 	Notify func(notify.Message) error
+	// ListReleases returns the releases for the version check; nil asks GitHub.
+	ListReleases update.Lister
+	// Relaunch starts the app again after an update; nil starts the same
+	// program with the same arguments.
+	Relaunch func() error
+
+	// requestRestart is set by Run: the server calls it when the person
+	// chooses "Restart" after an update.
+	requestRestart func()
 }
 
 // Backend is the server the window shows.
@@ -115,7 +125,8 @@ func Start(ctx context.Context, o Options) (*Backend, error) {
 	}
 
 	// The window's lifetime governs the server: no idle timeout.
-	srv, err := api.New(api.Config{Engine: o.Engine, DataDir: o.DataDir, Assets: o.Assets, IdleTimeout: -1, Log: o.RequestLog})
+	srv, err := api.New(api.Config{Engine: o.Engine, DataDir: o.DataDir, Assets: o.Assets, IdleTimeout: -1, Log: o.RequestLog,
+		Desktop: true, Restart: o.requestRestart, UpdateList: o.ListReleases})
 	if err != nil {
 		return nil, err
 	}
@@ -168,6 +179,17 @@ func Run(ctx context.Context, o Options) error {
 	if open == nil {
 		open = OpenExternal
 	}
+	// "Restart" after an update: the window closes, the server stops and only
+	// then the new program starts, so it finds no server of the old one.
+	var restart atomic.Bool
+	var terminate atomic.Pointer[func()]
+	o.requestRestart = func() {
+		restart.Store(true)
+		if f := terminate.Load(); f != nil {
+			(*f)()
+		}
+	}
+	update.Cleanup(update.CurrentTarget()) // what an earlier update could not delete
 	be, err := Start(ctx, o)
 	if err != nil {
 		return err
@@ -182,6 +204,8 @@ func Run(ctx context.Context, o Options) error {
 		return err
 	}
 	defer w.Destroy()
+	term := w.Terminate
+	terminate.Store(&term)
 	origin := be.Origin
 	w.Init(Shim(origin))
 	if err := w.Bind(BindName, func(raw string) {
@@ -219,9 +243,20 @@ func Run(ctx context.Context, o Options) error {
 	ctxN, stopN := context.WithCancel(ctx)
 	defer stopN()
 	go watchAgents(ctxN, o, inFront.Load)
+	go watchUpdates(ctxN, o)
 
 	w.Navigate(be.URL)
 	w.Run()
+	if restart.Load() {
+		be.Stop()
+		relaunch := o.Relaunch
+		if relaunch == nil {
+			relaunch = func() error { return update.Relaunch(update.Executable(), os.Args[1:]) }
+		}
+		if err := relaunch(); err != nil {
+			fmt.Fprintf(o.Stderr, "theo-desktop: restarting: %v\n", err)
+		}
+	}
 	return nil
 }
 

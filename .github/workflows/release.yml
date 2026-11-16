@@ -28,6 +28,8 @@ on:
       - .github/workflows/release.yml
       - .github/workflows/release-on-merge.yml
       - scripts/package-desktop.sh
+      - scripts/package-installers.sh
+      - scripts/package-dmg.sh
       - scripts/package-manifests.sh
       - packaging/**
   workflow_call:
@@ -248,8 +250,19 @@ jobs:
           flags="-s -w -X github.com/ElMaxter99/Theo/internal/engine.Version=${TAG}"
           [ "$GOOS" = windows ] && flags="$flags -H=windowsgui"
           go build -tags desktop -trimpath -ldflags "$flags" -o theo-desktop-bin ./cmd/theo-desktop
+      - name: Command line for the macOS app
+        # Theo.app carries the theo command next to the window, and an update
+        # replaces the whole app, so both always have the same version.
+        if: matrix.goos == 'darwin'
+        shell: bash
+        run: |
+          CGO_ENABLED=0 go build -trimpath \
+            -ldflags "-s -w -X github.com/ElMaxter99/Theo/internal/engine.Version=${TAG}" \
+            -o theo-cli ./cmd/theo
       - name: Package
         shell: bash
+        env:
+          THEO_CLI_BIN: ${{ matrix.goos == 'darwin' && 'theo-cli' || '' }}
         run: scripts/package-desktop.sh "$GOOS" "$GOARCH" "$TAG" theo-desktop-bin
       - uses: actions/upload-artifact@v7
         with:
@@ -257,6 +270,102 @@ jobs:
           path: |
             dist/*.tar.gz
             dist/*.zip
+          if-no-files-found: error
+
+  installers:
+    # The installers that can be built on Linux: the Windows setup program, the
+    # Linux installer script and the .deb. They are made from the archives
+    # above, and the Linux one is run once in a clean home to prove it works.
+    name: Installers (Windows, Linux)
+    needs: [prepare, build, desktop]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.tag || github.sha }}
+      - uses: actions/download-artifact@v8
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Install NSIS
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends nsis
+      - name: Build the installers
+        run: scripts/package-installers.sh "$TAG" assets dist
+      - name: Run the Linux installer in a clean home
+        shell: bash
+        run: |
+          set -euo pipefail
+          export HOME="$(mktemp -d)"
+          sh "dist/theo-installer_${TAG}_linux_amd64.sh"
+          for p in theo theo-desktop; do test -x "$HOME/.local/bin/$p"; done
+          test -f "$HOME/.local/share/applications/theo-desktop.desktop"
+          out=$("$HOME/.local/bin/theo" --version)
+          echo "$out"
+          case "$out" in "theo ${TAG}"*) ;; *) echo "::error::installed theo printed '$out'"; exit 1 ;; esac
+          "$HOME/.local/bin/theo-uninstall"
+          test ! -e "$HOME/.local/bin/theo"
+      - name: Check the .deb
+        run: |
+          set -euo pipefail
+          deb="dist/theo_${TAG}_linux_amd64.deb"
+          dpkg-deb -I "$deb"
+          dpkg-deb -c "$deb" | grep -q ' ./usr/bin/theo$'
+          dpkg-deb -c "$deb" | grep -q ' ./usr/bin/theo-desktop$'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: theo_installers
+          path: |
+            dist/*.exe
+            dist/*.sh
+            dist/*.deb
+          if-no-files-found: error
+
+  dmg:
+    # The macOS disk image, made on a Mac from the desktop archive.
+    name: Disk image (${{ matrix.arch }})
+    needs: [prepare, desktop]
+    runs-on: macos-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+      matrix:
+        arch: [arm64, amd64]
+    env:
+      TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.tag || github.sha }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: theo_desktop_darwin_${{ matrix.arch }}
+          path: assets
+      - name: Make the disk image
+        run: scripts/package-dmg.sh "$TAG" "${{ matrix.arch }}" "assets/theo-desktop_${TAG}_darwin_${{ matrix.arch }}.zip" dist
+      - name: Open the image and run what is inside (Apple silicon only)
+        if: matrix.arch == 'arm64'
+        run: |
+          set -euo pipefail
+          hdiutil attach -nobrowse -mountpoint /tmp/theo-dmg "dist/Theo_${TAG}_darwin_arm64.dmg"
+          test -d /tmp/theo-dmg/Theo.app
+          test -L /tmp/theo-dmg/Applications
+          out=$(/tmp/theo-dmg/Theo.app/Contents/MacOS/theo --version)
+          echo "$out"
+          case "$out" in "theo ${TAG}"*) ;; *) echo "::error::theo in the app printed '$out'"; exit 1 ;; esac
+          hdiutil detach /tmp/theo-dmg
+      - uses: actions/upload-artifact@v7
+        with:
+          name: theo_dmg_${{ matrix.arch }}
+          path: dist/*.dmg
           if-no-files-found: error
 
   smoke:
@@ -314,7 +423,7 @@ jobs:
     # checkout and cannot write to the repository. The release waits for it.
     name: Attest provenance
     if: ${{ needs.prepare.outputs.publish == 'true' }}
-    needs: [prepare, build, desktop]
+    needs: [prepare, build, desktop, installers, dmg]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -330,11 +439,15 @@ jobs:
           subject-path: |
             assets/*.tar.gz
             assets/*.zip
+            assets/*.exe
+            assets/*.sh
+            assets/*.deb
+            assets/*.dmg
 
   dry-run:
     name: Assemble release (dry run, nothing published)
     if: ${{ needs.prepare.outputs.publish != 'true' }}
-    needs: [prepare, build, desktop, smoke]
+    needs: [prepare, build, desktop, installers, dmg, smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -355,10 +468,11 @@ jobs:
         run: |
           set -euo pipefail
           cd assets
-          sha256sum -- *.tar.gz *.zip > checksums.txt
+          sha256sum -- *.tar.gz *.zip *.exe *.sh *.deb *.dmg > checksums.txt
           cat checksums.txt
-          # 6 CLI archives and 4 desktop archives.
-          test "$(wc -l < checksums.txt)" -eq 10
+          # 6 CLI archives, 4 desktop archives and 5 installers (Windows setup,
+          # Linux script, .deb, two disk images). The updater reads this file.
+          test "$(wc -l < checksums.txt)" -eq 15
           bash ../scripts/package-manifests.sh "$TAG" checksums.txt manifests
           python3 -m json.tool manifests/theo.json > /dev/null
       - uses: actions/upload-artifact@v7
@@ -369,7 +483,7 @@ jobs:
   release:
     name: Publish release
     if: ${{ needs.prepare.outputs.publish == 'true' }}
-    needs: [prepare, build, desktop, smoke, attest]
+    needs: [prepare, build, desktop, installers, dmg, smoke, attest]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -394,9 +508,9 @@ jobs:
         run: |
           set -euo pipefail
           cd assets
-          sha256sum -- *.tar.gz *.zip > checksums.txt
+          sha256sum -- *.tar.gz *.zip *.exe *.sh *.deb *.dmg > checksums.txt
           cat checksums.txt
-          files=(*.tar.gz *.zip checksums.txt)
+          files=(*.tar.gz *.zip *.exe *.sh *.deb *.dmg checksums.txt)
           if [ "$PRERELEASE" = false ]; then
             bash ../scripts/package-manifests.sh "$TAG" checksums.txt manifests
             files+=(manifests/theo.json manifests/theo.rb)
