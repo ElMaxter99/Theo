@@ -49,7 +49,7 @@ type GenConfig struct {
 	Retries int
 	// JobTimeout bounds one job (default 5 minutes).
 	JobTimeout time.Duration
-	// Emit reports progress; it may be called from several goroutines.
+	// Emit reports progress; calls are serialized.
 	Emit func(GenEvent)
 }
 
@@ -174,8 +174,15 @@ func NewGenerator(cfg GenConfig) (*Generator, error) {
 	if cfg.JobTimeout <= 0 {
 		cfg.JobTimeout = 5 * time.Minute
 	}
-	if cfg.Emit == nil {
-		cfg.Emit = func(GenEvent) {}
+	emit := cfg.Emit
+	var emitMu sync.Mutex
+	cfg.Emit = func(e GenEvent) { // one at a time, so callers need no lock
+		if emit == nil {
+			return
+		}
+		emitMu.Lock()
+		defer emitMu.Unlock()
+		emit(e)
 	}
 	if cfg.App == "" {
 		cfg.App = filepath.Base(cfg.Root)
