@@ -97,15 +97,16 @@ Más en el [quickstart](docs/cli/quickstart.md) (en inglés). Para probarlo todo
 
 ## Novedades
 
-### v0.9: capturas antes y después
+### v0.10: la IA escribe el inventario
 
 ```sh
-theo tool capture setup                          # una vez: Node, Playwright y Chromium
-theo tool capture run-pair portal develop rebranding --open   # captura las dos ramas, compara y escribe los informes
-theo tool capture report portal develop rebranding --summary   # vuelve a mostrar el resumen
+theo tool ai doctor                                   # ¿Claude Code / Copilot? sesión, ping y roles
+theo config set ai.roles.coordinator claude:<modelo>  # y ai.roles.worker, uno más barato
+theo tool capture generate portal rebranding          # explora, pantallas y datos en paralelo -> un borrador
+theo tool capture accept portal rebranding            # lo escribe (nunca sobre un pantallas.json existente)
 ```
 
-Lista las pantallas, estados y flujos en `.theo/capturas/pantallas.json` (`theo tool capture init` lo propone). Theo captura cada rama dos veces para encontrar lo inestable, con el reloj congelado y sin animaciones, empareja las pantallas y clasifica cada una como igual, cambio menor, cambiada, nueva, eliminada, movida, inestable o no capturada. Obtienes un informe corporativo (escritorio y móvil lado a lado, HTML y PDF), composiciones antes/después con la diferencia marcada y un resumen en Markdown. La nueva vista Herramientas de la interfaz web hace lo mismo con dos ramas y un botón, y `theo doctor` comprueba el motor. Probado en Linux con un navegador real; Windows y macOS solo por el CI. Mira [tools](docs/cli/tools.md).
+La IA solo lee el proyecto: el resultado es un borrador que revisas y `accept` lo escribe, sin sobrescribir nunca un `pantallas.json` existente salvo que elijas `--replace` (o `--merge`, que solo añade las pantallas que faltan). Las respuestas se validan y se devuelven si están mal, una ejecución se reanuda con `--resume` y `--verify` captura el borrador con la app en marcha y devuelve lo que falla. `run-pair` también empareja las pantallas que las reglas no casaron, marcadas «por IA» y guardadas en `emparejamientos.json` (un par escrito a mano manda) y `detect --ai` propone cómo arrancar un proyecto. La primera vez en un proyecto Theo avisa de que el código se envía al proveedor elegido. **Todavía sin probar con los CLI reales de Claude Code y Copilot**; probado con un sustituto. Mira [tools](docs/cli/tools.md).
 
 ### v0.5: Theo en el flujo de los agentes
 
@@ -134,6 +135,7 @@ Detecta las ramas fusionadas incluso tras un squash o un rebase en GitHub. Las r
 
 ### Versiones anteriores
 
+- **v0.9:** capturas antes y después: `theo tool capture run-pair` captura dos ramas, las compara pantalla a pantalla y escribe un informe corporativo, composiciones antes/después y un resumen en Markdown; una vista Herramientas en la interfaz web; `theo doctor` comprueba el motor de capturas.
 - **v0.8:** el marco de herramientas (`theo tool list`) y la primera, `capture`, que averigua cómo arranca un proyecto y sirve varias ramas a la vez, incluso una app AngularJS bajo `/portal` (tipo `static`).
 - **v0.7:** hooks de Claude Code y Copilot, avisos de escritorio cuando un agente te espera (apagados por defecto, y no con la ventana de Theo delante), interfaz clara por defecto y Limpieza en cuatro pasos.
 - **v0.6:** `theo doctor` anota lo que limita los puertos libres por rama, estado del agente por proceso en macOS y Windows, los worktrees de ramas usan puertos libres por defecto y Limpieza elige los inactivos.

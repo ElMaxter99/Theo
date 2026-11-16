@@ -2,7 +2,9 @@
 
 Cambios destacados de cada versión, en español. Las notas de cada release en GitHub llevan esta sección después de la inglesa, con el título *Español*. Es la misma lista que [CHANGELOG.md](CHANGELOG.md), que es la de referencia: cada `## vX.Y.Z` de allí tiene aquí su sección. Las versiones anteriores a la primera de este archivo solo tienen notas en inglés.
 
-## Unreleased
+## v0.10.0
+
+La herramienta de capturas ya puede escribir su propio inventario de pantallas: una IA lee el proyecto y redacta `pantallas.json` y sus mocks, empareja las pantallas que las reglas no lograron casar entre dos ramas y propone cómo arrancar un proyecto. Solo lee y tú decides qué se guarda.
 
 ### Nuevo
 - **Generar el inventario de pantallas con IA (0.10).** `theo tool ai doctor` encuentra Claude Code y GitHub Copilot, los prueba y muestra el proveedor y el modelo de cada rol (`ai.roles.coordinator`, `ai.roles.worker`). `theo tool capture generate` explora el proyecto y escribe `pantallas.json` y sus mocks con trabajadores en paralelo; cada respuesta se valida y se devuelve si está mal, una ejecución se guarda y se reanuda con `--resume`, y lo que no se pudo generar se lista. La IA solo lee: el resultado es un borrador y `theo tool capture accept` lo escribe, sin sobrescribir nunca un `pantallas.json` existente salvo que elijas `--replace` (o `--merge`, que solo añade las pantallas que faltan). La primera vez en un proyecto Theo avisa de que el código se envía al proveedor y pregunta. `--verify` captura el borrador con la aplicación en marcha y devuelve los fallos a la IA (dos vueltas).
