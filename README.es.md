@@ -98,6 +98,17 @@ Más en el [quickstart](docs/cli/quickstart.md) (en inglés). Para probarlo todo
 
 ## Novedades
 
+### v0.11: instaladores y actualización desde la app
+
+```sh
+theo update --check                   # ¿hay una versión más nueva? (estable por defecto)
+theo update                           # descarga, comprueba el SHA-256 y sustituye Theo
+theo config set update-channel rc     # ofrece también versiones de prueba (vX.Y.Z-rc.N)
+theo config set update-check off      # sin comprobación periódica
+```
+
+Ahora hay un instalador por sistema, sin permisos de administrador: un `.exe` de instalación para Windows, un `.dmg` para macOS y un `.sh` (o `.deb`) para Linux. La app de escritorio busca una versión nueva al arrancar y cada seis horas, muestra un aviso y la instala solo cuando pulsas el botón; Ajustes > Actualizaciones guarda el canal y los interruptores. La CLI sola solo avisa si activas `update-check`. **Todavía sin probar en equipos reales de Windows y macOS** (el asistente, el cambio de PATH, Gatekeeper y el reinicio tras actualizar). Mira [instalar y actualizar](docs/cli/update.md).
+
 ### v0.10: la IA escribe el inventario
 
 ```sh
@@ -136,6 +147,7 @@ Detecta las ramas fusionadas incluso tras un squash o un rebase en GitHub. Las r
 
 ### Versiones anteriores
 
+- **v0.10:** la IA escribe el inventario de pantallas: `theo tool ai doctor`, `theo tool capture generate` y `accept`, emparejado de pantallas con IA en `run-pair` y `detect --ai`.
 - **v0.9:** capturas antes y después: `theo tool capture run-pair` captura dos ramas, las compara pantalla a pantalla y escribe un informe corporativo, composiciones antes/después y un resumen en Markdown; una vista Herramientas en la interfaz web; `theo doctor` comprueba el motor de capturas.
 - **v0.8:** el marco de herramientas (`theo tool list`) y la primera, `capture`, que averigua cómo arranca un proyecto y sirve varias ramas a la vez, incluso una app AngularJS bajo `/portal` (tipo `static`).
 - **v0.7:** hooks de Claude Code y Copilot, avisos de escritorio cuando un agente te espera (apagados por defecto, y no con la ventana de Theo delante), interfaz clara por defecto y Limpieza en cuatro pasos.
