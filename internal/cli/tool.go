@@ -43,7 +43,7 @@ func init() {
 	registerCompletion(cmdSpec{name: "tool", subs: []cmdSpec{
 		{name: "list"},
 		{name: "ai", subs: []cmdSpec{{name: "doctor", flags: []flagSpec{{names: []string{"--no-ping"}}, {names: []string{"--json"}}}}, {name: "models", flags: []flagSpec{{names: []string{"--json"}}}}}},
-		{name: "capture", subs: []cmdSpec{{name: "detect", flags: []flagSpec{{names: []string{"--write"}}, {names: []string{"--json"}}}}, {name: "serve", flags: []flagSpec{{names: []string{"--yes"}}, {names: []string{"--check"}}, {names: []string{"--json"}}}}, {name: "validate"}, {name: "init"}, {name: "setup"}, {name: "run"}, {name: "run-pair"}, {name: "sets"}, {name: "compare"}, {name: "report"}}},
+		{name: "capture", subs: []cmdSpec{{name: "detect", flags: []flagSpec{{names: []string{"--write"}}, {names: []string{"--json"}}}}, {name: "serve", flags: []flagSpec{{names: []string{"--yes"}}, {names: []string{"--check"}}, {names: []string{"--json"}}}}, {name: "validate"}, {name: "init"}, {name: "setup"}, {name: "generate", flags: []flagSpec{{names: []string{"--yes"}}, {names: []string{"--resume"}}, {names: []string{"--json"}}}}, {name: "accept", flags: []flagSpec{{names: []string{"--yes"}}, {names: []string{"--replace"}}, {names: []string{"--merge"}}, {names: []string{"--json"}}}}, {name: "run"}, {name: "run-pair"}, {name: "sets"}, {name: "compare"}, {name: "report"}}},
 	}})
 }
 
@@ -95,7 +95,7 @@ func runCapture(e *engine.Engine, args []string, stdout, stderr io.Writer) error
 		}
 	}
 	if len(args) == 0 || args[0] != "detect" {
-		return usageErrorf("tool capture works with: detect, serve, validate, init, setup, run, run-pair, sets, compare, report")
+		return usageErrorf("tool capture works with: detect, serve, validate, init, setup, generate, accept, run, run-pair, sets, compare, report")
 	}
 	fl := flag.NewFlagSet("tool capture detect", flag.ContinueOnError)
 	asJSON := fl.Bool("json", false, "print JSON")

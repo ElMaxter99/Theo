@@ -49,6 +49,9 @@ type GenConfig struct {
 	Retries int
 	// JobTimeout bounds one job (default 5 minutes).
 	JobTimeout time.Duration
+	// Confirm is asked once the exploration is done, with the number of
+	// screens and of jobs; false stops the run (what was done is kept).
+	Confirm func(routes, jobs int, framework string) bool
 	// Emit reports progress; calls are serialized.
 	Emit func(GenEvent)
 }
@@ -416,6 +419,9 @@ func strictJSON(raw json.RawMessage, v any) error {
 	return nil
 }
 
+// ErrGenCancelled means the person did not confirm the plan.
+var ErrGenCancelled = errors.New("generation cancelled before it started")
+
 // Estimate says how many jobs a generation of n screens takes.
 func Estimate(screens int) int { return 1 + 2*screens }
 
@@ -451,6 +457,9 @@ func (g *Generator) Run(ctx context.Context) (*GenResult, error) {
 		return nil, err
 	}
 	total := Estimate(len(m.Rutas))
+	if g.cfg.Confirm != nil && !g.cfg.Confirm(len(m.Rutas), total, m.Framework) {
+		return nil, ErrGenCancelled
+	}
 	g.cfg.Emit(GenEvent{Kind: "plan", Total: total, Text: fmt.Sprintf("%d screens found (%s)", len(m.Rutas), m.Framework)})
 	done := 1
 	var doneMu sync.Mutex

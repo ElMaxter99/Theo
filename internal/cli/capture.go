@@ -49,6 +49,10 @@ func captureSubcommand(e *engine.Engine, name string, args []string, stdout, std
 		err = captureInit(args, stdout)
 	case "setup":
 		err = captureSetup(e, args, stdout, stderr)
+	case "generate":
+		err = captureGenerate(e, args, stdout, stderr)
+	case "accept":
+		err = captureAccept(e, args, stdout, stderr)
 	case "run":
 		err = captureRun(e, args, stdout, stderr)
 	case "run-pair":

@@ -121,7 +121,9 @@ func TestClaudeErrorsAreClassified(t *testing.T) {
 }
 
 func TestDetect(t *testing.T) {
-	ok := func(context.Context, string, string, ...string) ([]byte, error) { return []byte("2.1.4 (Claude Code)\n"), nil }
+	ok := func(context.Context, string, string, ...string) ([]byte, error) {
+		return []byte("2.1.4 (Claude Code)\n"), nil
+	}
 	f, _ := newClaude(ok, fakeLook).Detect(context.Background())
 	if !f.Ready() || f.Version != "2.1.4 (Claude Code)" {
 		t.Errorf("%+v", f)

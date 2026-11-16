@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"github.com/ElMaxter99/Theo/internal/ai"
@@ -153,13 +152,11 @@ func TestGenerateResumeReusesAnswers(t *testing.T) {
 
 func TestGenerateReportsWhatFailed(t *testing.T) {
 	root := genRepo(t)
-	var n atomic.Int32
 	stub := &ai.Stub{Rules: []ai.StubRule{
 		{Contains: "List the screens", Replies: []string{mapReply}},
 		{Contains: "Screen id: login", Replies: []string{loginReply}},
 		{Contains: "Screen id: facturas", Replies: []string{"not json at all"}},
 	}}
-	_ = n
 	g := newGen(t, root, stub, nil)
 	res, err := g.Run(context.Background())
 	if err != nil {
@@ -195,4 +192,68 @@ func TestNewGeneratorNeedsRoles(t *testing.T) {
 		t.Errorf("%v", err)
 	}
 	var _ = json.RawMessage{}
+}
+
+func draftRun(t *testing.T) string {
+	t.Helper()
+	root := genRepo(t)
+	stub := &ai.Stub{Rules: []ai.StubRule{
+		{Contains: "List the screens", Replies: []string{mapReply}},
+		{Contains: "Screen id: login", Replies: []string{loginReply}},
+		{Contains: "Screen id: facturas", Replies: []string{facturasOK}},
+		{Contains: "Write the answers", Replies: []string{dataOK}},
+	}}
+	res, err := newGen(t, root, stub, nil).Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return res.Dir
+}
+
+func TestAcceptNewRefusesExistingAndMerges(t *testing.T) {
+	run := draftRun(t)
+	wt := t.TempDir()
+	res, err := Accept(run, wt, "")
+	if err != nil || res.Mode != "new" || res.Screens != 2 || res.Mocks != 2 {
+		t.Fatalf("new: %+v %v", res, err)
+	}
+	if inv, err := LoadInventory(wt); err != nil || len(inv.Validate()) > 0 {
+		t.Fatalf("written inventory: %v %v", err, inv.Validate())
+	}
+	if _, err := os.Stat(filepath.Join(wt, filepath.FromSlash(MocksDir), "facturas-base-1.json")); err != nil {
+		t.Error(err)
+	}
+	// An existing inventory is never overwritten unless asked.
+	before, _ := os.ReadFile(filepath.Join(wt, filepath.FromSlash(InventoryPath)))
+	if _, err := Accept(run, wt, ""); !errors.Is(err, ErrInventoryExists) {
+		t.Fatalf("want ErrInventoryExists, got %v", err)
+	}
+	after, _ := os.ReadFile(filepath.Join(wt, filepath.FromSlash(InventoryPath)))
+	if string(before) != string(after) {
+		t.Error("refusing must not touch the file")
+	}
+	// Merge adds only what is missing.
+	inv, _ := LoadInventory(wt)
+	inv.Pantallas = inv.Pantallas[:1]
+	inv.Pantallas[0].Titulo = "Edited by hand"
+	b, _ := json.Marshal(inv)
+	os.WriteFile(filepath.Join(wt, filepath.FromSlash(InventoryPath)), b, 0o644)
+	res, err = Accept(run, wt, "merge")
+	if err != nil || len(res.Added) != 1 || len(res.Skipped) != 1 {
+		t.Fatalf("merge: %+v %v", res, err)
+	}
+	merged, _ := LoadInventory(wt)
+	if len(merged.Pantallas) != 2 {
+		t.Fatalf("merged screens: %d", len(merged.Pantallas))
+	}
+	found := false
+	for _, p := range merged.Pantallas {
+		found = found || p.Titulo == "Edited by hand"
+	}
+	if !found {
+		t.Error("a merge keeps what the person edited")
+	}
+	if res, err = Accept(run, wt, "replace"); err != nil || res.Mode != "replace" || res.Screens != 2 {
+		t.Errorf("replace: %+v %v", res, err)
+	}
 }
