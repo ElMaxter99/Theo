@@ -42,6 +42,7 @@ func init() {
 `)
 	registerCompletion(cmdSpec{name: "tool", subs: []cmdSpec{
 		{name: "list"},
+		{name: "ai", subs: []cmdSpec{{name: "doctor", flags: []flagSpec{{names: []string{"--no-ping"}}, {names: []string{"--json"}}}}, {name: "models", flags: []flagSpec{{names: []string{"--json"}}}}}},
 		{name: "capture", subs: []cmdSpec{{name: "detect", flags: []flagSpec{{names: []string{"--write"}}, {names: []string{"--json"}}}}, {name: "serve", flags: []flagSpec{{names: []string{"--yes"}}, {names: []string{"--check"}}, {names: []string{"--json"}}}}, {name: "validate"}, {name: "init"}, {name: "setup"}, {name: "run"}, {name: "run-pair"}, {name: "sets"}, {name: "compare"}, {name: "report"}}},
 	}})
 }
@@ -74,6 +75,9 @@ func runTool(e *engine.Engine, args []string, stdout, stderr io.Writer) error {
 	}
 	if _, ok := tools.Get(args[0]); !ok {
 		return usageErrorf("unknown tool %q (see `theo tool list`)", args[0])
+	}
+	if args[0] == "ai" {
+		return runAI(e, args[1:], stdout, stderr)
 	}
 	if args[0] == capture.ID {
 		return runCapture(e, args[1:], stdout, stderr)
