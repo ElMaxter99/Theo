@@ -126,6 +126,7 @@ type Server struct {
 	assets      fs.FS
 
 	updates updateManager
+	target  update.Target // the program an update replaces, as it was at start
 	proxy   *proxyManager
 	cache   *overviewCache
 	meta    *metaCache
@@ -183,7 +184,7 @@ func New(cfg Config) (*Server, error) {
 	if cfg.ConfigCacheTTL == 0 {
 		cfg.ConfigCacheTTL = defaultConfigCacheTTL
 	}
-	s := &Server{cfg: cfg, eng: cfg.Engine, ln: ln, port: ln.Addr().(*net.TCPAddr).Port, mux: http.NewServeMux(),
+	s := &Server{cfg: cfg, target: update.CurrentTarget(), eng: cfg.Engine, ln: ln, port: ln.Addr().(*net.TCPAddr).Port, mux: http.NewServeMux(),
 		auth: newAuth(), log: cfg.Log, assets: cfg.Assets, started: time.Now(), stopped: make(chan struct{})}
 	if s.log == nil {
 		s.log = log.New(io.Discard, "", 0)

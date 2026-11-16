@@ -15,6 +15,7 @@ import type { ThemePref } from "../lib/theme.ts";
 import type { StatusView } from "../lib/status.ts";
 import { t } from "../strings.ts";
 import { setTitle } from "./Router.tsx";
+import { UpdatesSection } from "../components/Updates.tsx";
 import { LanguageSelect } from "../components/LanguageSelect.tsx";
 import { CopyCommand, copyText } from "../components/CopyCommand.tsx";
 import { qs } from "../api/client.ts";
@@ -48,6 +49,7 @@ export function Settings({ meta, section }: { meta: Meta | undefined; section: S
           {section === "preferences" ? <Preferences /> : null}
           {section === "domains" ? <ProxyCard /> : null}
           {section === "agents" ? <><Agents /><NotifyCard /></> : null}
+          {section === "updates" ? <UpdatesSection /> : null}
           {section === "diagnostics" ? <DiagnosticsSection meta={meta} /> : null}
           {section === "about" ? <About meta={meta} /> : null}
         </div>

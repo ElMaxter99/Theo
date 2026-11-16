@@ -12,7 +12,7 @@ const OLD_TABS: Record<string, TabId> = { services: "summary", ports: "summary",
 export const PROJECT_TABS = ["instances", "shared", "activity", "settings"] as const;
 export type ProjectTab = (typeof PROJECT_TABS)[number];
 
-export const SETTINGS_SECTIONS = ["preferences", "domains", "agents", "diagnostics", "about"] as const;
+export const SETTINGS_SECTIONS = ["preferences", "domains", "agents", "updates", "diagnostics", "about"] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 export type Route =

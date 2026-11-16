@@ -80,8 +80,8 @@ export function freePort(start = 24000) {
 }
 
 /** Starts `theo serve --print-launch-url` and returns { url, port, pid, stop(), launch() }. */
-export async function startServer(bin, home) {
-  const child = spawn(bin, ["serve", "--print-launch-url"], { env: { ...process.env, THEO_HOME: home }, stdio: ["ignore", "pipe", "pipe"] });
+export async function startServer(bin, home, extraEnv = {}) {
+  const child = spawn(bin, ["serve", "--print-launch-url"], { env: { ...process.env, THEO_HOME: home, ...extraEnv }, stdio: ["ignore", "pipe", "pipe"] });
   let stderr = "";
   child.stderr.on("data", (d) => (stderr += d));
   const info = await new Promise((resolve, reject) => {

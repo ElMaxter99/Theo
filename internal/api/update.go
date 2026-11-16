@@ -58,7 +58,9 @@ func (s *Server) updateTarget() update.Target {
 	if s.cfg.UpdateTarget != nil {
 		return *s.cfg.UpdateTarget
 	}
-	return update.CurrentTarget()
+	// Taken when the server started: after an update the running program's own
+	// file is gone, and asking the system again would name "theo (deleted)".
+	return s.target
 }
 
 func (s *Server) updateStatus() UpdateStatus {

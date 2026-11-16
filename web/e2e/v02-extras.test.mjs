@@ -42,7 +42,7 @@ test("the local-domains switch runs the proxy and the panel links to the names",
   const page = await openApp(browser, mock, { route: "#/settings/domains", wait: "#proxy-on" });
   const sw = page.getByLabel("Serve local domains");
   assert.equal(await sw.isChecked(), false);
-  await sw.check();
+  await sw.click(); // not check(): the box flips back for a moment while the page reloads
   await page.locator("#proxy-state:has-text('listening on 127.0.0.1:7080')").waitFor();
   assert.deepEqual(await cspViolations(page), []);
   assert.deepEqual(seriousOnly(await axeViolations(page)), []);
@@ -54,7 +54,7 @@ test("the local-domains switch runs the proxy and the panel links to the names",
   await shot(page, "panel-proxy-on");
 
   await page.goto(page.url().replace(/#.*/, "#/settings/domains"));
-  await page.getByLabel("Serve local domains").uncheck();
+  await page.getByLabel("Serve local domains").click();
   await page.locator("#proxy-state:has-text('Off.')").waitFor();
   assert.deepEqual(page.problems, []);
   await page.ctx.close();

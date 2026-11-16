@@ -253,6 +253,51 @@ function containersOf(w) {
 }
 
 // ---------------------------------------------------------------- helpers
+// GET/POST /update (board V-17). scenario.update: "available" (0.11.1), "rc" (a test version is the newest),
+// "cannot" (this copy cannot replace itself), "checksum" (the download is rejected), "offline" (the check fails).
+function updateState() {
+  const sc = scenario.update;
+  const u = S.update ??= { enabled: true, notify: true, channel: "stable", state: "idle", done: 0, total: 0, dismissed: false };
+  const rc = u.channel === "rc" && sc === "rc";
+  const available = !!sc && sc !== "offline" && (sc !== "rc" || u.channel === "rc");
+  return {
+    current: "0.11.0", available, latest: available ? (rc ? "0.12.0-rc.2" : "0.11.1") : undefined, tag: available ? (rc ? "v0.12.0-rc.2" : "v0.11.1") : undefined,
+    prerelease: rc || undefined, page: available ? "https://github.com/ElMaxter99/Theo/releases/tag/" + (rc ? "v0.12.0-rc.2" : "v0.11.1") : undefined,
+    checked_at: "2026-11-16T13:42:00Z", dismissed: available && u.dismissed || undefined,
+    enabled: u.enabled, notify: u.notify, channel: u.channel, desktop: !!scenario.desktop,
+    can_install: sc !== "cannot", why_not: sc === "cannot" ? "not_writable" : undefined,
+    state: u.state, done: u.done, total: u.total, installed: u.installed, error: u.error, error_code: u.error_code,
+  };
+}
+async function updateRoute(req, res, seg, m) {
+  const u = S.update ??= { enabled: true, notify: true, channel: "stable", state: "idle", done: 0, total: 0, dismissed: false };
+  if (!seg[1] && m === "GET") return send(res, 200, updateState());
+  if (seg[1] === "check" && m === "POST") {
+    if (scenario.update === "offline") return send(res, 200, { ...updateState(), error: "Could not reach GitHub: offline", error_code: "check_failed" });
+    return send(res, 200, updateState());
+  }
+  if (seg[1] === "settings" && m === "POST") {
+    const b = await readJson(req);
+    if ("auto_check" in b) u.enabled = !!b.auto_check;
+    if ("notify" in b) u.notify = !!b.notify;
+    if (b.channel) u.channel = b.channel;
+    return send(res, 200, updateState());
+  }
+  if (seg[1] === "dismiss" && m === "POST") { u.dismissed = true; return send(res, 200, updateState()); }
+  if (seg[1] === "install" && m === "POST") {
+    u.state = "downloading"; u.done = 0; u.total = 41 << 20; u.error = u.error_code = undefined;
+    const step = (n) => setTimeout(() => {
+      if (n < 3) { u.done = Math.round(u.total * (n + 1) / 4); return step(n + 1); }
+      if (scenario.update === "checksum") { u.state = "error"; u.error_code = "checksum"; u.error = "the download does not match its published SHA-256, so nothing was installed"; return; }
+      u.state = "installed"; u.installed = "v0.11.1";
+    }, 400 * scenario.slow);
+    step(0);
+    return send(res, 202, updateState());
+  }
+  if (seg[1] === "restart" && m === "POST") { if (!scenario.desktop) return err(res, 409, "no_restart", "only the desktop app restarts itself"); res.writeHead(204); return res.end(); }
+  return err(res, 404, "not_found", "unknown resource");
+}
+
 function send(res, status, body, headers = {}) {
   const isStr = typeof body === "string" || Buffer.isBuffer(body);
   res.writeHead(status, { "Content-Type": isStr ? "text/plain; charset=utf-8" : "application/json", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": CSP, "Referrer-Policy": "no-referrer", "Cross-Origin-Opener-Policy": "same-origin", ...headers });
@@ -659,6 +704,7 @@ async function api(req, res, url) {
   if (seg[0] === "reconcile") return reconcileRoutes(req, res, seg, q);
   if (seg[0] === "health") return send(res, 200, healthOf());
   if (seg[0] === "diagnostics") return send(res, 200, diagnostics());
+  if (seg[0] === "update") return updateRoute(req, res, seg, m);
   if (seg[0] === "proxy") {
     if (!seg[1] && m === "GET") return send(res, 200, proxyStatus());
     if (seg[1] === "start" && m === "POST") { const b = await readJson(req); S.proxy = { running: true, managed: true, port: b.port || 7080, autostart: true, https: !!b.https, https_port: b.https_port || 7443 };
