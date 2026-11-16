@@ -25,6 +25,7 @@ import (
 
 	"github.com/ElMaxter99/Theo/internal/engine"
 	"github.com/ElMaxter99/Theo/internal/execx"
+	"github.com/ElMaxter99/Theo/internal/update"
 )
 
 // APIVersion is the version of the HTTP interface (GET /meta).
@@ -46,6 +47,15 @@ type Config struct {
 	// IdleTimeout stops the server after that long without SSE clients and
 	// operations; zero means DefaultIdleTimeout, negative means never.
 	IdleTimeout time.Duration
+	// Desktop is true when the server runs inside the desktop app: looking
+	// for new versions is then on by default.
+	Desktop bool
+	// Restart restarts the desktop app (after an update); nil in the browser.
+	Restart func()
+	// UpdateList returns the releases; nil asks GitHub. Tests replace it.
+	UpdateList update.Lister
+	// UpdateTarget is the program an update replaces; nil is the running one.
+	UpdateTarget *update.Target
 	// MaxOperations is the number of operations that run at once (default 4).
 	MaxOperations int
 	// PollInterval is how often the server looks for changes made outside
@@ -115,10 +125,12 @@ type Server struct {
 	log         *log.Logger
 	assets      fs.FS
 
-	proxy  *proxyManager
-	cache  *overviewCache
-	meta   *metaCache
-	health *healthCache
+	updates updateManager
+	target  update.Target // the program an update replaces, as it was at start
+	proxy   *proxyManager
+	cache   *overviewCache
+	meta    *metaCache
+	health  *healthCache
 
 	// workCtx is the parent of every shared computation (see work); it ends
 	// with the server. limits bound the commands they start.
@@ -172,7 +184,7 @@ func New(cfg Config) (*Server, error) {
 	if cfg.ConfigCacheTTL == 0 {
 		cfg.ConfigCacheTTL = defaultConfigCacheTTL
 	}
-	s := &Server{cfg: cfg, eng: cfg.Engine, ln: ln, port: ln.Addr().(*net.TCPAddr).Port, mux: http.NewServeMux(),
+	s := &Server{cfg: cfg, target: update.CurrentTarget(), eng: cfg.Engine, ln: ln, port: ln.Addr().(*net.TCPAddr).Port, mux: http.NewServeMux(),
 		auth: newAuth(), log: cfg.Log, assets: cfg.Assets, started: time.Now(), stopped: make(chan struct{})}
 	if s.log == nil {
 		s.log = log.New(io.Discard, "", 0)
@@ -232,6 +244,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	errc := make(chan error, 1)
 	go func() { errc <- s.srv.Serve(s.ln) }()
 	go s.hub.pollLoop(s)
+	go s.watchUpdates(s.workCtx)
 	s.proxy.autostart()
 	idle := time.NewTicker(idleCheckEvery(s.cfg.IdleTimeout))
 	defer idle.Stop()

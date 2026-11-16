@@ -621,3 +621,8 @@ button.cl-tile { cursor: pointer; }
 .cl-badge-blocked { background: var(--error-bg); color: var(--error-fg); }
 @media (max-width: 40rem) { .cl-two { grid-template-columns: 1fr; } }
 @media (forced-colors: active) { .cl-tile, .cl-group, .cl-bar, .cl-res, .cl-block { border: 1px solid CanvasText; } }
+
+/* ---------- Updates (V-17) ---------- */
+.hint.block { display: block; }
+.update-tag { text-decoration: none; }
+progress { width: 100%; max-width: 28rem; height: 0.6rem; accent-color: var(--accent); }

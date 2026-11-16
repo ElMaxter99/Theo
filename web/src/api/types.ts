@@ -686,3 +686,30 @@ export interface CaptureRun {
   progress: { label: string; done: number; total: number; state?: string }[];
   lines: string[];
 }
+
+/** GET /update: the version check and the in-app update. */
+export interface UpdateStatus {
+  current: string;
+  latest?: string;
+  tag?: string;
+  available: boolean;
+  prerelease?: boolean;
+  page?: string;
+  checked_at?: string;
+  dismissed?: boolean;
+  /** Theo looks for updates by itself (update-check). */
+  enabled: boolean;
+  /** The desktop app shows a notification (update-notify). */
+  notify: boolean;
+  channel: "stable" | "rc";
+  /** The desktop app, which can restart itself. */
+  desktop: boolean;
+  can_install: boolean;
+  why_not?: "not_writable" | "unmanaged";
+  state: "idle" | "downloading" | "installed" | "error";
+  done?: number;
+  total?: number;
+  installed?: string;
+  error?: string;
+  error_code?: string;
+}

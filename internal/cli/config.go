@@ -80,7 +80,7 @@ func runConfig(e *engine.Engine, args []string, stdout, stderr io.Writer) error 
 		}
 		fmt.Fprintf(stdout, "%s = %s\n", pos[0], pos[1])
 		if pos[0] == "update-check" && pos[1] == "on" {
-			fmt.Fprintln(stdout, "Theo will ask GitHub once a day whether a new version exists. Nothing else is sent. Without a network it does nothing.")
+			fmt.Fprintln(stdout, "Theo will ask GitHub every few hours whether a new version exists. Nothing else is sent. Without a network it does nothing.")
 		}
 	case "unset":
 		if err := store.Unset(pos[0]); err != nil {

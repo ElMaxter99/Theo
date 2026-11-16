@@ -11,6 +11,7 @@ import { brand } from "../brand.ts";
 import { t } from "../strings.ts";
 import { href, useRoute } from "../lib/router.ts";
 import { Banner } from "./ui.tsx";
+import { UpdateBanner, UpdateTag } from "./Updates.tsx";
 import { OpsIndicator } from "../ops/Operations.tsx";
 import { useHealth } from "../lib/health.ts";
 import { runningCount, useStatus } from "../lib/statusStore.ts";
@@ -74,6 +75,7 @@ export function Shell({ meta, onRefresh, children }: { meta: Meta | undefined; o
           <kbd aria-hidden="true">{isMac ? "⌘K" : "Ctrl K"}</kbd>
         </button>
         <span class="header-spacer" />
+        <UpdateTag />
         <OpsIndicator />
         {working ? <div class="progress-bar" aria-hidden="true" /> : null}
       </header>
@@ -112,6 +114,7 @@ export function Shell({ meta, onRefresh, children }: { meta: Meta | undefined; o
         {meta ? <p class="nav-foot">{t.app.version(meta.theo_version, meta.api_version)}<br />{t.app.footerLocal}<br /><button type="button" class="linklike" onClick={openHelp}>{t.shortcuts.link}</button></p> : null}
       </nav>
       <main id="main" class="app-main" tabIndex={-1}>
+        <UpdateBanner />
         {dockerDown ? (
           <Banner tone="warn" title={t.banner.dockerTitle} actions={<button type="button" class="btn sm" onClick={onRefresh}>{t.app.refresh}</button>}>
             <p>{t.banner.dockerBody}</p>

@@ -31,13 +31,21 @@ var Keys = map[string]string{
 	"ai.roles.coordinator": "provider:model for the coordinator role of the generation, for example claude:opus (default ai.provider and ai.model)",
 	"ai.roles.worker":      "provider:model for the worker role of the generation, the cheaper one (default ai.provider and ai.model)",
 	"language":             "en, es or system: the language of the reports of the capture tool (default system: the language of the computer, English if it is not Spanish)",
-	"update-check":         "on or off: look once a day for a new version of Theo (default off; nothing is sent when off)",
+	"update-check":         "on or off: look for a new version of Theo (at start and every few hours; default on in the installed desktop app, off for the command line alone; nothing is sent when off)",
+	"update-notify":        "on or off: show a desktop notification when a new version is found (default on; only the desktop app shows it)",
+	"update-channel":       "stable or rc: with rc, Theo also offers release candidates (test versions); default stable",
 }
 
 // Update is the answer of the last look for a new version.
 type Update struct {
-	Latest    string    `json:"latest,omitempty"`
-	CheckedAt time.Time `json:"checked_at,omitzero"`
+	Latest     string    `json:"latest,omitempty"`
+	Tag        string    `json:"tag,omitempty"`
+	Prerelease bool      `json:"prerelease,omitempty"`
+	CheckedAt  time.Time `json:"checked_at,omitzero"`
+	// Notified is the version a desktop notification was already shown for;
+	// Dismissed the one the person closed the banner of.
+	Notified  string `json:"notified,omitempty"`
+	Dismissed string `json:"dismissed,omitempty"`
 }
 
 type data struct {
@@ -97,6 +105,12 @@ func (s Store) Set(key, value string) error {
 	if key == "update-check" && value != "on" && value != "off" {
 		return errors.New("update-check is on or off")
 	}
+	if key == "update-notify" && value != "on" && value != "off" {
+		return errors.New("update-notify is on or off")
+	}
+	if key == "update-channel" && value != "stable" && value != "rc" {
+		return errors.New("update-channel is stable or rc")
+	}
 	if key == "notify.skip-focused" && value != "on" && value != "off" {
 		return errors.New("notify.skip-focused is on or off")
 	}
@@ -135,6 +149,12 @@ func (s Store) UpdateInfo() Update { return s.read().Update }
 
 // SetUpdateInfo records an answer of the version check.
 func (s Store) SetUpdateInfo(u Update) error { return s.update(func(d *data) { d.Update = u }) }
+
+// ChangeUpdateInfo changes the answer of the version check under the lock, so
+// that a notice and a check running together do not lose each other's fields.
+func (s Store) ChangeUpdateInfo(fn func(*Update)) error {
+	return s.update(func(d *data) { fn(&d.Update) })
+}
 
 // KeyList names the settings.
 func KeyList() string {

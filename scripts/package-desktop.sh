@@ -7,7 +7,8 @@
 #   linux   -> dist/theo-desktop_<tag>_linux_<arch>.tar.gz
 #              theo-desktop, theo-desktop.desktop, theo.png, install.sh
 #   darwin  -> dist/theo-desktop_<tag>_darwin_<arch>.zip      (Theo.app bundle)
-#              needs macOS tools: sips, iconutil, codesign, ditto
+#              needs macOS tools: sips, iconutil, codesign, ditto;
+#              THEO_CLI_BIN=<theo binary> also puts the theo command in the app
 #   windows -> dist/theo-desktop_<tag>_windows_<arch>.zip     (theo-desktop.exe)
 #
 # The archives are named so that `sha256sum *.tar.gz *.zip` in the release job
@@ -35,6 +36,11 @@ darwin)
   app="$root/Theo.app"
   mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
   install -m 0755 "$bin" "$app/Contents/MacOS/theo-desktop"
+  # The theo command goes inside the app (THEO_CLI_BIN): an update replaces the
+  # whole bundle, so the command and the window never differ in version.
+  if [ -n "${THEO_CLI_BIN:-}" ]; then
+    install -m 0755 "$THEO_CLI_BIN" "$app/Contents/MacOS/theo"
+  fi
   sed "s/@VERSION@/${tag#v}/g" packaging/desktop/Info.plist.in > "$app/Contents/Info.plist"
   iconset="$(mktemp -d)/Theo.iconset"
   mkdir -p "$iconset"
