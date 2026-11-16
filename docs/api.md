@@ -115,6 +115,9 @@ Events carry an `id` but are not replayed: after a reconnect the client refetche
 The server also polls Docker every 5 s for changes made outside Theo, **only** while a client is connected
 and a tab said it is visible: `POST /events/focus` with `{"visible": true|false}` (204).
 
+### `GET /update`, `POST /update/check|settings|dismiss|install|restart`
+Version check and in-app update ([install and update](cli/update.md)). `GET /update` answers `{current, latest, tag, available, prerelease, page, checked_at, dismissed, enabled, notify, channel, desktop, can_install, why_not, state, done, total, installed, error, error_code}`; `state` is `idle`, `downloading`, `installed` or `error` and does not ask the network. `POST /update/check` looks now. `POST /update/settings` takes `{auto_check?, notify?, channel?: "stable"|"rc"}`. `POST /update/dismiss` hides the banner of the version available. `POST /update/install` -> 202 starts downloading and installing (409 `no_update`, `update_running`); poll `GET /update` until `state` is `installed` (or `error`, with `error_code` `check_failed`, `checksum`, `not_writable`, `unmanaged` or `install_failed`). `POST /update/restart` -> 204 restarts the desktop app (409 `no_restart` in the browser, `nothing_installed`).
+
 ### `GET /proxy`, `POST /proxy/start` `{port?, https?, https_port?}`, `POST /proxy/stop`
 The interface's own `theo proxy` (see docs/cli/proxy.md). `GET` answers
 `{running, managed, port, url?, pid?, autostart, error?, https, https_port, authority?}`: `running` is true while any proxy listens (this server's,

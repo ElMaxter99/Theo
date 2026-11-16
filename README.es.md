@@ -68,6 +68,7 @@ Theo maneja el `git` y el `docker compose` que ya tienes. Escribe sus propios ar
 
 | Cómo | Comando |
 |---|---|
+| **Instalador** (app + orden, se actualiza solo) | Windows `theo-setup_…_windows_amd64.exe`, macOS `Theo_…_darwin_….dmg`, Linux `theo-installer_…_linux_amd64.sh` (o el `.deb`): [instalar y actualizar](docs/cli/update.md). Se instalan para tu usuario y las versiones nuevas se instalan desde la propia app. |
 | **Binarios de la versión** | Descarga el archivo de tu sistema desde la [página de versiones](https://github.com/ElMaxter99/Theo/releases) (`tar.gz` para Linux y macOS, `zip` para Windows, amd64 y arm64), compruébalo con `checksums.txt` y pon `theo` en tu `PATH`. |
 | **Scoop** (Windows) | `scoop install https://github.com/ElMaxter99/Theo/releases/latest/download/theo.json` |
 | **Homebrew** (macOS, Linux) | Cada versión adjunta `theo.rb`, una fórmula para un tap propio; todavía no hay un tap público. |
