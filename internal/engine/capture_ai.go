@@ -33,6 +33,11 @@ type GenerateRequest struct {
 	Parallel int
 	// Resume continues the last unfinished run of this worktree.
 	Resume bool
+	// Verify captures the draft with the application running and sends what
+	// fails back to the AI to repair (up to two rounds).
+	Verify bool
+	// Approve approves the commands of the run section for the verification.
+	Approve bool
 	// Confirm is asked after the exploration (see capture.GenConfig).
 	Confirm func(routes, jobs int, framework string) bool
 }
@@ -223,7 +228,105 @@ func (e *Engine) CaptureGenerate(ctx context.Context, req GenerateRequest, emit 
 	if err != nil {
 		return nil, err
 	}
-	return g.Run(ctx)
+	res, err := g.Run(ctx)
+	if err != nil || !req.Verify {
+		return res, err
+	}
+	return e.verifyGenerated(ctx, req, plan, dir, g, res, emit)
+}
+
+// verifySession starts the application of the worktree and returns its URL
+// and how to stop it. The tests replace it.
+var verifySession = func(ctx context.Context, e *Engine, req GenerateRequest, wt string, emit func(CaptureEvent)) (string, func(), error) {
+	rp, err := e.PlanRun(req.Project, wt)
+	if err != nil {
+		return "", nil, err
+	}
+	if rp.Spec == nil {
+		return "", nil, fmt.Errorf("--verify needs the application to run: %s has no run section (try `theo tool capture detect %s --write`)", wt, wt)
+	}
+	d := &captureDeployment{label: "verify", path: wt, plan: rp, hasPlan: true, needsRun: true}
+	if len(d.unapproved()) > 0 && !req.Approve {
+		return "", nil, ErrRunNotApproved
+	}
+	if err := e.startCapture(ctx, d, req.Approve, emit); err != nil {
+		return "", nil, err
+	}
+	return d.url, func() { d.run.Stop() }, nil
+}
+
+// verifyCapture captures a draft inventory against a running application and
+// returns the shots. The tests replace it.
+var verifyCapture = func(ctx context.Context, e *Engine, draft string, inv *capture.Inventory, url, out string) ([]capture.Shot, error) {
+	set, err := e.CaptureEngine().Capture(ctx, capture.CaptureOptions{Root: draft, Inv: inv, BaseURL: url, Label: "verify", Mode: "mock", OutDir: out})
+	if err != nil {
+		return nil, err
+	}
+	return set.Shots, nil
+}
+
+const verifyRounds = 2
+
+func (e *Engine) verifyGenerated(ctx context.Context, req GenerateRequest, plan *GenerateEstimate, dir string, g *capture.Generator, res *capture.GenResult, emit func(capture.GenEvent)) (*capture.GenResult, error) {
+	ev := func(text string) { emit(capture.GenEvent{Kind: "phase", Phase: "verify", Text: text}) }
+	url, stop, err := verifySession(ctx, e, req, plan.Worktree, func(CaptureEvent) {})
+	if err != nil {
+		return res, fmt.Errorf("the draft is saved (run %s) but could not be verified: %w", res.RunID, err)
+	}
+	defer stop()
+	v := &capture.GenVerify{}
+	everFailed := map[string]bool{}
+	for round := 0; ; round++ {
+		draft := filepath.Join(dir, "draft")
+		inv, err := capture.LoadInventory(draft)
+		if err != nil {
+			return res, err
+		}
+		ev(fmt.Sprintf("capturing %d states with the application running", inv.Summarize().States))
+		shots, err := verifyCapture(ctx, e, draft, inv, url, filepath.Join(dir, "verify"))
+		if err != nil {
+			return res, err
+		}
+		failing := map[string]string{}
+		for _, s := range shots {
+			if s.Status == capture.ShotFailed {
+				if _, ok := failing[s.Screen]; !ok {
+					failing[s.Screen] = capture.StateKey(s.Screen, s.State) + ": " + s.Reason
+				}
+				everFailed[s.Screen] = true
+				emit(capture.GenEvent{Kind: "failed", Phase: "verify", Job: capture.StateKey(s.Screen, s.State), Text: s.Reason})
+			}
+		}
+		v.Rounds = round + 1
+		if len(failing) == 0 {
+			for id := range everFailed {
+				v.Repaired = append(v.Repaired, id)
+			}
+			break
+		}
+		if round >= verifyRounds {
+			for id := range failing {
+				v.Failing = append(v.Failing, id)
+			}
+			for id := range everFailed {
+				if failing[id] == "" {
+					v.Repaired = append(v.Repaired, id)
+				}
+			}
+			break
+		}
+		ev(fmt.Sprintf("repair %d of %d: %d screens go back to the AI", round+1, verifyRounds, len(failing)))
+		g.SetHints(failing)
+		if res, err = g.Run(ctx); err != nil {
+			return res, err
+		}
+	}
+	sort.Strings(v.Repaired)
+	sort.Strings(v.Failing)
+	res.Verify = v
+	rb, _ := json.MarshalIndent(res, "", "  ")
+	_ = os.WriteFile(filepath.Join(dir, "resultado.json"), rb, 0o644)
+	return res, nil
 }
 
 // ErrAIConsent means the person has not yet accepted that code is sent to the provider.

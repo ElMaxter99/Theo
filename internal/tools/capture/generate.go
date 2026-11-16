@@ -85,6 +85,15 @@ type GenResult struct {
 	Framework    string       `json:"framework,omitempty"`
 	Jobs         int          `json:"jobs"`
 	Retries      int          `json:"retries"`
+	// Verify is set when the draft was captured with the real application.
+	Verify *GenVerify `json:"verify,omitempty"`
+}
+
+// GenVerify is what the capture of the draft with the real application found.
+type GenVerify struct {
+	Rounds   int      `json:"rounds"`
+	Repaired []string `json:"repaired,omitempty"` // screens that failed and work after a repair
+	Failing  []string `json:"failing,omitempty"`  // screens that still fail
 }
 
 // RouteMap is what the exploration returns.
@@ -153,6 +162,7 @@ type Generator struct {
 	mu    sync.Mutex
 	state *genState
 	retry int
+	hints map[string]string // screen id -> what a real capture said (see SetHints)
 }
 
 // NewGenerator checks the configuration.
@@ -422,6 +432,22 @@ func strictJSON(raw json.RawMessage, v any) error {
 // ErrGenCancelled means the person did not confirm the plan.
 var ErrGenCancelled = errors.New("generation cancelled before it started")
 
+// SetHints tells the next Run which screens failed a real capture and why:
+// those screens (and their data) are asked again with the problem, and the
+// rest keep their saved answers.
+func (g *Generator) SetHints(h map[string]string) {
+	g.mu.Lock()
+	g.hints = h
+	g.cfg.Confirm = nil // the plan was confirmed once: a repair does not ask again
+	g.mu.Unlock()
+}
+
+func (g *Generator) hint(screen string) string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.hints[screen]
+}
+
 // Estimate says how many jobs a generation of n screens takes.
 func Estimate(screens int) int { return 1 + 2*screens }
 
@@ -517,10 +543,14 @@ func (g *Generator) Run(ctx context.Context) (*GenResult, error) {
 
 	pool("screens", len(m.Rutas), func(i int) {
 		r := m.Rutas[i]
-		fp := g.fingerprint("screen", r.ID, g.cfg.Roles.Worker.String(), r.Origen, r.Ruta)
+		hint := g.hint(r.ID)
+		fp := g.fingerprint("screen", r.ID, g.cfg.Roles.Worker.String(), r.Origen, r.Ruta+"|"+hint)
 		raw, hit := g.cached("screen", r.ID, fp)
 		if !hit {
 			prompt := fmt.Sprintf("%s\n\nScreen id: %s\nTitle: %s\nRoute: %s\nPriority: %s\nFiles: %s\nThe application is %s (%s).", "Describe this screen.", r.ID, r.Titulo, r.Ruta, r.Prioridad, strings.Join(r.Origen, ", "), g.cfg.App, m.Framework)
+			if hint != "" {
+				prompt += "\n\nA real capture of this screen with the data you gave failed: " + hint + "\nCorrect the states, actions or calls so that it works."
+			}
 			ans, n, err := g.ask(ctx, g.cfg.Roles.Worker, promptScreen, prompt, schemaScreen, func(raw json.RawMessage) error { return g.validateScreen(r, raw) }, "screen "+r.ID)
 			if err != nil {
 				g.record("screen", r.ID, fp, n, nil, err)
@@ -563,10 +593,14 @@ func (g *Generator) Run(ctx context.Context) (*GenResult, error) {
 			return
 		}
 		callsJSON, _ := json.Marshal(a.Llamadas)
-		fp := g.fingerprint("data", id, g.cfg.Roles.Worker.String(), a.Pantalla.Origen, string(callsJSON))
+		hint := g.hint(id)
+		fp := g.fingerprint("data", id, g.cfg.Roles.Worker.String(), a.Pantalla.Origen, string(callsJSON)+"|"+hint)
 		raw, hit := g.cached("data", id, fp)
 		if !hit {
 			prompt := fmt.Sprintf("Write the answers for the calls of the screen %q (files: %s).\nCalls by state: %s", id, strings.Join(a.Pantalla.Origen, ", "), callsJSON)
+			if hint != "" {
+				prompt += "\nA real capture failed: " + hint + "\nMake sure every call the screen makes has an answer."
+			}
 			ans, n, err := g.ask(ctx, g.cfg.Roles.Worker, promptData, prompt, schemaData, func(raw json.RawMessage) error { return g.validateData(*a, raw) }, "data "+id)
 			if err != nil {
 				g.record("data", id, fp, n, nil, err)

@@ -47,6 +47,7 @@ func captureGenerate(e *engine.Engine, args []string, stdout, stderr io.Writer) 
 	yes := fl.Bool("yes", false, "accept the privacy notice and start without asking")
 	resume := fl.Bool("resume", false, "continue the last unfinished run of this worktree")
 	parallel := fl.Int("parallel", 0, "jobs at a time (default 3)")
+	verify := fl.Bool("verify", false, "capture the draft with the application running and send what fails back to the AI to repair")
 	provider := fl.String("provider", "", "provider (or provider:model) for both roles")
 	pos, err := parse(fl, args)
 	if err != nil {
@@ -55,7 +56,7 @@ func captureGenerate(e *engine.Engine, args []string, stdout, stderr io.Writer) 
 	if len(pos) < 1 || len(pos) > 2 {
 		return usageErrorf("tool capture generate <project> [worktree]")
 	}
-	req := engine.GenerateRequest{CaptureTarget: engine.CaptureTarget{Project: pos[0]}, Provider: *provider, Parallel: *parallel, Resume: *resume}
+	req := engine.GenerateRequest{CaptureTarget: engine.CaptureTarget{Project: pos[0]}, Provider: *provider, Parallel: *parallel, Resume: *resume, Verify: *verify, Approve: *yes}
 	if len(pos) == 2 {
 		req.Selector = pos[1]
 	}
@@ -137,6 +138,13 @@ func captureGenerate(e *engine.Engine, args []string, stdout, stderr io.Writer) 
 			names = append(names, f.Screen)
 		}
 		fmt.Fprintf(out, "  not generated (%d):  %s    failed after retries (see run.json)\n", len(names), strings.Join(names, "   "))
+	}
+	if v := res.Verify; v != nil {
+		fmt.Fprintf(out, "  verified with the application: %d rounds, %d repaired, %d still failing", v.Rounds, len(v.Repaired), len(v.Failing))
+		if len(v.Failing) > 0 {
+			fmt.Fprintf(out, " (%s)", strings.Join(v.Failing, ", "))
+		}
+		fmt.Fprintln(out)
 	}
 	fmt.Fprintf(out, "Draft: %s   (nothing in the repository yet)\n", tildePath(res.Dir))
 	fmt.Fprintf(out, "Check it, then: theo tool capture accept %s%s --run %s\n", pos[0], map[bool]string{true: " " + req.Selector, false: ""}[req.Selector != ""], res.RunID)
