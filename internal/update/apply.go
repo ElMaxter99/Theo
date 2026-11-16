@@ -85,7 +85,7 @@ func PlanFor(t Target, tag string) (Plan, error) {
 		return Plan{}, ErrUnmanaged
 	}
 	if t.GOOS == "darwin" {
-		if i := strings.Index(t.Exe, ".app/Contents/MacOS/"); i >= 0 {
+		if i := strings.Index(filepath.ToSlash(t.Exe), ".app/Contents/MacOS/"); i >= 0 {
 			return Plan{Bundle: t.Exe[:i+4], Items: []Item{{Asset: ArchiveName("theo-desktop", tag, t.GOOS, t.GOARCH)}}}, nil
 		}
 	}
@@ -188,7 +188,7 @@ func WritableFor(t Target) error {
 		return ErrUnmanaged
 	}
 	dir := filepath.Dir(t.Exe)
-	if i := strings.Index(t.Exe, ".app/Contents/MacOS/"); t.GOOS == "darwin" && i >= 0 {
+	if i := strings.Index(filepath.ToSlash(t.Exe), ".app/Contents/MacOS/"); t.GOOS == "darwin" && i >= 0 {
 		dir = filepath.Dir(t.Exe[:i+4])
 	}
 	return checkWritable(dir)
@@ -250,7 +250,7 @@ func Cleanup(t Target) {
 		return
 	}
 	dirs := []string{filepath.Dir(t.Exe)}
-	if i := strings.Index(t.Exe, ".app/Contents/MacOS/"); i >= 0 {
+	if i := strings.Index(filepath.ToSlash(t.Exe), ".app/Contents/MacOS/"); i >= 0 {
 		dirs = []string{filepath.Dir(t.Exe[:i+4])}
 	}
 	for _, d := range dirs {
@@ -459,7 +459,7 @@ func extractBundle(archive, dst string) error {
 			continue
 		}
 		rel := f.Name[i+len("Theo.app/"):]
-		if !safeRel(rel) {
+		if strings.Contains(rel, "..") || !safeRel(rel) {
 			return fmt.Errorf("unsafe path in the archive: %s", f.Name)
 		}
 		target := filepath.Join(dst, filepath.FromSlash(rel))
@@ -474,25 +474,7 @@ func extractBundle(archive, dst string) error {
 				return err
 			}
 		case mode&os.ModeSymlink != 0:
-			r, err := f.Open()
-			if err != nil {
-				return err
-			}
-			link, err := io.ReadAll(io.LimitReader(r, 4096))
-			r.Close()
-			if err != nil {
-				return err
-			}
-			// A link must stay inside the app: relative, and resolving under dst.
-			if filepath.IsAbs(string(link)) || !within(dst, filepath.Join(filepath.Dir(target), string(link))) {
-				return fmt.Errorf("unsafe link in the archive: %s", f.Name)
-			}
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return err
-			}
-			if err := os.Symlink(string(link), target); err != nil {
-				return err
-			}
+			return fmt.Errorf("links are not allowed in the archive: %s", f.Name)
 		default:
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return err

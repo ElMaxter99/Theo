@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -263,7 +264,7 @@ func TestApplyReplacesBothPrograms(t *testing.T) {
 		t.Errorf("temporary files left: %v", left)
 	}
 	st, _ := os.Stat(filepath.Join(dir, "theo"))
-	if st.Mode()&0o100 == 0 {
+	if runtime.GOOS != "windows" && st.Mode()&0o100 == 0 {
 		t.Error("the new program is executable")
 	}
 }

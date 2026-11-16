@@ -45,16 +45,16 @@ func TestUpdateRealBinary(t *testing.T) {
 	sum := sha256.Sum256(archive)
 	name := arch + ".tar.gz"
 
-	var srv *httptest.Server
-	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := "http://" + r.Host
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/releases"):
 			_ = json.NewEncoder(w).Encode([]map[string]any{
-				{"tag_name": "v0.11.1", "html_url": srv.URL + "/notes", "assets": []map[string]any{
-					{"name": name, "browser_download_url": srv.URL + "/dl/" + name, "size": len(archive)},
-					{"name": "checksums.txt", "browser_download_url": srv.URL + "/dl/checksums.txt"},
+				{"tag_name": "v0.11.1", "html_url": origin + "/notes", "assets": []map[string]any{
+					{"name": name, "browser_download_url": origin + "/dl/" + name, "size": len(archive)},
+					{"name": "checksums.txt", "browser_download_url": origin + "/dl/checksums.txt"},
 				}},
-				{"tag_name": "v0.12.0-rc.1", "prerelease": true, "html_url": srv.URL + "/rc"},
+				{"tag_name": "v0.12.0-rc.1", "prerelease": true, "html_url": origin + "/rc"},
 				{"tag_name": "v0.11.0"},
 			})
 		case strings.HasSuffix(r.URL.Path, "/"+name):
