@@ -459,8 +459,11 @@ func extractBundle(archive, dst string) error {
 			continue
 		}
 		rel := f.Name[i+len("Theo.app/"):]
+		if !safeRel(rel) {
+			return fmt.Errorf("unsafe path in the archive: %s", f.Name)
+		}
 		target := filepath.Join(dst, filepath.FromSlash(rel))
-		if !strings.HasPrefix(target, dst+string(filepath.Separator)) && target != dst {
+		if !within(dst, target) {
 			return fmt.Errorf("unsafe path in the archive: %s", f.Name)
 		}
 		found = true
@@ -479,6 +482,10 @@ func extractBundle(archive, dst string) error {
 			r.Close()
 			if err != nil {
 				return err
+			}
+			// A link must stay inside the app: relative, and resolving under dst.
+			if filepath.IsAbs(string(link)) || !within(dst, filepath.Join(filepath.Dir(target), string(link))) {
+				return fmt.Errorf("unsafe link in the archive: %s", f.Name)
 			}
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return err
@@ -505,6 +512,25 @@ func extractBundle(archive, dst string) error {
 		return errors.New("Theo.app is not in the archive")
 	}
 	return nil
+}
+
+// safeRel rejects an archive path that is absolute or climbs out with "..".
+func safeRel(rel string) bool {
+	if rel == "" || strings.HasPrefix(rel, "/") || strings.HasPrefix(rel, `\`) || filepath.IsAbs(rel) {
+		return false
+	}
+	for _, part := range strings.FieldsFunc(rel, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if part == ".." {
+			return false
+		}
+	}
+	return true
+}
+
+// within says whether p is dir or below it.
+func within(dir, p string) bool {
+	rel, err := filepath.Rel(dir, p)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // Relaunch starts the program again, detached, with the same arguments. The

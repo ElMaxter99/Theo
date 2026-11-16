@@ -416,3 +416,30 @@ func TestCleanupRemovesLeftovers(t *testing.T) {
 		t.Error("a recent staging folder may belong to a running update")
 	}
 }
+
+func TestExtractBundleRefusesPathsAndLinksOutsideTheApp(t *testing.T) {
+	for name, files := range map[string]map[string]string{
+		"dotdot": {"x/Theo.app/../../evil": "x"},
+		"deep":   {"x/Theo.app/a/../../../evil": "x"},
+	} {
+		z := filepath.Join(t.TempDir(), "a.zip")
+		_ = os.WriteFile(z, zipOf(t, files), 0o600)
+		dst := filepath.Join(t.TempDir(), "Theo.app")
+		if err := extractBundle(z, dst); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	// A symbolic link that points out of the app.
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	h := &zip.FileHeader{Name: "x/Theo.app/Contents/link"}
+	h.SetMode(os.ModeSymlink | 0o755)
+	w, _ := zw.CreateHeader(h)
+	_, _ = w.Write([]byte("../../../../etc"))
+	_ = zw.Close()
+	z := filepath.Join(t.TempDir(), "l.zip")
+	_ = os.WriteFile(z, buf.Bytes(), 0o600)
+	if err := extractBundle(z, filepath.Join(t.TempDir(), "Theo.app")); err == nil {
+		t.Error("a link out of the app was accepted")
+	}
+}
