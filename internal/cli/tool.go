@@ -34,15 +34,17 @@ func init() {
                                                its URL and keep it until Ctrl-C. Its commands run code from
                                                the repository, so Theo asks the first time and whenever they
                                                change (--yes approves). --check starts it, reports and stops
-  tool capture detect [path] [--write] [--json]
+  tool capture detect [path] [--write] [--ai] [--yes] [--json]
                                                Work out how a project starts and propose the "run" section
                                                of .theo.json (Compose, a package.json script or a Makefile
                                                target). --write adds it to .theo.json; it never replaces a
-                                               run section that is already there
+                                               run section that is already there. --ai asks the AI of the
+                                               coordinator role for a proposal when the rules find nothing
 `)
 	registerCompletion(cmdSpec{name: "tool", subs: []cmdSpec{
 		{name: "list"},
-		{name: "capture", subs: []cmdSpec{{name: "detect", flags: []flagSpec{{names: []string{"--write"}}, {names: []string{"--json"}}}}, {name: "serve", flags: []flagSpec{{names: []string{"--yes"}}, {names: []string{"--check"}}, {names: []string{"--json"}}}}, {name: "validate"}, {name: "init"}, {name: "setup"}, {name: "run"}, {name: "run-pair"}, {name: "sets"}, {name: "compare"}, {name: "report"}}},
+		{name: "ai", subs: []cmdSpec{{name: "doctor", flags: []flagSpec{{names: []string{"--no-ping"}}, {names: []string{"--json"}}}}, {name: "models", flags: []flagSpec{{names: []string{"--json"}}}}}},
+		{name: "capture", subs: []cmdSpec{{name: "detect", flags: []flagSpec{{names: []string{"--write"}}, {names: []string{"--ai"}}, {names: []string{"--yes"}}, {names: []string{"--json"}}}}, {name: "serve", flags: []flagSpec{{names: []string{"--yes"}}, {names: []string{"--check"}}, {names: []string{"--json"}}}}, {name: "validate"}, {name: "init"}, {name: "setup"}, {name: "generate", flags: []flagSpec{{names: []string{"--yes"}}, {names: []string{"--resume"}}, {names: []string{"--json"}}}}, {name: "accept", flags: []flagSpec{{names: []string{"--yes"}}, {names: []string{"--replace"}}, {names: []string{"--merge"}}, {names: []string{"--json"}}}}, {name: "run"}, {name: "run-pair"}, {name: "sets"}, {name: "compare"}, {name: "report"}}},
 	}})
 }
 
@@ -75,6 +77,9 @@ func runTool(e *engine.Engine, args []string, stdout, stderr io.Writer) error {
 	if _, ok := tools.Get(args[0]); !ok {
 		return usageErrorf("unknown tool %q (see `theo tool list`)", args[0])
 	}
+	if args[0] == "ai" {
+		return runAI(e, args[1:], stdout, stderr)
+	}
 	if args[0] == capture.ID {
 		return runCapture(e, args[1:], stdout, stderr)
 	}
@@ -91,11 +96,13 @@ func runCapture(e *engine.Engine, args []string, stdout, stderr io.Writer) error
 		}
 	}
 	if len(args) == 0 || args[0] != "detect" {
-		return usageErrorf("tool capture works with: detect, serve, validate, init, setup, run, run-pair, sets, compare, report")
+		return usageErrorf("tool capture works with: detect, serve, validate, init, setup, generate, accept, run, run-pair, sets, compare, report")
 	}
 	fl := flag.NewFlagSet("tool capture detect", flag.ContinueOnError)
 	asJSON := fl.Bool("json", false, "print JSON")
 	write := fl.Bool("write", false, "add the proposal to .theo.json")
+	useAI := fl.Bool("ai", false, "when the rules find nothing, ask an AI for a proposal")
+	yes := fl.Bool("yes", false, "accept the privacy notice of --ai without asking")
 	pos, err := parse(fl, args[1:])
 	if err != nil {
 		return err
@@ -114,6 +121,11 @@ func runCapture(e *engine.Engine, args []string, stdout, stderr io.Writer) error
 	d, err := capture.Detect(root)
 	if err != nil {
 		return err
+	}
+	if d.Run == nil && *useAI {
+		if err := detectWithAI(e, root, &d, write, *yes, *asJSON, stdout, stderr); err != nil {
+			return err
+		}
 	}
 	wrote := false
 	if *write {
@@ -356,4 +368,52 @@ func orderedConfig(doc map[string]json.RawMessage) ([]byte, error) {
 	}
 	b.WriteString("}\n")
 	return b.Bytes(), nil
+}
+
+// detectWithAI asks the coordinator's provider for a run section when the
+// rules found none. The proposal is shown and saved only when the person says so.
+func detectWithAI(e *engine.Engine, root string, d *capture.Detection, write *bool, yes, asJSON bool, stdout, stderr io.Writer) error {
+	out := stdout
+	if asJSON {
+		out = stderr
+	}
+	roles, err := e.AIRoles("")
+	if err != nil {
+		return err
+	}
+	name := registeredName(e, root)
+	if !e.GenerateConsent(name, roles) {
+		fmt.Fprintf(out, "First time for this project: the code that is read is sent to %s (%s). Theo sends nothing else.\n", roles.Coordinator.Provider, roles.Coordinator)
+		if !yes {
+			if !interactive() {
+				return fmt.Errorf("the code of %s would be sent to %s: read the notice, then approve with --yes", name, roles.Coordinator.Provider)
+			}
+			if !askYN(out, "Continue? [y/N] ", false) {
+				return errors.New("cancelled: nothing was sent")
+			}
+		}
+		if err := e.GiveGenerateConsent(name, roles); err != nil {
+			return err
+		}
+	}
+	prov, err := engine.AIProviderFor(roles.Coordinator.Provider)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Rules found nothing. Asking %s for a proposal:\n", roles.Coordinator)
+	run, why, err := capture.ProposeRun(context.Background(), prov, roles.Coordinator, root, 2)
+	if err != nil {
+		return err
+	}
+	d.Run, d.Confidence = run, "low"
+	d.Evidence = append(d.Evidence, "an AI read the project: "+why)
+	d.Notes = []string{"It is a proposal: check it and try it with `theo tool capture serve <project> --check` before relying on it."}
+	if !*write && !asJSON && interactive() {
+		fmt.Fprintln(out, compactJSON(struct {
+			Version int                 `json:"version"`
+			Run     *repoconfig.RunSpec `json:"run"`
+		}{1, run}))
+		*write = askYN(out, "Save it in .theo.json? [y/N] ", false)
+	}
+	return nil
 }

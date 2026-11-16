@@ -135,8 +135,14 @@ func MatchScreens(a, b *Manifest, extra []Pair) (pairs []Pair, newIDs, removedID
 		pairs = append(pairs, p)
 		usedA[p.AID], usedB[p.BID] = true, true
 	}
+	// What a person wrote by hand comes first and wins over every other method.
+	for _, p := range extra {
+		if p.Method == ManualPair && !usedA[p.AID] && !usedB[p.BID] && a.Screen(p.AID) != nil && b.Screen(p.BID) != nil {
+			add(p)
+		}
+	}
 	for _, sa := range a.Screens {
-		if b.Screen(sa.ID) != nil {
+		if !usedA[sa.ID] && !usedB[sa.ID] && b.Screen(sa.ID) != nil {
 			add(Pair{AID: sa.ID, BID: sa.ID, Method: ByID})
 		}
 	}
@@ -163,7 +169,7 @@ func MatchScreens(a, b *Manifest, extra []Pair) (pairs []Pair, newIDs, removedID
 		}
 	}
 	for _, p := range extra {
-		if !usedA[p.AID] && !usedB[p.BID] && a.Screen(p.AID) != nil && b.Screen(p.BID) != nil {
+		if p.Method != ManualPair && !usedA[p.AID] && !usedB[p.BID] && a.Screen(p.AID) != nil && b.Screen(p.BID) != nil {
 			p.Method = ByAI
 			add(p)
 		}

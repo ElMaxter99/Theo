@@ -14,7 +14,6 @@ func init() {
 		Title:    "Screen capture, before and after",
 		Summary:  "Capture the screens of two deployments of an application and compare them.",
 		Scope:    "capture",
-		Commands: []string{"detect", "serve", "validate", "init", "setup", "run", "run-pair", "sets", "compare", "report"},
-		Planned:  []string{"generate"},
+		Commands: []string{"detect", "serve", "validate", "init", "setup", "generate", "accept", "run", "run-pair", "sets", "compare", "report"},
 	})
 }

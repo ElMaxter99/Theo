@@ -274,6 +274,9 @@ type ComparisonRequest struct {
 	Lang    string
 	// Renderer lets reports render images; nil makes no images (tests).
 	NoRender bool
+	// NoAI leaves the screens the rules could not pair without a pair, instead
+	// of asking an AI (0.10). Without chosen roles or consent AI is not asked either.
+	NoAI bool
 }
 
 // CompareResult is what a comparison produced.
@@ -345,18 +348,47 @@ func (e *Engine) CapturePair(ctx context.Context, req ComparisonRequest, emit fu
 	if req.UseSets {
 		changed = e.changedFiles(ctx, root, sa.Commit, sb.Commit)
 	}
-	pairs, _, _ := capture.MatchScreens(&sa.Manifest, &sb.Manifest, nil)
+	pf, perr := capture.LoadPairs(root)
+	if perr != nil {
+		return nil, perr
+	}
+	key := capture.PairKey(sa.Label, sb.Label)
+	var manual []capture.Pair
+	for _, p := range pf[key] {
+		if p.Method == capture.ManualPair {
+			manual = append(manual, p)
+		}
+	}
+	pairs, _, _ := capture.MatchScreens(&sa.Manifest, &sb.Manifest, manual)
 	byMethod := map[string]int{}
 	for _, p := range pairs {
 		byMethod[p.Method]++
 	}
-	emit(CaptureEvent{Kind: "matching", Text: fmt.Sprintf("%d by id, %d by route, %d by file", byMethod[capture.ByID], byMethod[capture.ByRoute], byMethod[capture.ByFile]), Total: len(pairs)})
+	removed, added := capture.UnmatchedScreens(&sa.Manifest, &sb.Manifest, manual)
+	look := 0
+	if len(added) > 0 {
+		look = len(removed)
+	}
+	text := fmt.Sprintf("%d by id, %d by route, %d by file", byMethod[capture.ByID], byMethod[capture.ByRoute], byMethod[capture.ByFile])
+	if byMethod[capture.ManualPair] > 0 {
+		text += fmt.Sprintf(", %d by hand", byMethod[capture.ManualPair])
+	}
+	if look > 0 {
+		text += fmt.Sprintf(", %d need a look", look)
+	}
+	emit(CaptureEvent{Kind: "matching", Text: text, Total: len(pairs)})
+	aiPairs := e.pairWithAI(ctx, req, root, key, pf, removed, added, emit)
+	for _, p := range pf.Applicable(key) {
+		if p.Method == capture.ManualPair {
+			aiPairs = append(aiPairs, p)
+		}
+	}
 	date := e.now()
 	dir := capture.ReportFolder(root, date, sa.Label, sb.Label)
 	if err := ensureCaptureIgnore(root); err != nil {
 		return nil, err
 	}
-	cmp, err := capture.Compare(sa, sb, capture.CompareOptions{OutDir: dir, ChangedFiles: changed})
+	cmp, err := capture.Compare(sa, sb, capture.CompareOptions{OutDir: dir, ChangedFiles: changed, AIPairs: aiPairs})
 	if err != nil {
 		return nil, err
 	}

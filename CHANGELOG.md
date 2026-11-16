@@ -2,6 +2,14 @@
 
 Notable changes per release. Each release on GitHub also lists every merged pull request.
 
+## Unreleased
+
+### New
+- **Generate the screen inventory with AI (0.10).** `theo tool ai doctor` finds Claude Code and GitHub Copilot, pings them and shows the provider and model of each role (`ai.roles.coordinator`, `ai.roles.worker`). `theo tool capture generate` explores the project and writes `pantallas.json` and its mocks with parallel workers; every answer is validated and sent back when wrong, a run is saved and resumes with `--resume`, and what cannot be generated is listed. The AI only reads: the result is a draft and `theo tool capture accept` writes it, never overwriting an existing `pantallas.json` unless you choose `--replace` (or `--merge`, which adds only the missing screens). The first time for a project Theo says the code is sent to the provider and asks. `--verify` captures the draft with the application running and sends the failures back to the AI (two rounds).
+- **Screens the rules cannot pair are paired with AI.** `run-pair` and `compare` ask the coordinator about the screens only one branch has (titles, routes and file names, never code). The pairs are applied with their confidence, marked "by AI" in the reports and saved in `.theo/capturas/emparejamientos.json`, where a pair you write by hand always wins. `--no-ai` skips it.
+- **`theo tool capture detect --ai`** proposes a `run` section when the rules find nothing, validated like one written by hand.
+- Not tried with the real Claude Code and Copilot command lines: the adapters follow their documentation and are tested with a stand-in provider.
+
 ## v0.9.0
 
 The capture tool now takes screenshots: it compares two branches of a project screen by screen and writes the reports, from the command line and from a new Tools page.

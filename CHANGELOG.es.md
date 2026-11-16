@@ -2,6 +2,14 @@
 
 Cambios destacados de cada versión, en español. Las notas de cada release en GitHub llevan esta sección después de la inglesa, con el título *Español*. Es la misma lista que [CHANGELOG.md](CHANGELOG.md), que es la de referencia: cada `## vX.Y.Z` de allí tiene aquí su sección. Las versiones anteriores a la primera de este archivo solo tienen notas en inglés.
 
+## Unreleased
+
+### Nuevo
+- **Generar el inventario de pantallas con IA (0.10).** `theo tool ai doctor` encuentra Claude Code y GitHub Copilot, los prueba y muestra el proveedor y el modelo de cada rol (`ai.roles.coordinator`, `ai.roles.worker`). `theo tool capture generate` explora el proyecto y escribe `pantallas.json` y sus mocks con trabajadores en paralelo; cada respuesta se valida y se devuelve si está mal, una ejecución se guarda y se reanuda con `--resume`, y lo que no se pudo generar se lista. La IA solo lee: el resultado es un borrador y `theo tool capture accept` lo escribe, sin sobrescribir nunca un `pantallas.json` existente salvo que elijas `--replace` (o `--merge`, que solo añade las pantallas que faltan). La primera vez en un proyecto Theo avisa de que el código se envía al proveedor y pregunta. `--verify` captura el borrador con la aplicación en marcha y devuelve los fallos a la IA (dos vueltas).
+- **Las pantallas que las reglas no logran emparejar se emparejan con IA.** `run-pair` y `compare` consultan al coordinador sobre las pantallas que solo tiene una rama (títulos, rutas y nombres de archivo, nunca código). Los pares se aplican con su confianza, se marcan «por IA» en los informes y se guardan en `.theo/capturas/emparejamientos.json`, donde un par escrito a mano manda siempre. `--no-ai` lo omite.
+- **`theo tool capture detect --ai`** propone una sección `run` cuando las reglas no encuentran nada, validada como una escrita a mano.
+- Sin probar con los CLI reales de Claude Code y Copilot: los adaptadores siguen su documentación y se prueban con un proveedor de pruebas.
+
 ## v0.9.0
 
 La herramienta de capturas ya hace capturas: compara dos ramas de un proyecto pantalla a pantalla y escribe los informes, desde la línea de comandos y desde una nueva vista Herramientas.

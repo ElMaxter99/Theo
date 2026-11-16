@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/ElMaxter99/Theo/internal/filelock"
@@ -20,13 +21,17 @@ const FileName = "preferences.json"
 
 // Keys that `theo config` accepts, with what each does.
 var Keys = map[string]string{
-	"open.editor":         "command `theo open --in editor` starts (default: the first of code, cursor, windsurf, zed, subl found)",
-	"open.terminal":       "command `theo open --in terminal` starts (default: Windows Terminal, Terminal.app or the system's terminal)",
-	"open.files":          "command `theo open --in files` starts (default: explorer, open or xdg-open)",
-	"notify.agent":        "off, waiting or all: desktop notification when an agent waits for you (waiting) or also when it finishes (all). Only the desktop app shows it, and only for agents with hooks (default off)",
-	"notify.skip-focused": "on or off: with on, the desktop app does not notify while its window is in front (default off)",
-	"language":            "en, es or system: the language of the reports of the capture tool (default system: the language of the computer, English if it is not Spanish)",
-	"update-check":        "on or off: look once a day for a new version of Theo (default off; nothing is sent when off)",
+	"open.editor":          "command `theo open --in editor` starts (default: the first of code, cursor, windsurf, zed, subl found)",
+	"open.terminal":        "command `theo open --in terminal` starts (default: Windows Terminal, Terminal.app or the system's terminal)",
+	"open.files":           "command `theo open --in files` starts (default: explorer, open or xdg-open)",
+	"notify.agent":         "off, waiting or all: desktop notification when an agent waits for you (waiting) or also when it finishes (all). Only the desktop app shows it, and only for agents with hooks (default off)",
+	"notify.skip-focused":  "on or off: with on, the desktop app does not notify while its window is in front (default off)",
+	"ai.provider":          "claude or copilot: the AI command line Theo's tools ask for work (default none: choose one with theo tool ai doctor)",
+	"ai.model":             "model of ai.provider (see theo tool ai models <provider>)",
+	"ai.roles.coordinator": "provider:model for the coordinator role of the generation, for example claude:opus (default ai.provider and ai.model)",
+	"ai.roles.worker":      "provider:model for the worker role of the generation, the cheaper one (default ai.provider and ai.model)",
+	"language":             "en, es or system: the language of the reports of the capture tool (default system: the language of the computer, English if it is not Spanish)",
+	"update-check":         "on or off: look once a day for a new version of Theo (default off; nothing is sent when off)",
 }
 
 // Update is the answer of the last look for a new version.
@@ -100,6 +105,16 @@ func (s Store) Set(key, value string) error {
 	}
 	if key == "notify.agent" && value != "off" && value != "waiting" && value != "all" {
 		return errors.New("notify.agent is off, waiting or all")
+	}
+	if key == "ai.provider" && value != "claude" && value != "copilot" {
+		return errors.New("ai.provider is claude or copilot")
+	}
+	if key == "ai.roles.coordinator" || key == "ai.roles.worker" {
+		p, m, _ := strings.Cut(value, ":")
+		if p != "claude" && p != "copilot" {
+			return fmt.Errorf("%s is provider:model with provider claude or copilot, for example claude:opus", key)
+		}
+		_ = m
 	}
 	if value == "" {
 		return errors.New("an empty value: use `theo config unset` to go back to the default")
