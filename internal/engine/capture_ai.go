@@ -269,3 +269,66 @@ func (e *Engine) CaptureAccept(ctx context.Context, req AcceptRequest) (*capture
 	res, err := capture.Accept(dir, wt, req.Mode)
 	return res, run, err
 }
+
+// pairWithAI asks the coordinator which screens only one set has match a
+// screen of the other, and saves the answer in emparejamientos.json (where a
+// person can correct it: what is written by hand wins). It returns the pairs
+// to apply. Without roles, consent or a provider that answers it only says so:
+// a comparison never fails because of the AI.
+func (e *Engine) pairWithAI(ctx context.Context, req ComparisonRequest, root, key string, pf capture.PairFile, removed, added []capture.ScreenInfo, emit func(CaptureEvent)) []capture.Pair {
+	known := map[string]bool{}
+	for _, p := range pf[key] {
+		known[p.AID] = true
+	}
+	var rest []capture.ScreenInfo
+	for _, s := range removed {
+		if !known[s.ID] {
+			rest = append(rest, s)
+		}
+	}
+	var out []capture.Pair
+	for _, p := range pf.Applicable(key) {
+		if p.Method != capture.ManualPair {
+			out = append(out, p)
+		}
+	}
+	if len(rest) == 0 || len(added) == 0 || req.NoAI {
+		return out
+	}
+	roles, err := e.AIRoles("")
+	if err != nil {
+		emit(CaptureEvent{Kind: "log", Text: fmt.Sprintf("%d screens could not be matched; no AI provider chosen (theo tool ai doctor)", len(rest))})
+		return out
+	}
+	if !e.GenerateConsent(req.Project, roles) {
+		emit(CaptureEvent{Kind: "log", Text: fmt.Sprintf("%d screens could not be matched; AI matching is off until you accept sending the project's names to %s (run theo tool capture generate once)", len(rest), roles.Coordinator.Provider)})
+		return out
+	}
+	prov, err := AIProviderFor(roles.Coordinator.Provider)
+	if err != nil {
+		return out
+	}
+	emit(CaptureEvent{Kind: "log", Text: fmt.Sprintf("matching %d screens with AI (%s)", len(rest), roles.Coordinator)})
+	got, err := capture.ProposePairs(ctx, prov, roles.Coordinator, rest, added, 2)
+	if err != nil {
+		emit(CaptureEvent{Kind: "log", Text: fmt.Sprintf("AI matching failed (%v): the screens stay unmatched", err)})
+		return out
+	}
+	pf[key] = append(pf[key], got...)
+	if err := pf.Save(root); err != nil {
+		emit(CaptureEvent{Kind: "log", Text: fmt.Sprintf("could not save %s: %v", capture.PairsPath, err)})
+	}
+	for _, p := range got {
+		line := fmt.Sprintf("%s  ->  %s", p.AID, p.BID)
+		if p.BID == "" {
+			line = p.AID + "  ->  (no match)"
+		}
+		emit(CaptureEvent{Kind: "ai-pair", Text: fmt.Sprintf("%-26s confidence %.2f  by AI", line, p.Confidence)})
+	}
+	for _, p := range got {
+		if p.BID != "" && p.Confidence >= capture.AIMinConfidence {
+			out = append(out, p)
+		}
+	}
+	return out
+}

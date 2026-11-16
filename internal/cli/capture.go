@@ -395,6 +395,7 @@ func capturePair(e *engine.Engine, args []string, stdout, stderr io.Writer, from
 	yes := fl.Bool("yes", false, "approve the commands of the run sections")
 	mode := fl.String("mode", "", "mock, real or grabar")
 	lang := fl.String("lang", "", "language of the reports (en or es; default: the language setting)")
+	noAI := fl.Bool("no-ai", false, "do not ask an AI to pair the screens the rules could not")
 	asJSON := fl.Bool("json", false, "print JSON")
 	pos, err := parse(fl, args)
 	if err != nil {
@@ -408,7 +409,7 @@ func capturePair(e *engine.Engine, args []string, stdout, stderr io.Writer, from
 	project := pos[0]
 	ta := engine.CaptureTarget{Project: project, Selector: pos[1], Label: pos[1]}
 	tb := engine.CaptureTarget{Project: project, Selector: pos[2], Label: pos[2]}
-	req := engine.ComparisonRequest{Project: project, A: ta, B: tb, Mode: *mode, Again: *again, Approve: *yes, UseSets: fromSets, Lang: *lang}
+	req := engine.ComparisonRequest{Project: project, A: ta, B: tb, Mode: *mode, Again: *again, Approve: *yes, UseSets: fromSets, Lang: *lang, NoAI: *noAI}
 	if !fromSets {
 		if err := approveCapture(ctx, e, []engine.CaptureTarget{ta, tb}, &req.Approve, stdout, "theo tool capture run-pair "+strings.Join(pos, " ")); err != nil {
 			return err
@@ -423,6 +424,10 @@ func capturePair(e *engine.Engine, args []string, stdout, stderr io.Writer, from
 		switch ev.Kind {
 		case "matching":
 			fmt.Fprintf(out, "theo: matching screens: %s\n", ev.Text)
+		case "ai-pair":
+			fmt.Fprintf(out, "  %s\n", ev.Text)
+		case "log":
+			fmt.Fprintf(out, "theo: %s\n", ev.Text)
 		case "compare":
 			fmt.Fprintf(out, "theo: compare %s\n", ev.Label)
 		case "stopped":
@@ -470,6 +475,9 @@ func printCounts(w io.Writer, c *capture.Comparison) {
 	n := c.Counts
 	fmt.Fprintf(w, "\n  changed  %-6d same  %-5d new  %-5d removed  %-5d moved  %d\n", n.Changed, n.Same, n.New, n.Removed, n.Moved)
 	fmt.Fprintf(w, "  flow changed  %d of %d     not captured  %d     unstable  %d\n", n.FlowChanged, len(c.Flows), n.NotCaptured, n.Unstable)
+	if byAI := countPairs(c, capture.ByAI); byAI > 0 {
+		fmt.Fprintf(w, "  paired by AI  %d     (saved in %s: edit it and your version wins)\n", byAI, capture.PairsPath)
+	}
 }
 
 func captureSets(e *engine.Engine, args []string, stdout io.Writer) error {
@@ -625,4 +633,14 @@ func printCaptureSummary(e *engine.Engine, project, a, b string, w io.Writer, as
 		return nil
 	}
 	return fmt.Errorf("no report compares %q and %q yet: theo tool capture compare %s %s %s", a, b, project, a, b)
+}
+
+func countPairs(c *capture.Comparison, method string) int {
+	n := 0
+	for _, p := range c.Pairs {
+		if p.Method == method {
+			n++
+		}
+	}
+	return n
 }
