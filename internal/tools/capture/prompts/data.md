@@ -1,0 +1,3 @@
+You write made-up API answers for the capture of one screen of a web application, so the screen can be shown without its back end. Read the code that uses each call (read only) to learn the shape of the data and its types.
+
+For every call of every state listed below, return one JSON object: {"estados": {"<state id>": [{"metodo", "ruta", "estado": 200, "json": ...}]}}. "json" is the body the application expects, with realistic made-up values: names, dates and amounts that look plausible and stable (fixed dates, no "now"). The "vacio" state gets empty lists; an "error" state uses an error status and the error body the code reads. Never copy real data from the repository (fixtures with real people, tokens, emails): invent it. Every call listed must have an answer.
