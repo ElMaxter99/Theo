@@ -96,3 +96,50 @@ func TestCaptureGenerateAndAccept(t *testing.T) {
 		t.Errorf("inventory: %s", b)
 	}
 }
+
+func TestDetectWithAIProposesAndValidates(t *testing.T) {
+	main := hookProject(t, map[string]string{"README.md": "# a project nobody can detect"})
+	stub := &ai.Stub{Rules: []ai.StubRule{{Contains: "Propose the", Replies: []string{
+		`{"run":{"kind":"script"},"motivo":"README says so"}`, // no start command: rejected
+		`{"run":{"kind":"script","start":"node server.js --port ${PORT}","install":["npm ci"]},"motivo":"server.js listens on a port"}`,
+	}}}}
+	old := engine.AIProviderFor
+	engine.AIProviderFor = func(string) (ai.Provider, error) { return stub, nil }
+	t.Cleanup(func() { engine.AIProviderFor = old })
+
+	if _, stderr, code := run("tool", "capture", "detect", main, "--ai", "--yes"); code == ExitOK || !strings.Contains(stderr, "theo config set ai.roles.coordinator") {
+		t.Fatalf("without roles: %d %q", code, stderr)
+	}
+	run("config", "set", "ai.roles.coordinator", "claude:big")
+	run("config", "set", "ai.roles.worker", "claude:small")
+	// Without a terminal and without --yes the code is not sent.
+	if _, stderr, code := run("tool", "capture", "detect", main, "--ai"); code == ExitOK || !strings.Contains(stderr, "would be sent") || len(stub.Jobs) != 0 {
+		t.Fatalf("consent: %d %q", code, stderr)
+	}
+	out, stderr, code := run("tool", "capture", "detect", main, "--ai", "--yes")
+	if code != ExitOK {
+		t.Fatalf("detect --ai: %d %s", code, stderr)
+	}
+	for _, want := range []string{"Rules found nothing. Asking claude:big", "low confidence", "node server.js --port ${PORT}", "server.js listens on a port", "Nothing was written", "serve <project> --check"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if len(stub.Jobs) != 2 || !strings.Contains(stub.Jobs[1].Prompt, "previous answer was rejected") {
+		t.Errorf("an invalid proposal must be sent back: %d jobs", len(stub.Jobs))
+	}
+	if _, err := os.Stat(filepath.Join(main, ".theo.json")); err == nil {
+		t.Error("a proposal is not saved without --write")
+	}
+	// With --write it is saved, and the commands still need approval to run.
+	stub.Jobs = nil
+	stub.Rules[0].Replies = stub.Rules[0].Replies[1:]
+	out, _, code = run("tool", "capture", "detect", main, "--ai", "--write")
+	if code != ExitOK || !strings.Contains(out, "Written to .theo.json") {
+		t.Errorf("--write: %d %s", code, out)
+	}
+	b, _ := os.ReadFile(filepath.Join(main, ".theo.json"))
+	if !strings.Contains(string(b), "server.js") {
+		t.Errorf(".theo.json: %s", b)
+	}
+}

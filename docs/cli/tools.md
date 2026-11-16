@@ -129,7 +129,8 @@ The file lists what to capture: viewports, screens (`pantallas`), their states
 branch says what its own screens are. `theo tool capture validate` checks it
 against the schema (`internal/tools/capture/schema/pantallas.v1.json`) and says
 where it is wrong (`screens[1].states[0].actions[0]`); `init` writes a starting
-file. There is no AI generation yet: it arrives in 0.10.
+file. Writing it by hand is fine; since 0.10 an AI can write a first version
+(see "Generating the inventory with AI").
 
 ```json
 {
@@ -190,7 +191,67 @@ is under `/api/v1/projects/{p}/capture` (state, `compare`, `runs/{op}`,
 `reports/{name}/{file}`) and `/api/v1/capture/setup`; the long actions are
 operations.
 
+## Generating the inventory with AI (0.10)
+
+`theo tool ai doctor` lists the AI command lines Theo can ask for work
+(Claude Code and GitHub Copilot), pings each with a tiny real request and shows
+the provider and model of each role. Theo uses the session you already have in
+them and stores no credentials. Choose the roles once:
+
+```sh
+theo config set ai.roles.coordinator claude:<model>   # explores and decides
+theo config set ai.roles.worker claude:<model>        # one job per screen: a cheaper model is fine
+```
+
+`theo tool capture generate <project> [worktree]` writes a first
+`pantallas.json` and its mocks:
+
+1. **Exploration** (coordinator): reads the project and lists its screens, with
+   the files that build each one, the entry screen and the main flows.
+2. **Screens** (workers, `--parallel N`, default 3): one job per screen with its
+   states, actions and the API calls it makes.
+3. **Data** (workers): made-up answers for those calls, shaped by the code's types.
+4. **Merge**: joins and validates the result with the same rules as
+   `validate`. What cannot be generated is listed (`not generated`), never
+   dropped in silence.
+
+Every answer is checked and, when it is wrong, sent back with the error (two
+retries). Each job is saved, so `--resume` continues an interrupted run, and
+hitting the provider's usage limit stops the run with its progress kept.
+
+The AI only reads the worktree and never writes in it. The result is a draft in
+`~/.theo/tools/capture/runs/<run>/draft`, and nothing in the repository
+changes until you run `theo tool capture accept`. The first time for a project
+Theo says that the code that is read is sent to the provider you chose, and
+asks once (`--yes` accepts it without a terminal).
+
+`accept` writes `.theo/capturas/pantallas.json` and the mocks. If the file
+already exists it says so and does **not** overwrite it: on a terminal it asks
+whether to replace it, and `--merge` adds only the screens it does not have
+(your edits stay) while `--replace` replaces it.
+
+`generate --verify` then captures the draft with the application running
+(the `run` section, approved as usual) and sends the states that fail to load
+back to the AI with what the capture said, up to two rounds. What still fails is
+reported.
+
+When two branches are compared, the screens the rules (id, route, shared
+file) could not pair go to the coordinator, which sees titles, routes and file
+names, never code. Its answers are applied with their confidence, marked "by
+AI" in the reports, and saved in `.theo/capturas/emparejamientos.json`. Edit that
+file (a pair with `"method": "manual"`) and your version always wins. `--no-ai`
+on `run-pair` and `compare` leaves them unpaired.
+
+`theo tool capture detect --ai` asks for a `run` section when the rules found
+nothing. It is a proposal, validated like one written by hand and saved only if
+you say so; try it with `serve --check`.
+
+Not tried against the real command lines: the flags the adapters pass to
+`claude` and `copilot` come from their documentation and are tested with a stand-in,
+not with the real programs. The usage is read-only (`--allowedTools
+Read,Grep,Glob` for Claude).
+
 ## Not built yet
 
-The generation of the inventory with AI (0.10). `theo up` does not start
+The web interface of the AI generation (0.11). `theo up` does not start
 `script` applications yet.
