@@ -66,6 +66,7 @@ Theo drives the `git` and `docker compose` you already have. It writes its own g
 
 | How | Command |
 |---|---|
+| **Installer** (app + command, updates itself) | Windows `theo-setup_…_windows_amd64.exe`, macOS `Theo_…_darwin_….dmg`, Linux `theo-installer_…_linux_amd64.sh` (or the `.deb`): [install and update](docs/cli/update.md). They install for your user, and new versions install from the app itself. |
 | **Release binaries** | Download the archive for your system from the [releases page](https://github.com/ElMaxter99/Theo/releases) (`tar.gz` for Linux and macOS, `zip` for Windows, amd64 and arm64), check it against `checksums.txt`, and put `theo` in your `PATH`. |
 | **Scoop** (Windows) | `scoop install https://github.com/ElMaxter99/Theo/releases/latest/download/theo.json` |
 | **Homebrew** (macOS, Linux) | Each release attaches `theo.rb`, a formula for a tap of your own; no public tap is published yet. |
@@ -94,6 +95,17 @@ Inside one of the project's folders you can leave the project out (or write `.`)
 More in the [quickstart](docs/cli/quickstart.md). To try everything on a small app made for it, follow [`examples/demo`](examples/demo/README.md).
 
 ## What's new
+
+### v0.11: installers and updates from the app
+
+```sh
+theo update --check                   # is there a newer version? (stable by default)
+theo update                           # download, check SHA-256 and replace Theo
+theo config set update-channel rc     # also offer test versions (vX.Y.Z-rc.N)
+theo config set update-check off      # no periodic check
+```
+
+There is now one installer per system, with no administrator rights: a setup `.exe` for Windows, a `.dmg` for macOS and a `.sh` (or `.deb`) for Linux. The desktop app checks for a new version at start and every six hours, shows a banner and installs it only when you press the button; Settings > Updates holds the channel and the switches. The CLI alone only warns if you turn `update-check` on. **Not tried on real Windows and macOS machines yet** (the wizard, the PATH change, Gatekeeper and the restart after an update). See [install and update](docs/cli/update.md).
 
 ### v0.10: the AI writes the inventory
 
@@ -133,6 +145,7 @@ Merged is detected even after a squash or rebase on GitHub. Remote branches and 
 
 ### Earlier releases
 
+- **v0.10:** the AI writes the screen inventory: `theo tool ai doctor`, `theo tool capture generate` and `accept`, AI pairing of screens in `run-pair` and `detect --ai`.
 - **v0.9:** before and after screenshots: `theo tool capture run-pair` captures two branches, compares them screen by screen and writes a corporate report, before/after compositions and a Markdown summary; a Tools page in the web interface; `theo doctor` checks the capture engine.
 - **v0.8:** the tools framework (`theo tool list`) and the first tool, `capture`, which works out how a project starts and serves several branches at once, even an AngularJS app under `/portal` (kind `static`).
 - **v0.7:** Claude Code and Copilot hooks, desktop notices when an agent waits for you (off by default, and not while Theo's window is in front), a light interface by default, and Cleanup as a four-step flow.

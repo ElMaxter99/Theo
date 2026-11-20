@@ -2,6 +2,17 @@
 
 Cambios destacados de cada versión, en español. Las notas de cada release en GitHub llevan esta sección después de la inglesa, con el título *Español*. Es la misma lista que [CHANGELOG.md](CHANGELOG.md), que es la de referencia: cada `## vX.Y.Z` de allí tiene aquí su sección. Las versiones anteriores a la primera de este archivo solo tienen notas en inglés.
 
+## v0.11.0
+
+Theo ya se instala como cualquier otro programa y se actualiza solo desde la app abierta. Hay un instalador por sistema, no pide permisos de administrador y las versiones nuevas (y, si lo pides, las de prueba) se ofrecen con un aviso que aceptas tú.
+
+### Nuevo
+- **Instaladores.** Windows: `theo-setup_vX.Y.Z_windows_amd64.exe` (por usuario, menú Inicio, `theo` en tu PATH, desinstalador en Aplicaciones). macOS: `Theo_vX.Y.Z_darwin_arm64.dmg` o `_amd64.dmg` (arrastra Theo.app a Aplicaciones; la primera vez, clic derecho > Abrir). Linux: `theo-installer_vX.Y.Z_linux_amd64.sh` (también arm64; por usuario, entrada en el menú, `theo-uninstall`) y `theo_vX.Y.Z_amd64.deb` para Debian y Ubuntu.
+- **`theo update`.** `theo update --check` dice si hay una versión más nueva; `theo update` la descarga, comprueba su SHA-256 con `checksums.txt` y sustituye Theo (el paquete entero en macOS), con vuelta atrás si el cambio falla. Sin archivo para tu sistema o sin sumas no instala nada y enseña la página de la versión.
+- **Actualizaciones en la app.** La app de escritorio comprueba al arrancar y cada seis horas, muestra un aviso y solo instala cuando pulsas el botón; después se reinicia. Ajustes > Actualizaciones tiene la comprobación, el canal y el interruptor del aviso; la interfaz web y `/api/v1/update*` ofrecen lo mismo.
+- **Canal de versiones de prueba.** `update-channel` es `stable` (por defecto) o `rc`; las versiones de prueba se comparan por la versión completa, así que una prueba más nueva nunca sustituye a la estable más reciente. `update-check` viene activado por defecto solo en la app de escritorio.
+- Sin probar en equipos reales de Windows y macOS: el asistente y su cambio de PATH, los avisos nativos, el reinicio tras actualizar, Gatekeeper con el `.dmg` y la instalación del `.deb` con apt.
+
 ## v0.10.0
 
 La herramienta de capturas ya puede escribir su propio inventario de pantallas: una IA lee el proyecto y redacta `pantallas.json` y sus mocks, empareja las pantallas que las reglas no lograron casar entre dos ramas y propone cómo arrancar un proyecto. Solo lee y tú decides qué se guarda.

@@ -2,6 +2,17 @@
 
 Notable changes per release. Each release on GitHub also lists every merged pull request.
 
+## v0.11.0
+
+Theo now installs like any other program and updates itself from the open app. There is one installer per system, it needs no administrator rights, and new versions (and, if you ask for them, release candidates) are offered with a notice you accept.
+
+### New
+- **Installers.** Windows: `theo-setup_vX.Y.Z_windows_amd64.exe` (per user, Start menu, `theo` in your PATH, uninstaller in Apps). macOS: `Theo_vX.Y.Z_darwin_arm64.dmg` or `_amd64.dmg` (drag Theo.app to Applications; first open with right click > Open). Linux: `theo-installer_vX.Y.Z_linux_amd64.sh` (also arm64; per user, menu entry, `theo-uninstall`) and `theo_vX.Y.Z_amd64.deb` for Debian and Ubuntu.
+- **`theo update`.** `theo update --check` says whether a newer version exists; `theo update` downloads it, checks its SHA-256 against `checksums.txt` and replaces Theo (the whole bundle on macOS), with a rollback if the swap fails. Without a matching archive or checksums it installs nothing and shows the release page.
+- **Updates in the app.** The desktop app checks at start and every six hours, shows a banner and installs only when you press the button, then restarts. Settings > Updates has the check, the channel and the notice switch; the web interface and `/api/v1/update*` expose the same.
+- **Channel for test versions.** `update-channel` is `stable` (default) or `rc`; release candidates are compared by full version, so a newer test never replaces the latest stable one. `update-check` is on by default only in the desktop app.
+- Not tried on real Windows and macOS machines: the setup wizard and its PATH change, native notices, the restart after an update, Gatekeeper with the `.dmg`, and installing the `.deb` with apt.
+
 ## v0.10.0
 
 The capture tool can now write its own screen inventory: an AI reads the project and drafts `pantallas.json` and its mocks, pairs the screens the rules could not match between two branches, and proposes how to start a project. It is read-only and you decide what is saved.
