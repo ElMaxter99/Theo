@@ -24,7 +24,9 @@ trap 'rm -rf "$work"' EXIT
 unpack() { # <archive> <destdir>
   mkdir -p "$2"
   case "$1" in
-    *.zip) unzip -q -o "$1" -d "$2" ;;
+    # PowerShell's Compress-Archive writes backslashes in the entry names. unzip
+    # extracts them fine but exits 1 ("warning"); only 2 and above are errors.
+    *.zip) rc=0; unzip -q -o "$1" -d "$2" || rc=$?; [ "$rc" -le 1 ] ;;
     *) tar -xzf "$1" -C "$2" ;;
   esac
 }

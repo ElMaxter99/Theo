@@ -316,8 +316,11 @@ jobs:
           set -euo pipefail
           deb="dist/theo_${TAG}_linux_amd64.deb"
           dpkg-deb -I "$deb"
-          dpkg-deb -c "$deb" | grep -q ' ./usr/bin/theo$'
-          dpkg-deb -c "$deb" | grep -q ' ./usr/bin/theo-desktop$'
+          # Read the whole listing first: grep -q closes the pipe early and
+          # pipefail would report dpkg-deb's SIGPIPE as a failure.
+          listing="$(dpkg-deb -c "$deb")"
+          grep -q ' ./usr/bin/theo$' <<<"$listing"
+          grep -q ' ./usr/bin/theo-desktop$' <<<"$listing"
       - uses: actions/upload-artifact@v7
         with:
           name: theo_installers
